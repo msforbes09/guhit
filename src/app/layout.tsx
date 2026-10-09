@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Andika, Grandstander } from "next/font/google";
 import "./globals.css";
+import { ServiceWorkerRegister } from "./sw-register";
 
 // next/font downloads both faces at build time and serves them from this app,
 // so the type still renders with Wi-Fi off.
@@ -27,7 +28,6 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#fff8ec",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -45,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </filter>
         </svg>
         {children}
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
