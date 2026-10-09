@@ -8,7 +8,7 @@ import type { Character, Story } from "@/lib/story/types";
 import { sceneFor } from "./Backdrop";
 import { FriendSkeleton } from "./FriendScreen";
 import { FriendStage } from "./FriendStage";
-import { useAIReady, usePushToTalk } from "./hooks";
+import { speechLevel, useAIReady, usePushToTalk, useSpeakingVoice } from "./hooks";
 import { ArrowRight, ArrowsClockwise, BookOpen, PaperPlaneRight, SpeakerHigh } from "./icons";
 import { MicButton } from "./MicButton";
 import { ReadyCard } from "./ReadyCard";
@@ -66,6 +66,7 @@ export function StoryScreen() {
 function MakeStory({ friend }: { friend: Friend }) {
   const router = useRouter();
   const ready = useAIReady();
+  const voice = useSpeakingVoice();
   const name = friend.name;
   const [phase, setPhase] = useState<Phase>("asking");
   const [question, setQuestion] = useState("");
@@ -260,6 +261,8 @@ function MakeStory({ friend }: { friend: Friend }) {
               cutout={friend.cutout ?? friend.drawing}
               name={name}
               thinking={busy}
+              talking={voice === "character" && !busy}
+              level={speechLevel}
               motion={phase === "finishing" ? "dance" : "idle"}
               className="h-[46vh] min-h-72 lg:h-[66vh]"
               bubble={
