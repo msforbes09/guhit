@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { photoCropFromCutout } from "@/lib/ai";
+import type { PixelRect } from "@/lib/ai";
 import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { shrinkPhoto } from "@/lib/story/image";
 import { cutout, type Cutout } from "./alive";
@@ -13,6 +15,14 @@ type Phase = "idle" | "cutting" | "preview" | "saving" | "full" | "error";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** The crop is in the original photo's pixels; the kept photo may be smaller. */
+const scaleRect = (r: PixelRect, s: number): PixelRect => ({
+  x: Math.round(r.x * s),
+  y: Math.round(r.y * s),
+  w: Math.round(r.w * s),
+  h: Math.round(r.h * s),
+});
+
 /**
  * Photo or canvas in, friend out: cuts the character from the picture, lets
  * the child confirm it, then keeps it on the device and opens it.
@@ -21,7 +31,7 @@ export function useBringToLife() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("idle");
   const [photo, setPhoto] = useState<string | null>(null);
-  const [result, setResult] = useState<{ drawing: string; cut: Cutout } | null>(null);
+  const [result, setResult] = useState<{ drawing: string; cut: Cutout; photoCrop?: PixelRect } | null>(null);
 
   useEffect(
     () => () => {
@@ -37,8 +47,8 @@ export function useBringToLife() {
     try {
       // Hold the scissors moment briefly even when cutting is instant, so the
       // child sees something happen to their drawing.
-      const [cut, drawing] = await Promise.all([cutout(image), shrinkPhoto(image), wait(1100)]);
-      setResult({ drawing, cut });
+      const [cut, photo] = await Promise.all([cutout(image), shrinkPhoto(image), wait(1100)]);
+      setResult({ drawing: photo.dataUrl, cut, photoCrop: cut.meta ? scaleRect(photoCropFromCutout(cut.meta), photo.scale) : undefined });
       setPhase("preview");
     } catch {
       setPhase("error");
@@ -65,6 +75,7 @@ export function useBringToLife() {
         description: "",
         drawing: result.drawing,
         cutout: result.cut.png,
+        photoCrop: result.photoCrop,
         chat: [],
         createdAt: now,
         updatedAt: now,
