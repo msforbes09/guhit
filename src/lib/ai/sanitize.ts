@@ -145,7 +145,8 @@ export function cleanCaption(raw: string): string {
   if (words.length === 0 || isUnsafe(text)) return "";
   // Long captions read badly in "Is that …?": keep the first ten words, ending before a dangling "and"/"with".
   let kept = words.slice(0, 10);
-  while (kept.length > 2 && /^(?:and|with|of|in|on|the|a|an)$/i.test(kept[kept.length - 1])) kept = kept.slice(0, -1);
+  const dangling = /^(?:and|with|of|in|on|up|going|the|a|an|its|it'?s|his|her|their|my)$/i;
+  while (kept.length > 2 && dangling.test(kept[kept.length - 1])) kept = kept.slice(0, -1);
   const phrase = withArticle(kept.join(" ").replace(/,$/, ""));
   const label = phrase.charAt(0).toLowerCase() + phrase.slice(1);
   return isSensibleLabel(label) ? label : "";

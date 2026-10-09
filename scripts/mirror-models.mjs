@@ -32,6 +32,16 @@ const onnxRepos = [
     ],
   },
   {
+    // Drawing recognition on laptops; base below is the phone model.
+    repo: "onnx-community/Florence-2-large-ft",
+    onnx: [
+      "onnx/vision_encoder_q4.onnx",
+      "onnx/embed_tokens_quantized.onnx",
+      "onnx/encoder_model_q4.onnx",
+      "onnx/decoder_model_merged_q4.onnx",
+    ],
+  },
+  {
     repo: "onnx-community/Florence-2-base-ft",
     onnx: [
       "onnx/vision_encoder_q4.onnx",

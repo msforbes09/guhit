@@ -105,7 +105,9 @@ export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
   const deviceOverride = params.get("sttDevice");
   if (deviceOverride === "wasm" || deviceOverride === "webgpu") sttDevice = deviceOverride;
 
-  let vision = VISION_MODELS[0].id;
+  // Florence-2 large named every test drawing right (base called Tala "a purple
+  // cat"); phones keep base for memory and download size.
+  let vision = support.mobile ? "onnx-community/Florence-2-base-ft" : "onnx-community/Florence-2-large-ft";
   const visionOverride = params.get("vision");
   if (visionOverride && VISION_MODELS.some((m) => m.id === visionOverride)) vision = visionOverride;
   const visionDevice: STTDevice = support.webgpu && params.get("visionDevice") !== "wasm" ? "webgpu" : "wasm";
