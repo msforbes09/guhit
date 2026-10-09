@@ -116,8 +116,12 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   // First visit after naming: the character says hello on its own.
   useEffect(() => {
     if (ready !== "ready" || greeted.current || friendRef.current.chat.length > 0) return;
-    greeted.current = true;
-    const id = setTimeout(() => answer("Hi!", []), 400);
+    // Marked inside the timer so a cancelled first run (React dev mounts
+    // effects twice) still lets the second one say hello.
+    const id = setTimeout(() => {
+      greeted.current = true;
+      answer("Hi!", []);
+    }, 400);
     return () => clearTimeout(id);
   }, [ready, answer]);
 
@@ -181,7 +185,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   if (phase === "thinking" || phase === "hearing") {
     bubble = (
       <SpeechBubble tone="think" className="anim-pop-in">
-        <ThinkingDots label={`${name} is thinking`} />
+        <ThinkingDots size="lg" label={`${name} is thinking`} />
       </SpeechBubble>
     );
   } else if (listening) {
@@ -193,17 +197,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   } else if (lastLine) {
     bubble = (
       <SpeechBubble className="anim-pop-in max-w-xl" key={lastLine}>
-        <p className="font-display text-xl font-bold leading-snug sm:text-2xl lg:text-[1.7rem]">{lastLine}</p>
-        {phase !== "speaking" && canTalk && (
-          <button
-            type="button"
-            onClick={() => speak(lastLine)}
-            className="mt-2 inline-flex min-h-12 items-center gap-2 rounded-full bg-sky/25 px-3 font-display text-base font-bold text-ink hover:bg-sky/40"
-          >
-            <SpeakerHigh size={22} weight="fill" aria-hidden="true" />
-            Say it again
-          </button>
-        )}
+        <p className="font-display text-lg font-bold leading-snug sm:text-2xl lg:text-[1.7rem]">{lastLine}</p>
       </SpeechBubble>
     );
   } else if (!canTalk) {
@@ -255,10 +249,24 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
                 onStart={startTalking}
                 onStop={mic.stop}
               />
-              {said && !listening && (
-                <p className="max-w-full rounded-2xl bg-white/80 px-4 py-2 text-center text-lg text-ink-soft">
-                  <span className="font-bold text-ink">You said:</span> {said}
-                </p>
+              {(said || lastLine) && !listening && !busy && (
+                <div className="flex w-full flex-wrap items-center justify-center gap-2">
+                  {said && (
+                    <p className="min-w-0 flex-1 rounded-2xl bg-white/80 px-4 py-2 text-lg text-ink-soft">
+                      <span className="font-bold text-ink">You said:</span> {said}
+                    </p>
+                  )}
+                  {lastLine && canTalk && phase !== "speaking" && (
+                    <button
+                      type="button"
+                      onClick={() => speak(lastLine)}
+                      className="crayon-edge press inline-flex min-h-14 shrink-0 items-center gap-2 rounded-full bg-white px-4 font-display text-lg font-bold text-ink"
+                    >
+                      <SpeakerHigh size={24} weight="fill" aria-hidden="true" />
+                      Hear it again
+                    </button>
+                  )}
+                </div>
               )}
               {oops && (
                 <div role="alert" className="flex w-full flex-col items-center gap-3 rounded-cut bg-sun/35 px-4 py-3 text-center">

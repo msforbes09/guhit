@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { canvasToBlob } from "@/lib/story/image";
 import { CutError, CutoutPreview, CuttingView, useBringToLife } from "./BringToLife";
+import { useFriends } from "./FriendsGrid";
+import { ShelfFull } from "./ShelfFull";
 import { ArrowCounterClockwise, Eraser, PaintBrush, Sparkle, Trash } from "./icons";
 import { Button, TopBar } from "./ui";
 
@@ -49,6 +51,7 @@ function crayonPattern(ctx: CanvasRenderingContext2D, color: string, cache: Map<
 
 export function DrawScreen() {
   const life = useBringToLife();
+  const shelf = useFriends();
   const canvas = useRef<HTMLCanvasElement>(null);
   const area = useRef<HTMLDivElement>(null);
   const strokes = useRef<Stroke[]>([]);
@@ -66,10 +69,11 @@ export function DrawScreen() {
   // laptop, portrait on a phone.
   useLayoutEffect(() => {
     const el = area.current;
-    if (!el || size) return;
+    // Wait until the paper is actually on screen (not behind the full-shelf notice).
+    if (!el || size || !el.clientWidth) return;
     const landscape = el.clientWidth >= el.clientHeight;
     setSize(landscape ? { w: 1200, h: 900 } : { w: 900, h: 1200 });
-  }, [size]);
+  }, [size, shelf.full, life.phase]);
 
   useEffect(() => {
     const el = area.current;
@@ -182,11 +186,14 @@ export function DrawScreen() {
     life.start(await canvasToBlob(canvas.current));
   };
 
-  const drawing = life.phase === "idle";
+  const shelfFullNow = (life.phase === "idle" && shelf.full) || life.phase === "full";
+  const drawing = life.phase === "idle" && !shelf.full;
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col">
-      <TopBar title={drawing ? "Draw your friend" : life.phase === "cutting" ? "Snip snip…" : "Ta-da!"} />
+      <TopBar
+        title={shelfFullNow ? "Make room" : drawing ? "Draw your friend" : life.phase === "cutting" ? "Snip snip…" : "Ta-da!"}
+      />
 
       <div className={`${drawing ? "flex" : "hidden"} flex-1 flex-col gap-4 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6 lg:flex-row`}>
         <div ref={area} className="relative flex min-h-[48vh] flex-1 items-center justify-center lg:min-h-[70vh]">
@@ -301,6 +308,15 @@ export function DrawScreen() {
       </div>
 
       <div className="flex flex-1 flex-col px-4 pb-6 sm:px-6">
+        {shelfFullNow && shelf.friends && (
+          <ShelfFull
+            friends={shelf.friends}
+            onChange={() => {
+              shelf.refresh();
+              if (life.phase === "full") life.backToPreview();
+            }}
+          />
+        )}
         {life.phase === "cutting" && <CuttingView photo={life.photo} />}
         {(life.phase === "preview" || life.phase === "saving") && life.result && (
           <CutoutPreview

@@ -159,12 +159,13 @@ export function SpeechBubble({
   );
 }
 
-export function ThinkingDots({ label = "Thinking" }: { label?: string }) {
+export function ThinkingDots({ label = "Thinking", size = "md" }: { label?: string; size?: "md" | "lg" }) {
+  const dot = size === "lg" ? "h-5 w-5" : "h-3.5 w-3.5";
   return (
-    <span className="inline-flex items-center gap-2 py-1" role="img" aria-label={label}>
-      <span className="thinking-dot block h-3.5 w-3.5 rounded-full bg-grape" />
-      <span className="thinking-dot block h-3.5 w-3.5 rounded-full bg-sky" />
-      <span className="thinking-dot block h-3.5 w-3.5 rounded-full bg-red" />
+    <span className={`inline-flex items-center py-1 ${size === "lg" ? "gap-3 px-2" : "gap-2"}`} role="img" aria-label={label}>
+      <span className={`thinking-dot block rounded-full bg-grape ${dot}`} />
+      <span className={`thinking-dot block rounded-full bg-sky ${dot}`} />
+      <span className={`thinking-dot block rounded-full bg-red ${dot}`} />
     </span>
   );
 }

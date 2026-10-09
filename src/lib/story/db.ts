@@ -8,6 +8,9 @@ export interface Friend extends Character {
   updatedAt: number;
 }
 
+/** A device keeps at most this many friends; the child chooses who to let go. */
+export const MAX_FRIENDS = 5;
+
 const DB_NAME = "guhit";
 const DB_VERSION = 1;
 const FRIENDS = "friends";
@@ -67,6 +70,10 @@ export async function listFriends(): Promise<Friend[]> {
   return newest(await run<Friend[]>(FRIENDS, "readonly", (s) => s.getAll()));
 }
 
+export function countFriends(): Promise<number> {
+  return run<number>(FRIENDS, "readonly", (s) => s.count());
+}
+
 export function getFriend(id: string): Promise<Friend | undefined> {
   return run<Friend | undefined>(FRIENDS, "readonly", (s) => s.get(id));
 }
@@ -75,6 +82,19 @@ export async function saveFriend(friend: Friend): Promise<Friend> {
   const saved = { ...friend, updatedAt: Date.now() };
   await run(FRIENDS, "readwrite", (s) => s.put(saved));
   return saved;
+}
+
+export class ShelfFullError extends Error {
+  constructor() {
+    super(`A device keeps ${MAX_FRIENDS} friends at most.`);
+    this.name = "ShelfFullError";
+  }
+}
+
+/** Keeps a brand-new friend, refusing rather than replacing when the shelf is full. */
+export async function addFriend(friend: Friend): Promise<Friend> {
+  if ((await countFriends()) >= MAX_FRIENDS) throw new ShelfFullError();
+  return saveFriend(friend);
 }
 
 /** Removes the friend and every story they star in. */

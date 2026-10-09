@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { canvasToBlob } from "@/lib/story/image";
 import { CutError, CutoutPreview, CuttingView, useBringToLife } from "./BringToLife";
+import { useFriends } from "./FriendsGrid";
 import { Camera, ImageIcon } from "./icons";
+import { ShelfFull } from "./ShelfFull";
 import { Button, Sheet, TopBar } from "./ui";
 
 type CameraState = "starting" | "live" | "none";
@@ -13,6 +15,7 @@ const FRAME_INSET = 0.09;
 
 export function SnapScreen() {
   const life = useBringToLife();
+  const shelf = useFriends();
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -22,7 +25,8 @@ export function SnapScreen() {
   const [count, setCount] = useState(0);
   const [flash, setFlash] = useState(false);
 
-  const showCamera = life.phase === "idle";
+  const showCamera = life.phase === "idle" && shelf.friends !== null && !shelf.full;
+  const shelfFullNow = (life.phase === "idle" && shelf.full) || life.phase === "full";
 
   const stopCamera = useCallback(() => {
     stream.current?.getTracks().forEach((t) => t.stop());
@@ -125,7 +129,9 @@ export function SnapScreen() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col">
-      <TopBar title={life.phase === "preview" || life.phase === "saving" ? "Ta-da!" : "Snap your drawing"} />
+      <TopBar
+        title={shelfFullNow ? "Make room" : life.phase === "preview" || life.phase === "saving" ? "Ta-da!" : "Snap your drawing"}
+      />
       <input
         ref={fileInput}
         type="file"
@@ -226,6 +232,15 @@ export function SnapScreen() {
           </div>
         )}
 
+        {shelfFullNow && shelf.friends && (
+          <ShelfFull
+            friends={shelf.friends}
+            onChange={() => {
+              shelf.refresh();
+              if (life.phase === "full") life.backToPreview();
+            }}
+          />
+        )}
         {life.phase === "cutting" && <CuttingView photo={life.photo} />}
         {(life.phase === "preview" || life.phase === "saving") && life.result && (
           <CutoutPreview

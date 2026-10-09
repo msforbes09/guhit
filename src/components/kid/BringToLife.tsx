@@ -2,14 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { newId, saveFriend } from "@/lib/story/db";
+import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { shrinkPhoto } from "@/lib/story/image";
 import { cutout, type Cutout } from "./alive";
 import { FriendStage } from "./FriendStage";
 import { ArrowsClockwise, Check, Scissors } from "./icons";
 import { Button } from "./ui";
 
-type Phase = "idle" | "cutting" | "preview" | "saving" | "error";
+type Phase = "idle" | "cutting" | "preview" | "saving" | "full" | "error";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -51,12 +51,15 @@ export function useBringToLife() {
     setPhase("idle");
   }, []);
 
+  // After making room on a full shelf, keep the friend the child just confirmed.
+  const backToPreview = useCallback(() => setPhase("preview"), []);
+
   const accept = useCallback(async () => {
     if (!result) return;
     setPhase("saving");
     try {
       const now = Date.now();
-      const friend = await saveFriend({
+      const friend = await addFriend({
         id: newId(),
         name: "",
         description: "",
@@ -67,12 +70,12 @@ export function useBringToLife() {
         updatedAt: now,
       });
       router.push(`/friend?id=${encodeURIComponent(friend.id)}`);
-    } catch {
-      setPhase("error");
+    } catch (error) {
+      setPhase(error instanceof ShelfFullError ? "full" : "error");
     }
   }, [result, router]);
 
-  return { phase, photo, result, start, reset, accept };
+  return { phase, photo, result, start, reset, accept, backToPreview };
 }
 
 export function CuttingView({ photo }: { photo: string | null }) {

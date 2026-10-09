@@ -177,7 +177,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
                   {oops}
                 </p>
               )}
-              <div className="flex flex-col-reverse gap-3 sm:flex-row">
+              <div className="flex flex-col-reverse gap-3">
                 <Button
                   tone="paper"
                   size="md"
@@ -186,7 +186,6 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
                     setOops(null);
                   }}
                   icon={<ArrowsClockwise size={26} weight="bold" aria-hidden="true" />}
-                  className="sm:flex-1"
                 >
                   Say it again
                 </Button>
@@ -196,7 +195,6 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
                   size="md"
                   disabled={!name.trim() || saving}
                   icon={<Check size={28} weight="bold" aria-hidden="true" />}
-                  className="sm:flex-[1.4]"
                 >
                   {saving ? "Saving…" : "Yes! Let's talk"}
                 </Button>

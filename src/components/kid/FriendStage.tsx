@@ -63,7 +63,7 @@ export function FriendStage({
   return (
     <Backdrop scene={scene} className={`crayon-edge rounded-cut-lg shadow-soft ${className ?? ""}`}>
       <div className="absolute inset-x-0 top-0 z-10 flex justify-center px-4 pt-4 sm:pt-5">{bubble}</div>
-      <div className="absolute inset-x-0 bottom-[7%] top-[30%] flex justify-center">
+      <div className="absolute inset-x-0 bottom-[7%] top-[34%] flex justify-center lg:top-[30%]">
         <span
           aria-hidden="true"
           className="absolute bottom-[-3%] left-1/2 h-[7%] w-[46%] -translate-x-1/2 rounded-[50%] bg-ink/15 blur-[2px]"

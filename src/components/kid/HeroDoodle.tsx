@@ -30,8 +30,8 @@ export function HeroDoodle({ className }: { className?: string }) {
       <g className="anim-bob" style={{ transformOrigin: "236px 290px" }}>
         <ellipse cx="236" cy="296" rx="58" ry="9" fill="#2a2238" opacity="0.14" />
         <g filter="url(#hero-crayon)">
-          <path d="M168 168 C 150 160, 140 140, 148 128" fill="none" stroke="#2a2238" strokeWidth="9" strokeLinecap="round" />
-          <path d="M168 168 C 150 160, 140 140, 148 128" fill="none" stroke="#8f5fd6" strokeWidth="5" strokeLinecap="round" />
+          <path d="M182 214 C 162 206, 150 186, 156 168" fill="none" stroke="#2a2238" strokeWidth="9" strokeLinecap="round" />
+          <path d="M182 214 C 162 206, 150 186, 156 168" fill="none" stroke="#8f5fd6" strokeWidth="5" strokeLinecap="round" />
           <path
             d="M186 284 C 168 230, 172 150, 236 140 C 300 132, 306 230, 288 284 Z"
             fill="#8f5fd6"
