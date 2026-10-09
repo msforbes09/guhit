@@ -217,15 +217,15 @@ export function untagPage(raw: string): { text: string; scene?: Scene; move?: St
 }
 
 /**
- * Reads "Scene: night" and "Move: sleep" lines (or "[scene: night]", "Setting - beach"…)
+ * Reads "Scene: night" and "Move: sleep" lines (or "[scene: night]", "Setting: beach"…)
  * out of a story writer's raw output. Returns the output without them.
  */
 export function takeStaging(raw: string): { text: string; scene: Scene | null; move: StoryMove | null } {
   let scene: Scene | null = null;
   let move: StoryMove | null = null;
-  const LABELLED = /[([{]?\s*\b(scene|setting|place|move|action|motion)\s*[:=\-–]\s*([a-z][a-z ]{0,20}?)\s*(?=[)\]}.,;|\n]|$|\b(?:scene|setting|place|move|action|motion)\b)[)\]}]?[.,;|]?/gi;
+  const LABELLED = /[([{]?\s*\b(scene|setting|move|action)\s*[:=]\s*([a-z][a-z ]{0,20}?)\s*(?=[)\]}.,;|\n]|$|\b(?:scene|setting|move|action)\b)[)\]}]?[.,;|]?/gi;
   const text = raw.replace(LABELLED, (_m, label: string, value: string) => {
-    if (/^(scene|setting|place)$/i.test(label)) scene ??= toScene(value);
+    if (/^(scene|setting)$/i.test(label)) scene ??= toScene(value);
     else move ??= toMove(value);
     return " ";
   });

@@ -191,7 +191,7 @@ const SCENES: Record<Scene, SceneDef> = {
   forest: {
     sky: ["#cdebd6", "#fff4de"],
     far: [
-      { art: "sun", x: 14, y: 12, s: 16 },
+      { art: "sun", x: 86, y: 13, s: 16 },
       { art: "pine", x: 26, y: 69, s: 16 },
       { art: "pine", x: 36, y: 67, s: 12 },
       { art: "pine", x: 66, y: 67, s: 13 },

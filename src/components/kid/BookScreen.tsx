@@ -276,7 +276,7 @@ function Book({ story }: { story: Story }) {
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
         <div
-          className="relative min-h-0 flex-1 touch-pan-y [perspective:2400px]"
+          className="relative min-h-0 flex-1 touch-pan-y [perspective:4200px]"
           onPointerDown={onPointerDown}
           onPointerUp={onPointerUp}
           aria-live="polite"
