@@ -1,0 +1,52 @@
+{
+  "name": "hero",
+  "duration": 46.77706599235535,
+  "frames": 3799,
+  "fpsCaptured": 81.21501251533948,
+  "marks": {
+    "snap": 2.596,
+    "preview": 12.311,
+    "accept": 16.112,
+    "meet": 16.276,
+    "guess": 17.569,
+    "yes": 22.771,
+    "talk": 24.129,
+    "greeted": 29.988,
+    "hold": 31.823,
+    "release": 34.837,
+    "heard": 40.156,
+    "replied": 43.959
+  },
+  "voice": [
+    {
+      "at": 18.762,
+      "seconds": 2.667
+    },
+    {
+      "at": 23.636,
+      "seconds": 1.69
+    },
+    {
+      "at": 26.369,
+      "seconds": 1.905
+    },
+    {
+      "at": 28.455,
+      "seconds": 1.548
+    },
+    {
+      "at": 40.481,
+      "seconds": 1.571
+    },
+    {
+      "at": 42.227,
+      "seconds": 1.69
+    }
+  ],
+  "texts": {
+    "guess": "a purple dragon with horns on it",
+    "greeting": "Hello, I'm Tala! What's your name?",
+    "said": "Tala, can you fly?",
+    "reply": "I can fly! How about you?"
+  }
+}

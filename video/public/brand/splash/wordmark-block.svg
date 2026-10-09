@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 190" width="420" height="190">
+<title>guhit</title>
+<g fill="none" stroke="#1E1B2E" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="52" cy="92" r="30"/><path d="M82,62 V122 C82,152 62,168 34,160"/>
+  <path d="M126,62 V102 C126,130 168,130 171,102 M171,62 V132"/>
+  <path d="M214,12 V132 M214,98 C216,58 266,56 266,94 V132"/>
+  <path d="M368,28 V112 C368,128 382,134 402,130 M348,64 H398"/>
+</g>
+<g>
+  <path d="M300,66 H324 V126 Q324,134 316,134 H308 Q300,134 300,126 Z" fill="#F26B3A"/>
+  <path d="M300,66 L312,32 L324,66 Z" fill="#FFC21A" stroke="#FFC21A" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M308,44 L312,32 L316,44 Z" fill="#1E1B2E"/>
+  <rect x="300" y="86" width="24" height="12" fill="#2F9BEA"/>
+  <circle cx="312" cy="8" r="7" fill="#FFC21A"/>
+</g>
+</svg>

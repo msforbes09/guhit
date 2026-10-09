@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="80 20 580 300" width="580" height="300">
+<title>guhit</title>
+<!-- #stroke: one path (pathLength=100) in writing order g-u-h, runs behind the crayon, then t stem. crayon-i and i-dot after; t-bar last. -->
+<path id="stroke" pathLength="100" fill="none" stroke="#1E1B2E" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" d="M214,150 C190,138 124,142 122,192 C120,234 180,240 214,198 C216,235 218,265 204,282 C190,298 148,298 146,278 C145,262 180,248 222,228 C244,212 256,176 262,152 C264,195 268,226 296,226 C326,226 332,190 334,152 C335,190 336,212 342,222 C350,232 364,226 376,204 C392,168 410,116 416,72 C420,34 372,28 370,66 C366,112 364,175 366,222 C368,190 376,158 404,152 C434,146 442,190 440,212 C440,226 470,226 500,222 L540,222 C556,222 566,210 572,186 L582,92 L574,196 C572,228 604,232 626,206"/>
+<g id="crayon-i">
+  <path d="M488,150 H522 V212 Q522,224 510,224 H500 Q488,224 488,212 Z" fill="#FFC21A"/>
+  <rect x="488" y="172" width="34" height="14" fill="#FFF8EE"/>
+  <path d="M488,150 L505,106 L522,150 Z" fill="#F26B3A" stroke="#F26B3A" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M500,118 L505,106 L510,118 Z" fill="#1E1B2E"/>
+</g>
+<circle id="i-dot" cx="505" cy="72" r="11" fill="#F26B3A"/>
+<path id="t-bar" fill="none" stroke="#1E1B2E" stroke-width="17" stroke-linecap="round" d="M548,148 C566,144 596,144 616,146"/>
+</svg>

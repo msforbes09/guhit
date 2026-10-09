@@ -1,0 +1,20 @@
+{
+  "note": "Approved narration, word for word (text). 'say' is only what the voice engine reads: 'Guhit' is respelled so it is said goo-HEET. One audio file per id.",
+  "lines": [
+    { "id": "hook", "text": "What if every drawing had a friend inside?" },
+    { "id": "problem-a", "text": "Most AI imagines for kids." },
+    { "id": "problem-b", "text": "Guhit makes kids imagine.", "say": "Goo-heet makes kids imagine." },
+    { "id": "snap-a", "text": "Snap your drawing." },
+    { "id": "snap-b", "text": "Guhit cuts it out, and brings it to life.", "say": "Goo-heet cuts it out, and brings it to life." },
+    { "id": "moves", "text": "It moves like what it is." },
+    { "id": "guess", "text": "It even guesses what you drew." },
+    { "id": "talk", "text": "Hold to talk, and your friend talks back." },
+    { "id": "offline-a", "text": "No internet? Still works." },
+    { "id": "offline-b", "text": "All the AI runs right here, on the device." },
+    { "id": "offline-c", "text": "Nothing your child draws or says ever leaves it." },
+    { "id": "title-a", "text": "No cloud." },
+    { "id": "title-b", "text": "No account." },
+    { "id": "title-c", "text": "Just crayons." },
+    { "id": "end", "text": "Every drawing has a friend inside." }
+  ]
+}

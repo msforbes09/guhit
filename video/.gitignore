@@ -16,3 +16,12 @@ out/frames/
 footage/*.mp4
 footage/*.webm
 footage/*.mov
+
+# Review working files (the contact sheet and edit.json are kept)
+out/frames-*/
+out/stills/
+out/review-*.png
+out/.timeline.mjs
+
+# Music and sound effects are rebuilt exactly by `node audio/synth.mjs`
+public/audio/

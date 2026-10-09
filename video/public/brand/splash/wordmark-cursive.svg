@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="60 20 640 300" width="640" height="300">
+<title>guhit</title>
+<!-- #stroke is one path (pathLength=100) for stroke-dasharray draw-on; crayon-i and i-dot appear after. The connector passes behind the crayon. -->
+<path id="stroke" pathLength="100" fill="none" stroke="#1E1B2E" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" d="M175,135 C140,125 95,150 95,190 C95,225 130,235 165,215 C185,200 195,160 195,140 C198,200 200,260 185,285 C170,305 130,300 135,270 C150,245 215,200 235,150 C235,200 245,225 275,222 C300,220 312,185 312,150 L314,215 C318,225 335,225 350,205 C370,170 385,90 395,55 C405,25 380,30 378,70 C372,130 372,200 372,222 C375,180 400,140 425,150 C445,160 430,200 428,222 C435,232 460,224 480,222 L530,222 C550,222 555,200 560,170 L572,95 L585,200 C590,222 610,230 635,210 C655,195 668,160 650,152 C620,150 570,150 535,152"/>
+<g id="crayon-i">
+  <path d="M488,150 H522 V212 Q522,224 510,224 H500 Q488,224 488,212 Z" fill="#FFC21A"/>
+  <rect x="488" y="172" width="34" height="14" fill="#FFF8EE"/>
+  <path d="M488,150 L505,106 L522,150 Z" fill="#F26B3A" stroke="#F26B3A" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M500,118 L505,106 L510,118 Z" fill="#1E1B2E"/>
+</g>
+<circle id="i-dot" cx="505" cy="72" r="11" fill="#F26B3A"/>
+</svg>

@@ -1,0 +1,44 @@
+{
+  "name": "guhit-promo-video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Guhit 60-second promo video (Remotion). Self-contained: does not touch the app.",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "serve-app": "node capture/serve-app.mjs",
+    "capture:setup": "node capture/setup.ts --fresh",
+    "capture:hero": "node capture/hero.ts",
+    "capture:moves": "node capture/moves.ts",
+    "capture": "npm run capture:setup && npm run capture:hero && npm run capture:moves",
+    "assets": "node scripts/copy-assets.mjs",
+    "voice": "node --env-file-if-exists=.env scripts/voice.mjs",
+    "music": "node audio/synth.mjs",
+    "render:16x9": "remotion render src/index.ts Guhit16x9 out/guhit-60s-16x9.mp4 --codec=h264 --audio-codec=aac --crf=17",
+    "render:9x16": "remotion render src/index.ts Guhit9x16 out/guhit-60s-9x16.mp4 --codec=h264 --audio-codec=aac --crf=17",
+    "review:16x9": "node scripts/review.mjs 16x9",
+    "review:9x16": "node scripts/review.mjs 9x16",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/andika": "5.3.0",
+    "@fontsource/fredoka": "^5.3.0",
+    "@fontsource/grandstander": "5.3.0",
+    "@fontsource/nunito": "^5.3.0",
+    "@remotion/cli": "4.0.534",
+    "@remotion/media": "4.0.534",
+    "@remotion/paths": "4.0.534",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.534"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
+    "kokoro-js": "1.2.1",
+    "playwright": "1.64.0",
+    "typescript": "^5"
+  }
+}

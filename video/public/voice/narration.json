@@ -1,0 +1,95 @@
+{
+  "lines": {
+    "hook": {
+      "text": "What if every drawing had a friend inside?",
+      "engine": "kokoro",
+      "file": "voice/narration/hook.wav",
+      "seconds": 2.9
+    },
+    "problem-a": {
+      "text": "Most AI imagines for kids.",
+      "engine": "kokoro",
+      "file": "voice/narration/problem-a.wav",
+      "seconds": 2.6
+    },
+    "problem-b": {
+      "text": "Guhit makes kids imagine.",
+      "engine": "kokoro",
+      "file": "voice/narration/problem-b.wav",
+      "seconds": 2.45
+    },
+    "snap-a": {
+      "text": "Snap your drawing.",
+      "engine": "kokoro",
+      "file": "voice/narration/snap-a.wav",
+      "seconds": 1.8
+    },
+    "snap-b": {
+      "text": "Guhit cuts it out, and brings it to life.",
+      "engine": "kokoro",
+      "file": "voice/narration/snap-b.wav",
+      "seconds": 3.2
+    },
+    "moves": {
+      "text": "It moves like what it is.",
+      "engine": "kokoro",
+      "file": "voice/narration/moves.wav",
+      "seconds": 2.075
+    },
+    "guess": {
+      "text": "It even guesses what you drew.",
+      "engine": "kokoro",
+      "file": "voice/narration/guess.wav",
+      "seconds": 2.45
+    },
+    "talk": {
+      "text": "Hold to talk, and your friend talks back.",
+      "engine": "kokoro",
+      "file": "voice/narration/talk.wav",
+      "seconds": 2.9
+    },
+    "offline-a": {
+      "text": "No internet? Still works.",
+      "engine": "kokoro",
+      "file": "voice/narration/offline-a.wav",
+      "seconds": 2.325
+    },
+    "offline-b": {
+      "text": "All the AI runs right here, on the device.",
+      "engine": "kokoro",
+      "file": "voice/narration/offline-b.wav",
+      "seconds": 3.35
+    },
+    "offline-c": {
+      "text": "Nothing your child draws or says ever leaves it.",
+      "engine": "kokoro",
+      "file": "voice/narration/offline-c.wav",
+      "seconds": 3.525
+    },
+    "title-a": {
+      "text": "No cloud.",
+      "engine": "kokoro",
+      "file": "voice/narration/title-a.wav",
+      "seconds": 1.675
+    },
+    "title-b": {
+      "text": "No account.",
+      "engine": "kokoro",
+      "file": "voice/narration/title-b.wav",
+      "seconds": 1.7
+    },
+    "title-c": {
+      "text": "Just crayons.",
+      "engine": "kokoro",
+      "file": "voice/narration/title-c.wav",
+      "seconds": 1.7
+    },
+    "end": {
+      "text": "Every drawing has a friend inside.",
+      "engine": "kokoro",
+      "file": "voice/narration/end.wav",
+      "seconds": 2.6
+    }
+  },
+  "generatedAt": "2026-10-09T12:52:01.383Z"
+}
