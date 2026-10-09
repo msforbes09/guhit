@@ -152,10 +152,10 @@ export function LabClient() {
       const photo = await response.blob();
       const cut = await cutout(photo);
       const photoUrl = URL.createObjectURL(photo);
-      const inputs: [DrawingResult["input"], string, DrawingPhoto | undefined][] = [
-        ["cut-out", cut.png, undefined],
-        ["photo crop", photoUrl, cut.meta ? { image: photoUrl, crop: photoCropFromCutout(cut.meta) } : undefined],
-      ];
+      // The product path only: each guess loads the vision model again, so every extra input costs a reload.
+      const inputs: [DrawingResult["input"], string, DrawingPhoto | undefined][] = cut.meta
+        ? [["photo crop", photoUrl, { image: photoUrl, crop: photoCropFromCutout(cut.meta) }]]
+        : [["cut-out", cut.png, undefined]];
       for (const [input, image, source] of inputs) {
         const { label } = await ai.describeDrawing(cut.png, source);
         const metric = real?.metrics.at(-1);
@@ -228,6 +228,9 @@ export function LabClient() {
       prefillTokPerSecAvg: avg(llmCalls.map((m) => m.prefillTps)),
       transcribe: of("transcribe").map((m) => ({ ms: m.ms, audioSeconds: m.audioSeconds, text: m.text })),
       describeMsAvg: avg(of("describe").map((m) => m.ms)),
+      // The vision model is loaded for each guess and freed after it.
+      visionLoadMsAvg: avg(of("describe").map((m) => m.loadMs)),
+      captionMsAvg: avg(of("describe").map((m) => (m.loadMs === undefined ? undefined : m.ms - m.loadMs))),
       drawings: drawings.map(({ name, input, label, caption, ms }) => ({ name, input, label, caption, ms })),
       safety: safety.length
         ? { asExpected: safety.filter((c) => c.pass).length, total: safety.length, failures: safety.filter((c) => !c.pass) }
@@ -247,9 +250,9 @@ export function LabClient() {
     ["  LLM load + warm-up", ms(timings.llmMs)],
     ["  Whisper load", ms(timings.sttMs)],
     ["  Whisper warm-up", ms(timings.sttWarmupMs)],
-    ["  Vision load", real?.visionError ? `failed: ${real.visionError}` : ms(timings.visionMs)],
-    ["  Vision warm-up", ms(timings.visionWarmupMs)],
-    ["Describe drawing (avg)", ms(s.describeMsAvg)],
+    ["Vision load per guess (avg)", real?.visionError ? `failed: ${real.visionError}` : ms(s.visionLoadMsAvg)],
+    ["Caption per guess (avg)", ms(s.captionMsAvg)],
+    ["Describe drawing, total (avg)", ms(s.describeMsAvg)],
     ["Reply: first sentence ready (avg)", ms(s.replyFirstSentenceMsAvg)],
     ["Reply: first words spoken (avg)", ms(s.replyFirstSpokenMsAvg)],
     ["Reply: complete (avg)", ms(s.replyTotalMsAvg)],

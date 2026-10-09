@@ -41,7 +41,9 @@ caches its own files. The app asks the browser to keep this storage
 | Qwen3.5-2B / Qwen3.5-0.8B (MLC builds) | Alternatives, only when chosen in `/lab` | Apache-2.0 (Qwen) | huggingface.co/Qwen, huggingface.co/mlc-ai |
 | Whisper base.en (ONNX, ~207 MB on WebGPU / ~77 MB on CPU) | Speech to text, English | Apache-2.0 (model card); OpenAI Whisper code is MIT | huggingface.co/openai/whisper-base.en, ONNX build huggingface.co/onnx-community/whisper-base.en |
 | Whisper tiny.en (ONNX) | Alternative, only when chosen in `/lab` | Apache-2.0 (model card) | huggingface.co/onnx-community/whisper-tiny.en |
-| Florence-2-base-ft (ONNX, 4-bit vision encoder, encoder and decoder, 8-bit embeddings, ~217 MB) | Guessing what the child drew ("Is that a purple dragon?"); the drawing itself is never changed | MIT (Microsoft) | huggingface.co/microsoft/Florence-2-base-ft, ONNX build huggingface.co/onnx-community/Florence-2-base-ft |
+| Florence-2-large-ft (ONNX, 4-bit vision encoder, encoder and decoder, 8-bit embeddings, ~635 MB) | Guessing what the child drew on laptops ("Is that a purple dragon?"); the drawing itself is never changed | MIT (Microsoft) | huggingface.co/microsoft/Florence-2-large-ft, ONNX build huggingface.co/onnx-community/Florence-2-large-ft |
+| Florence-2-base-ft (same precisions, ~217 MB) | The same on phones | MIT (Microsoft) | huggingface.co/microsoft/Florence-2-base-ft, ONNX build huggingface.co/onnx-community/Florence-2-base-ft |
+| SmolVLM-256M-Instruct (ONNX, ~182 MB) | Only when chosen in `/lab` (compared, not used) | Apache-2.0 (Hugging Face) | huggingface.co/HuggingFaceTB/SmolVLM-256M-Instruct |
 | Kokoro-82M v1.0 (ONNX, full precision ~326 MB on WebGPU; 8-bit ~92 MB on CPU) | The narrator and character voices | Apache-2.0 (weights and voices; hexgrad) | huggingface.co/hexgrad/Kokoro-82M, ONNX build huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX |
 
 Models considered and **not** used because their licences are not permissive

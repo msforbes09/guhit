@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Andika, Grandstander } from "next/font/google";
+import { EarlyWake } from "@/components/kid/EarlyWake";
 import { Splash } from "@/components/kid/Splash";
 import pkg from "../../package.json";
 import "./globals.css";
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </svg>
         {children}
         <Splash version={pkg.version} />
+        <EarlyWake />
         <ServiceWorkerRegister />
       </body>
     </html>

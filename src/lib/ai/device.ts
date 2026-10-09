@@ -14,6 +14,8 @@ export interface ModelChoice {
   sttDevice: STTDevice;
   vision: string;
   visionDevice: STTDevice;
+  /** Florence-2 caption task; "?visionTask=detailed|more" lets /lab compare the longer ones. */
+  visionTask: string;
   /** Where model files come from: null for Hugging Face, or this site's own /models mirror. */
   modelHost: string | null;
 }
@@ -103,11 +105,20 @@ export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
   const deviceOverride = params.get("sttDevice");
   if (deviceOverride === "wasm" || deviceOverride === "webgpu") sttDevice = deviceOverride;
 
-  let vision = VISION_MODELS[0].id;
+  // Florence-2 large named every test drawing right (base called Tala "a purple
+  // cat"); phones keep base for memory and download size.
+  let vision = support.mobile ? "onnx-community/Florence-2-base-ft" : "onnx-community/Florence-2-large-ft";
   const visionOverride = params.get("vision");
   if (visionOverride && VISION_MODELS.some((m) => m.id === visionOverride)) vision = visionOverride;
   const visionDevice: STTDevice = support.webgpu && params.get("visionDevice") !== "wasm" ? "webgpu" : "wasm";
 
+  const tasks: Record<string, string> = {
+    caption: "<CAPTION>",
+    detailed: "<DETAILED_CAPTION>",
+    more: "<MORE_DETAILED_CAPTION>",
+  };
+  const visionTask = tasks[params.get("visionTask") ?? ""] ?? tasks.caption;
+
   const modelHost = wantsLocalMirror(params) ? `${window.location.origin}/models` : null;
-  return { llm, stt, sttDevice, vision, visionDevice, modelHost };
+  return { llm, stt, sttDevice, vision, visionDevice, visionTask, modelHost };
 }
