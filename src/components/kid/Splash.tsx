@@ -95,6 +95,25 @@ function Crayon() {
   );
 }
 
+/** The maker's mark (Kaya Randomized mark A), inline so it is there offline, with a crayon's rough edge. */
+function KayaMark() {
+  return (
+    <svg viewBox="0 0 1024 1024" role="img" aria-label="Kaya Randomized" className="-m-[7px] block h-10 w-10 shrink-0">
+      <defs>
+        <filter id="kaya-crayon" x="-10%" y="-10%" width="120%" height="120%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="2" seed="3" />
+          <feDisplacementMap in="SourceGraphic" scale="28" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+      <g fill="none" strokeWidth={116} strokeLinecap="round" filter="url(#kaya-crayon)">
+        <path d="M340 260V764" stroke="#8fa8ff" />
+        <path d="M372 540L690 262" stroke="#8fa8ff" />
+        <path d="M540 500L712 764" stroke="#ff9f7a" />
+      </g>
+    </svg>
+  );
+}
+
 /**
  * Cold-load splash: a crayon writes the printed "guhit" letter by letter,
  * hops into the i's place and stays there as the logo's i, then the creature
@@ -120,7 +139,7 @@ export function Splash({ version }: { version: string }) {
   const smile = useRef<SVGPathElement>(null);
   const rays = useRef<(SVGLineElement | null)[]>([]);
   const tagline = useRef<HTMLParagraphElement>(null);
-  const footer = useRef<HTMLParagraphElement>(null);
+  const footer = useRef<HTMLDivElement>(null);
   const skipAt = useRef<number | null>(null);
   const clock = useRef(0);
 
@@ -415,9 +434,21 @@ export function Splash({ version }: { version: string }) {
         >
           Every drawing has a friend inside.
         </p>
-        <p ref={footer} className="absolute inset-x-0 bottom-[max(1.4rem,env(safe-area-inset-bottom))] text-center text-xs text-[#1e1b2e]/60" style={{ opacity: 0 }}>
-          v{version} · © 2026 Kaya Randomized
-        </p>
+        <div
+          ref={footer}
+          className="absolute inset-x-0 bottom-[max(1.1rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-0.5 text-[#1e1b2e]"
+          style={{ opacity: 0 }}
+        >
+          {/* The maker's logo, as on the promo video's maker card: mark A beside the wordmark. */}
+          <div className="flex items-center gap-1.5 opacity-85">
+            <span className="text-xs opacity-60">by</span>
+            <KayaMark />
+            <span className="font-[family-name:var(--font-fredoka)] text-[17px] leading-none font-semibold tracking-[-0.01em]">
+              Kaya Randomized
+            </span>
+          </div>
+          <p className="text-[11px] opacity-50">v{version} · © 2026</p>
+        </div>
       </div>
       {/* If the script never runs, the splash still gets out of the way. */}
       <style href="splash-safety" precedence="default">

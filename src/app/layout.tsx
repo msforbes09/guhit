@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Andika, Grandstander } from "next/font/google";
+import { Andika, Fredoka, Grandstander } from "next/font/google";
 import Script from "next/script";
 import { EarlyWake } from "@/components/kid/EarlyWake";
 import { SoundUnlock } from "@/components/kid/SoundToggle";
@@ -25,6 +25,15 @@ const andika = Andika({
   variable: "--font-andika",
   subsets: ["latin"],
   weight: ["400", "700"],
+});
+
+// The maker's wordmark face (Kaya Randomized), only on the splash credit, so it
+// is not preloaded ahead of the app's own type.
+const fredoka = Fredoka({
+  variable: "--font-fredoka",
+  subsets: ["latin"],
+  weight: "600",
+  preload: false,
 });
 
 const TITLE = "Guhit — Every drawing has a friend inside.";
@@ -79,7 +88,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${grandstander.variable} ${andika.variable} h-full antialiased`}>
+    <html lang="en" className={`${grandstander.variable} ${andika.variable} ${fredoka.variable} h-full antialiased`}>
       <body className="min-h-dvh flex flex-col">
         {/* Before Next starts: an offline restore of another history entry must not loop (history-guard.ts). */}
         <Script id="guhit-history-guard" strategy="beforeInteractive">
