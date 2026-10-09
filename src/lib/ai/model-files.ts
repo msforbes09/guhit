@@ -29,6 +29,18 @@ export const onnxFile = (part: string, dtype: string) => {
 };
 
 /** `remoteHost` as Transformers.js has it: "https://huggingface.co/" or the mirror's "<origin>/models/". */
+/**
+ * The JSON files Transformers.js reads to start each kind of model (config,
+ * tokenizer, pre-processing). A download that saved only the ONNX files
+ * (Chrome's background download) left a model that started online but not
+ * offline: the eyes could not guess with Wi-Fi off.
+ */
+export const MODEL_JSON: Partial<Record<Stage, string[]>> = {
+  vision: ["config.json", "generation_config.json", "preprocessor_config.json", "tokenizer.json", "tokenizer_config.json"],
+  stt: ["config.json", "generation_config.json", "preprocessor_config.json", "tokenizer.json", "tokenizer_config.json"],
+  llm: ["config.json", "generation_config.json", "tokenizer.json", "tokenizer_config.json"],
+};
+
 export function transformersFiles(
   stage: Stage,
   modelId: string,
@@ -36,11 +48,11 @@ export function transformersFiles(
   remoteHost: string,
 ): ModelFile[] {
   const base = `${remoteHost.replace(/\/?$/, "/")}${modelId}/resolve/main/`;
-  return Object.entries(dtype).map(([part, precision]) => ({
-    stage,
-    cache: "transformers-cache",
-    key: `${base}${onnxFile(part, precision)}`,
-  }));
+  const file = (path: string): ModelFile => ({ stage, cache: "transformers-cache", key: `${base}${path}` });
+  return [
+    ...(MODEL_JSON[stage] ?? []).map(file),
+    ...Object.entries(dtype).map(([part, precision]) => file(onnxFile(part, precision))),
+  ];
 }
 
 export interface TensorCacheIndex {
@@ -98,8 +110,9 @@ export async function listModelFiles(
 
   const cpu = findLLM(choice.llm)?.cpu;
   if (cpu) {
-    const [graph] = transformersFiles("llm", choice.llm, { [cpu.file]: cpu.dtype }, host);
-    files.push(graph);
+    const llmFiles = transformersFiles("llm", choice.llm, { [cpu.file]: cpu.dtype }, host);
+    const graph = llmFiles.at(-1)!;
+    files.push(...llmFiles);
     // Its weights, split into files as Transformers.js names them.
     for (let i = 0; i < cpu.dataFiles; i++) files.push({ ...graph, key: `${graph.key}_data${i ? `_${i}` : ""}` });
   } else {

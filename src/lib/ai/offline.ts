@@ -1,4 +1,4 @@
-import { onnxFile } from "./model-files";
+import { MODEL_JSON, onnxFile } from "./model-files";
 import { findLLM, findVision, STT_DTYPES, type STTDevice } from "./models";
 
 /** Set once every model is on the device; kid screens only auto-load when it is present. */
@@ -73,7 +73,7 @@ export async function storageUsage(): Promise<{ usage: number; quota: number } |
 
 export async function isLLMCached(modelId: string, modelHost: string | null): Promise<boolean> {
   const cpu = findLLM(modelId)?.cpu;
-  if (cpu) return isTransformersModelCached(modelId, { [cpu.file]: cpu.dtype });
+  if (cpu) return isTransformersModelCached(modelId, { [cpu.file]: cpu.dtype }, MODEL_JSON.llm);
   try {
     const [{ hasModelInCache }, { appConfigFor }] = await Promise.all([import("@mlc-ai/web-llm"), import("./llm")]);
     return await hasModelInCache(modelId, appConfigFor(modelId, modelHost));
@@ -85,14 +85,23 @@ export async function isLLMCached(modelId: string, modelHost: string | null): Pr
 /** Transformers.js keeps downloaded model files in this Cache Storage bucket. */
 const TRANSFORMERS_CACHE = "transformers-cache";
 
-/** True when every ONNX file of the given precisions is already in Transformers.js's cache. */
-export async function isTransformersModelCached(modelId: string, dtype: Record<string, string>): Promise<boolean> {
+/**
+ * True when every ONNX file of the given precisions, and the JSON files the
+ * model starts with, are already in Transformers.js's cache: all it needs
+ * to start offline.
+ */
+export async function isTransformersModelCached(
+  modelId: string,
+  dtype: Record<string, string>,
+  json: string[] = [],
+): Promise<boolean> {
   if (typeof caches === "undefined") return false;
   try {
     const cache = await caches.open(TRANSFORMERS_CACHE);
-    const keys = (await cache.keys()).map((r) => r.url);
-    return Object.entries(dtype).every(([part, precision]) =>
-      keys.some((url) => url.includes(modelId) && url.endsWith(onnxFile(part, precision))),
+    const keys = (await cache.keys()).map((r) => r.url).filter((url) => url.includes(`${modelId}/`));
+    return (
+      Object.entries(dtype).every(([part, precision]) => keys.some((url) => url.endsWith(onnxFile(part, precision)))) &&
+      json.every((name) => keys.some((url) => url.endsWith(`/${name}`)))
     );
   } catch {
     return false;
@@ -100,7 +109,7 @@ export async function isTransformersModelCached(modelId: string, dtype: Record<s
 }
 
 export const isSTTCached = (modelId: string, device: STTDevice) =>
-  isTransformersModelCached(modelId, STT_DTYPES[device]);
+  isTransformersModelCached(modelId, STT_DTYPES[device], MODEL_JSON.stt);
 
 export const isVisionCached = (modelId: string) =>
-  isTransformersModelCached(modelId, findVision(modelId)?.dtype ?? {});
+  isTransformersModelCached(modelId, findVision(modelId)?.dtype ?? {}, MODEL_JSON.vision);
