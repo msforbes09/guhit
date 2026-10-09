@@ -4,6 +4,7 @@
 //
 //   npm run serve            (port 3101)
 //   PORT=4000 npm run serve
+//   ISOLATE=1 npm run serve  (cross-origin isolated: ONNX Runtime may use several CPU threads)
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize, sep } from "node:path";
@@ -12,6 +13,10 @@ const root = process.cwd();
 const out = join(root, "out");
 const mirror = join(root, "mirror", "models");
 const port = Number(process.env.PORT ?? 3101);
+const isolation =
+  process.env.ISOLATE === "1"
+    ? { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" }
+    : {};
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -61,6 +66,7 @@ createServer((request, response) => {
     "Content-Type": TYPES[extname(file)] ?? "application/octet-stream",
     "Content-Length": statSync(file).size,
     "Cache-Control": urlPath === "/sw.js" || urlPath === "/precache-manifest.json" ? "no-cache" : "public, max-age=0",
+    ...isolation,
   };
   response.writeHead(found ? 200 : 404, headers);
   // HEAD requests get the headers only.
