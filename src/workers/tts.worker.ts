@@ -1,6 +1,6 @@
 import { AutoTokenizer, env, StyleTextToSpeech2Model, Tensor } from "@huggingface/transformers";
 import { phonemize } from "@/lib/ai/voice/phonemize";
-import { findVoice, KOKORO, VOICE_CACHE, type KokoroDtype, type TTSDevice } from "@/lib/ai/voice/voices";
+import { findVoice, KOKORO, kokoroFiles, VOICE_CACHE, type KokoroDtype, type TTSDevice } from "@/lib/ai/voice/voices";
 import type { ModelSource } from "@/lib/ai/model-fetch";
 import { configureTransformers, type FileProgress } from "./ort-env";
 
@@ -98,19 +98,18 @@ async function voiceIt(phonemes: string, voice: string, speed: number): Promise<
 const synthesize = async (text: string, voice: string, speed: number) =>
   voiceIt(await toPhonemes(text, voice), voice, speed);
 
+const LONG_LINE = "Once upon a time, a little dragon lived in a castle on a cloud, and she loved pancakes.";
+
 /**
  * WebGPU compiles kernels for each new input size, so its warm-up says a
- * short, a medium and a long line, and the last run gives the speed. The CPU
- * has nothing to compile: one short line, then a timed one decides whether
- * this device is fast enough at all.
+ * short, a medium and a long line; the long line is said twice and the
+ * faster run gives the speed (other models starting on the same GPU can slow
+ * one run down). The CPU has nothing to compile: one short line, then a timed
+ * one decides whether this device is fast enough at all.
  */
-const WARMUPS: Record<TTSDevice, string[]> = {
-  webgpu: [
-    "Hi!",
-    "Hello there! Let's make a story together.",
-    "Once upon a time, a little dragon lived in a castle on a cloud, and she loved pancakes.",
-  ],
-  wasm: ["Hi!", "Hello there! Let's make a story together."],
+const WARMUPS: Record<TTSDevice, { lines: string[]; timed: number }> = {
+  webgpu: { lines: ["Hi!", "Hello there! Let's make a story together.", LONG_LINE, LONG_LINE], timed: 2 },
+  wasm: { lines: ["Hi!", "Hello there! Let's make a story together."], timed: 1 },
 };
 
 async function load(request: Extract<TTSRequest, { type: "load" }>) {
@@ -120,10 +119,13 @@ async function load(request: Extract<TTSRequest, { type: "load" }>) {
       post({ type: "progress", file: p.file, loaded: p.loaded ?? 0, total: p.total ?? 0 });
     }
   };
+  const { name, dataFiles } = kokoroFiles(request.dtype);
   const [loadedModel, loadedTokenizer] = await Promise.all([
     StyleTextToSpeech2Model.from_pretrained(KOKORO.id, {
       device: request.device,
       dtype: request.dtype,
+      model_file_name: name,
+      use_external_data_format: dataFiles || undefined,
       progress_callback,
     }),
     AutoTokenizer.from_pretrained(KOKORO.id, { progress_callback }),
@@ -132,11 +134,13 @@ async function load(request: Extract<TTSRequest, { type: "load" }>) {
   model = loadedModel as unknown as Synthesizer;
   tokenizer = loadedTokenizer as unknown as Tokenizer;
   const started = performance.now();
-  let rtf = Number.NaN;
-  for (const line of WARMUPS[request.device]) {
-    const timed = performance.now();
+  const { lines, timed } = WARMUPS[request.device];
+  let rtf = Number.POSITIVE_INFINITY;
+  for (const [index, line] of lines.entries()) {
+    const at = performance.now();
     const audio = await synthesize(line, request.voices[0], 1);
-    rtf = (performance.now() - timed) / 1000 / (audio.length / KOKORO.sampleRate);
+    const run = (performance.now() - at) / 1000 / (audio.length / KOKORO.sampleRate);
+    if (index >= lines.length - timed) rtf = Math.min(rtf, run);
   }
   post({ type: "ready", warmupMs: performance.now() - started, rtf });
 }

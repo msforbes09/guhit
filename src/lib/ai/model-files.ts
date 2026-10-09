@@ -7,7 +7,7 @@ import type { ModelChoice } from "./device";
 import { createModelFetch, r2Url, type ModelSource } from "./model-fetch";
 import { findLLM, findVision, STT_DTYPES } from "./models";
 import type { LoadProgress, Part } from "./types";
-import { KOKORO, VOICE_CACHE, type KokoroDtype } from "./voice/voices";
+import { KOKORO, kokoroFiles, VOICE_CACHE, type KokoroDtype } from "./voice/voices";
 
 type Stage = LoadProgress["stage"];
 
@@ -117,7 +117,10 @@ export async function listModelFiles(
   files.push(...transformersFiles("vision", choice.vision, findVision(choice.vision)?.dtype ?? {}, host));
   const cutout = `${HUGGING_FACE}${CUTOUT_MODEL.id}/resolve/${CUTOUT_MODEL.revision}/`;
   for (const file of CUTOUT_FILES) files.push({ stage: "vision", cache: "transformers-cache", key: cutout + file });
-  files.push(...transformersFiles("tts", KOKORO.id, { model: tts.dtype }, host));
+  // Full precision comes as a graph plus weight files, each under R2's 300 MB limit.
+  for (const path of kokoroFiles(tts.dtype).paths) {
+    files.push({ stage: "tts", cache: "transformers-cache", key: `${host}${KOKORO.id}/resolve/main/${path}` });
+  }
   for (const voice of tts.voices) {
     files.push({ stage: "tts", cache: VOICE_CACHE, key: `${host}${KOKORO.id}/resolve/main/voices/${voice}.bin` });
   }

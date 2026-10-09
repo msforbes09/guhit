@@ -58,11 +58,14 @@ const onnxRepos = [
     revision: "71eff2372ec9c8edbc6ca637ded591423d23b65a",
     onnx: ["onnx/model_quantized.onnx"],
   },
-  // Kokoro voice (src/lib/ai/voice/voices.ts): the 8-bit file on every device,
-  // and only the voices the app offers (PRELOADED_VOICES).
+  // Kokoro voice (src/lib/ai/voice/voices.ts): the 8-bit file for the CPU, and
+  // only the voices the app offers (PRELOADED_VOICES). Laptops with WebGPU run
+  // the full-precision file, whose 325 MB is over R2's limit: it is split like
+  // the CPU story helper's.
   {
     repo: "onnx-community/Kokoro-82M-v1.0-ONNX",
     onnx: ["onnx/model_quantized.onnx"],
+    split: { file: "onnx/model.onnx", into: "onnx/model_chunked.onnx" },
     voices: ["af_heart", "af_bella", "af_nicole", "af_aoede", "af_kore", "af_sarah", "af_nova", "af_sky", "bf_emma"],
   },
 ];

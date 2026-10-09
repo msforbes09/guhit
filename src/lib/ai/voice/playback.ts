@@ -20,7 +20,7 @@ export interface SpeechPlayback {
 
 /** Timing of one spoken sentence, for /lab. */
 export interface SentenceMetric {
-  engine: "kokoro" | "builtin";
+  engine: "kokoro" | "builtin" | "babble";
   role: VoiceRole;
   voice: string;
   device?: TTSDevice;
@@ -37,7 +37,7 @@ export interface SentenceMetric {
   rtf?: number;
   /** From the sentence being handed to the voice to its sound reaching the speakers. */
   firstAudioMs?: number;
-  /** Set when this sentence went to the built-in voice instead. */
+  /** Set when this sentence went to the built-in voice (or the babble) instead, in words a parent may read. */
   fallback?: string;
 }
 
@@ -56,7 +56,7 @@ export interface NeuralHost {
   timedOut(reason: string): void;
   /** A sentence came back in time (resets the run of timeouts). */
   succeeded(): void;
-  /** A built-in voice message, for the sentences the neural voice cannot say. */
+  /** A message without the neural voice (device voice or babble), for the sentences it cannot say. */
   builtin(role: VoiceRole, notifyStart: boolean, reason: string): SpeechPlayback;
   metric(metric: SentenceMetric): void;
 }
@@ -90,6 +90,8 @@ export function splitOpening(sentence: string): [string, string] | null {
   }
   return null;
 }
+
+const SLOW_SENTENCE = "the storytelling voice was too slow for a moment";
 
 /** A sentence that took too long: worth retrying later, unlike a real failure. */
 class SpeechTimeout extends Error {}
@@ -218,7 +220,8 @@ export class NeuralPlayback implements SpeechPlayback {
       result = await withTimeout(job, host.timeoutMs, `took over ${host.timeoutMs / 1000} s`);
     } catch (error) {
       if (this.cancelled) return;
-      const reason = error instanceof Error ? error.message : String(error);
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn(`[voice] Kokoro sentence ${detail}`);
       // For /lab: how late the sentence really was.
       void job.then((late) =>
         host.metric({
@@ -235,16 +238,18 @@ export class NeuralPlayback implements SpeechPlayback {
           fallback: "arrived too late, not played",
         }),
       );
+      const reason =
+        error instanceof SpeechTimeout ? SLOW_SENTENCE : "the storytelling voice stopped working";
       if (error instanceof SpeechTimeout) {
         // Slow, not broken (often a cold GPU right after load): the rest of this
         // message goes to the built-in voice, and the next message tries Kokoro again.
         this.failed = true;
         host.kokoro.cancelPending();
-        host.timedOut(`Kokoro ${reason}`);
+        host.timedOut(reason);
       } else {
-        this.fail(`Kokoro ${reason}`);
+        this.fail(reason);
       }
-      return this.handOver(sentence, `Kokoro ${reason}`);
+      return this.handOver(sentence, reason);
     }
     if (this.cancelled) return;
     host.succeeded();
@@ -255,11 +260,12 @@ export class NeuralPlayback implements SpeechPlayback {
     const rtf = (result.g2pMs + result.modelMs) / 1000 / audioSeconds;
     // Too slow for this device: say this sentence (it is ready), then switch.
     if (host.maxRtf !== null && rtf > host.maxRtf && audioSeconds > 1) {
-      this.fail(`Kokoro too slow here (real-time factor ${rtf.toFixed(2)})`);
+      console.warn(`[voice] Kokoro too slow here (real-time factor ${rtf.toFixed(2)})`);
+      this.fail("the storytelling voice is too slow on this device");
     }
     if (!(await host.out.resume())) {
       // The page has had no tap yet, so Web Audio may not play.
-      return this.handOver(sentence, "audio blocked until a tap");
+      return this.handOver(sentence, "sound waits for a tap on the screen");
     }
     if (this.cancelled) return;
 
@@ -310,7 +316,7 @@ export class NeuralPlayback implements SpeechPlayback {
   }
 
   /** The rest of this message goes to the built-in voice, once the neural audio already queued has played. */
-  private handOver(sentence: string, reason = "neural voice off") {
+  private handOver(sentence: string, reason = "the storytelling voice is off") {
     this.failed = true;
     if (!this.builtin) {
       const waitMs = Math.max(0, (this.scheduledEnd - this.host.out.ctx.currentTime) * 1000);
