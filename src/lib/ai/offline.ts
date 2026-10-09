@@ -73,7 +73,7 @@ export async function storageUsage(): Promise<{ usage: number; quota: number } |
 
 export async function isLLMCached(modelId: string, modelHost: string | null): Promise<boolean> {
   const cpu = findLLM(modelId)?.cpu;
-  if (cpu) return isTransformersModelCached(modelId, { model: cpu.dtype });
+  if (cpu) return isTransformersModelCached(modelId, { [cpu.file]: cpu.dtype });
   try {
     const [{ hasModelInCache }, { appConfigFor }] = await Promise.all([import("@mlc-ai/web-llm"), import("./llm")]);
     return await hasModelInCache(modelId, appConfigFor(modelId, modelHost));

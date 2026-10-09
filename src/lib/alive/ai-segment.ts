@@ -34,15 +34,15 @@ interface ProgressInfo {
 export function loadSegmenter(onProgress?: (text: string) => void): Promise<Segmenter> {
   if (!loading) {
     loading = (async () => {
-      const tf = await import("@huggingface/transformers");
-      tf.env.allowLocalModels = false;
-      // Same ONNX Runtime copy as speech recognition (/public/ort, cached by the
-      // service worker), so the device stores it once and never asks a CDN.
-      const ortBase = new URL("/ort/", self.location.origin).href;
-      tf.env.backends.onnx.wasm!.wasmPaths = {
-        wasm: `${ortBase}ort-wasm-simd-threaded.asyncify.wasm`,
-        mjs: `${ortBase}ort-wasm-simd-threaded.asyncify.mjs`,
-      };
+      const [tf, { configureTransformers }] = await Promise.all([
+        import("@huggingface/transformers"),
+        import("@/workers/ort-env"),
+      ]);
+      // Same ONNX Runtime copy as speech recognition (/ort, shipped gzipped and
+      // inflated in ort-env; cached by the service worker), so the device stores
+      // it once and never asks a CDN. The model comes from Guhit's R2 copy, with
+      // Hugging Face as the fallback, under the same cache keys as before.
+      await configureTransformers(null, "r2");
       const progress_callback = (p: ProgressInfo) => {
         if (p.status === "progress" && p.file?.endsWith(".onnx")) {
           onProgress?.(`Downloading the AI model… ${Math.round(p.progress ?? 0)}%`);

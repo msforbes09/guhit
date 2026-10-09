@@ -69,13 +69,19 @@ const PART_INFO: Record<Part, { label: string; detail: string }> = {
   eyes: { label: "Seeing eyes", detail: "Needed for Guhit to see the drawing: it guesses what your child drew." },
   voice: {
     label: "Storytelling voice",
-    detail: "A warm voice that reads everything aloud. Without it, the device's own voice speaks.",
+    detail: "A warm voice that reads everything aloud. Without it, your drawings talk in playful 8-bit sounds.",
   },
   talk: {
     label: "Talking",
     detail: "Listening ears and a story helper, so your child can talk with their drawings and make stories.",
   },
 };
+
+/** "Seeing eyes", "Seeing eyes and Talking", "Seeing eyes, Storytelling voice and Talking". */
+function namesOf(parts: Part[]): string {
+  const names = parts.map((part) => PART_INFO[part].label);
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
 
 const STAGE_LABEL: Record<Stage, string> = {
   vision: "Seeing eyes",
@@ -215,6 +221,8 @@ export function SetupClient() {
   /** The parts ticked on screen, and the parts already on this device. */
   const [selected, setSelected] = useState<Part[]>([...REQUIRED_PARTS]);
   const [installed, setInstalled] = useState<Part[]>([]);
+  /** What suits this device's memory: shown as a hint, never ticked for the parent. */
+  const [recommended, setRecommended] = useState<Part[]>([]);
 
   // A parent who follows the install tip gets the storage protection asked for again.
   useEffect(() => {
@@ -302,16 +310,21 @@ export function SetupClient() {
       const onDevice = installedParts();
       setInstalled(onDevice);
       const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-      setSelected(chosenParts() ?? (onDevice.length ? onDevice : recommendParts({ ...found, deviceMemory: memory })));
+      setRecommended(recommendParts({ ...found, deviceMemory: memory }));
+      // Optional parts start unticked: downloading them is the parent's choice.
+      const chosen = chosenParts();
+      setSelected(chosen ?? (onDevice.length ? onDevice : [...REQUIRED_PARTS]));
       // Every page wakes the parts on the device (EarlyWake), so on a revisit
       // they are already awake or waking: show that, not a button.
       const status = getAI().status();
+      const allOnDevice = chosen !== null && chosen.every((part) => onDevice.includes(part));
       if (status === "ready" && !isSetupInProgress()) {
         setAlreadyLoaded(true);
         setPhase("ready");
-      } else if (status === "loading" || isSetupInProgress() || (onDevice.length > 0 && chosenParts() !== null)) {
-        // Joins (or starts) the same wake-up EarlyWake does; each part loads only once.
-        // An interrupted first download (app closed, phone slept) carries on by itself.
+      } else if (status === "loading" || isSetupInProgress() || allOnDevice) {
+        // Nothing downloads before the parent's tap: this only joins the same
+        // wake-up EarlyWake does, or carries on a download the parent started
+        // and the device interrupted (app closed, phone slept).
         void getReady();
       } else {
         setPhase("idle");
@@ -338,6 +351,8 @@ export function SetupClient() {
   );
   const changed = PARTS.some((part) => selected.includes(part) !== installed.includes(part));
   const removing = installed.filter((part) => !selected.includes(part));
+  /** Ticked parts not on the device yet: what the button downloads. */
+  const adding = selected.filter((part) => !installed.includes(part));
   const friendly = phase === "error" && error ? explainLoadError(error) : null;
   const awake = useScreenAwake(phase === "loading");
   const iPhone = typeof navigator !== "undefined" && isAppleMobile();
@@ -486,6 +501,9 @@ export function SetupClient() {
                       </span>
                       <span className="text-sm text-stone-600">{info.detail}</span>
                       {required && <span className="text-xs font-semibold text-stone-500">Always included</span>}
+                      {!required && recommended.includes(part) && !installed.includes(part) && (
+                        <span className="text-xs font-semibold text-green-800">Recommended for this device</span>
+                      )}
                       {leaving && (
                         <span className="text-sm font-semibold text-amber-800">
                           Will be removed from this device, freeing about {size(partBytes(part))}.
@@ -570,12 +588,10 @@ export function SetupClient() {
             >
               {friendly
                 ? friendly.button
-                : phase === "ready"
-                  ? selected.some((part) => !installed.includes(part))
-                    ? "Get the added parts"
-                    : "Save changes"
-                  : toDownload > 0
-                    ? "Get Guhit ready"
+                : adding.length > 0 && toDownload > 0
+                  ? `Get ${namesOf(adding)} · ${size(toDownload)}`
+                  : phase === "ready"
+                    ? "Save changes"
                     : "Start Guhit"}
             </button>
           )}
