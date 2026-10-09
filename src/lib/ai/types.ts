@@ -52,8 +52,8 @@ export interface DrawingPhoto {
   crop: PixelRect;
 }
 
-/** The parts a parent sets up: "eyes" (always), "voice" and "talk" (ears + story helper). */
-export type Part = "eyes" | "voice" | "talk";
+/** The parts a parent sets up: "eyes" (always), then "voice", "ears" and "story" (the story helper). */
+export type Part = "eyes" | "voice" | "ears" | "story";
 /** A part's state; "not-installed" when it was not chosen at setup (or was removed). */
 export type PartStatus = AIStatus | "not-installed";
 

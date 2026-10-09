@@ -246,8 +246,13 @@ async function handlePage(request) {
  * URL ("#params=…", or "?params=" for shared workers); a response carrying its
  * own URL drops that, and the worker fails with "Missing worker bootstrap config".
  */
-const asRequested = (response) =>
-  new Response(response.body, { status: response.status, statusText: response.statusText, headers: response.headers });
+const asRequested = (response) => {
+  // The page is cross-origin isolated, so a worker starts only if its own script
+  // says so too; copies cached before the site was isolated lack the header.
+  const headers = new Headers(response.headers);
+  headers.set("Cross-Origin-Embedder-Policy", "require-corp");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+};
 
 async function looseMatch(cache, request) {
   const cached = await cache.match(request, { ignoreSearch: true });
