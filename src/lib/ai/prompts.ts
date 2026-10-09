@@ -1,3 +1,4 @@
+import type { Kind } from "@/lib/story/kind";
 import type { Character, Story } from "@/lib/story/types";
 import type { ChatTurn } from "./types";
 
@@ -18,6 +19,34 @@ function describe(character: Character): string {
   return description ? `${character.name}, ${description}` : character.name;
 }
 
+/**
+ * One line so a drawn car talks about trips rather than its hands, and a
+ * flower stays rooted. Creatures and other things need no hint.
+ */
+const KIND_SELF: Partial<Record<Kind, string>> = {
+  vehicle: "You are a vehicle: you love roads, trips, honking and your fuel snacks. You have no legs or hands.",
+  plant: "You are a plant: you love sunshine, rain, your roots, growing and the bees that visit. You cannot walk.",
+  flyer: "You can fly: you love the sky, the clouds and the wind.",
+  swimmer: "You swim: you love the water, the waves and bubbles.",
+};
+
+/** The same hint for the storyteller, so questions and pages fit what the character is. */
+function kindForStory(character: Character): string {
+  const name = character.name;
+  switch (character.kind) {
+    case "vehicle":
+      return `${name} is a vehicle: it goes on roads and trips, honks and has fuel snacks; it has no legs or hands.`;
+    case "plant":
+      return `${name} is a plant: it loves sun and rain, has roots, grows and gets visits from bees; it cannot walk.`;
+    case "flyer":
+      return `${name} flies: its world is the sky, the clouds and the wind.`;
+    case "swimmer":
+      return `${name} swims: its world is the water, the waves and bubbles.`;
+    default:
+      return "";
+  }
+}
+
 function storySoFar(story: Story): string {
   const pages = story.pages.slice(-MAX_STORY_PAGES).map((p) => p.text.trim()).filter(Boolean);
   return pages.length ? pages.join("\n") : "(nothing yet)";
@@ -28,6 +57,7 @@ export function replyMessages(character: Character, history: ChatTurn[], childSa
   const description = character.description.trim().replace(/[.!?]+$/, "");
   const system = [
     `You are ${name}${description ? `, ${description}` : ""}. A child drew you, and now you are talking with that child.`,
+    ...(character.kind && KIND_SELF[character.kind] ? [KIND_SELF[character.kind]] : []),
     "The child is 5 to 10 years old.",
     `Talk as ${name}, in first person. Reply in 1 or 2 short, simple sentences of under 12 words each.`,
     "Answer what the child just said, plainly and literally. Say one idea per reply.",
@@ -81,7 +111,9 @@ export function firstQuestionMessages(character: Character): Message[] {
     { role: "system", content: INTERVIEWER },
     {
       role: "user",
-      content: `The character is ${describe(character)}.\nAsk your first question about ${character.name}.`,
+      content: [`The character is ${describe(character)}.`, kindForStory(character), `Ask your first question about ${character.name}.`]
+        .filter(Boolean)
+        .join("\n"),
     },
   ];
 }
@@ -95,6 +127,7 @@ export function nextQuestionMessages(story: Story): Message[] {
       role: "user",
       content: [
         `The character is ${describe(story.character)}.`,
+        kindForStory(story.character),
         `The story so far:\n${storySoFar(story)}`,
         last?.answer ? `The child's newest idea: "${last.answer.trim()}"` : "",
         asked.length ? `Questions already asked (do not repeat them): ${asked.join(" | ")}` : "",
@@ -137,10 +170,13 @@ export function writePageMessages(story: Story, question: string, answer: string
       role: "user",
       content: [
         `Character: ${describe(story.character)}.`,
+        kindForStory(story.character),
         `Story so far:\n${storySoFar(story)}`,
         `Question: ${question.trim()}`,
         `Child's answer: "${answer.trim()}"`,
-      ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     },
   ];
 }

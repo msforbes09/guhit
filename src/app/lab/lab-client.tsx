@@ -32,6 +32,20 @@ const ANSWERS = [
   "they fly to the rainbow to look for pancakes",
 ];
 const SAMPLE_CLIP = "/samples/tala-answer.wav";
+// One drawing per kind that is not a creature, to check each talks like what it is.
+const KIND_SAMPLES: Character[] = [
+  { id: "lab-jeepy", name: "Jeepy", description: "a red jeepney with shiny horns", drawing: "", kind: "vehicle" },
+  { id: "lab-sunny", name: "Sunny", description: "a tall yellow sunflower", drawing: "", kind: "plant" },
+  { id: "lab-kiko", name: "Kiko", description: "a blue kite with a long tail", drawing: "", kind: "flyer" },
+  { id: "lab-pearl", name: "Pearl", description: "an orange fish with big fins", drawing: "", kind: "swimmer" },
+];
+
+interface KindResult {
+  character: Character;
+  greeting: string;
+  reply: string;
+  question: string;
+}
 // Copies of assets/test-drawings (gitignored): photos of paper drawings.
 const SAMPLE_DRAWINGS = ["tala-dragon", "cat-uneven-light", "robot-on-table", "flower-girl-thin-lines"];
 
@@ -63,6 +77,7 @@ export function LabClient() {
   const [speakReplies, setSpeakReplies] = useState(true);
   const [recording, setRecording] = useState(false);
   const [drawings, setDrawings] = useState<DrawingResult[]>([]);
+  const [kinds, setKinds] = useState<KindResult[]>([]);
   const [safety, setSafety] = useState<(SafetyCase & { got: SafetyCategory | null; pass: boolean })[]>([]);
   const recorder = useRef<MediaRecorder | null>(null);
   // The engine only exists in the browser; reading it before hydration would mismatch the server HTML.
@@ -162,6 +177,21 @@ export function LabClient() {
         results.push({ name, input, image, label, caption: metric?.detail ?? "", ms: metric?.ms ?? 0 });
         setDrawings([...results]);
       }
+    }
+  }
+
+  async function runKinds() {
+    if (!ai) return;
+    await loadModels();
+    if (real) real.autoSpeakReplies = speakReplies;
+    const results: KindResult[] = [];
+    for (const character of KIND_SAMPLES) {
+      const greeting = await ai.reply(character, [], "");
+      const history: ChatTurn[] = [{ who: "character", text: greeting }];
+      const reply = await ai.reply(character, history, "What do you like to do all day?");
+      const question = await ai.firstQuestion(character);
+      results.push({ character, greeting, reply, question });
+      setKinds([...results]);
     }
   }
 
@@ -375,6 +405,9 @@ export function LabClient() {
         <button type="button" onClick={runSafety} className="rounded border px-3 py-2">
           Safety tests
         </button>
+        <button type="button" disabled={!!busy} onClick={() => step("kinds", runKinds)} className="rounded border px-3 py-2">
+          Kind test
+        </button>
         <button
           type="button"
           disabled={!!busy && !recording}
@@ -420,6 +453,25 @@ export function LabClient() {
           ))}
         </tbody>
       </table>
+
+      {kinds.length > 0 && (
+        <section className="flex flex-col gap-2 font-sans">
+          <h2 className="font-mono font-bold">Each kind talks like what it is</h2>
+          {kinds.map((k) => (
+            <div key={k.character.id} className="rounded border border-stone-200 p-2 text-xs">
+              <strong>
+                {k.character.name} ({k.character.kind}, {k.character.description})
+              </strong>
+              <br />
+              greeting: {k.greeting}
+              <br />
+              &ldquo;What do you like to do all day?&rdquo; → {k.reply}
+              <br />
+              first story question: {k.question}
+            </div>
+          ))}
+        </section>
+      )}
 
       {safety.length > 0 && (
         <section className="flex flex-col gap-2">
