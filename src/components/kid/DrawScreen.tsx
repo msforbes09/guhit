@@ -317,7 +317,7 @@ export function DrawScreen() {
             }}
           />
         )}
-        {life.phase === "cutting" && <CuttingView photo={life.photo} />}
+        {life.phase === "cutting" && <CuttingView photo={life.photo} closer={life.closer} />}
         {(life.phase === "preview" || life.phase === "saving") && life.result && (
           <CutoutPreview
             cut={life.result.cut}

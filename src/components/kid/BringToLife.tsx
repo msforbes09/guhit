@@ -15,6 +15,9 @@ type Phase = "idle" | "cutting" | "preview" | "saving" | "full" | "error";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** The AI cut-out may need its model the first time; never keep a child waiting longer. */
+const AI_RETRY_MS = 12000;
+
 /** The crop is in the original photo's pixels; the kept photo may be smaller. */
 const scaleRect = (r: PixelRect, s: number): PixelRect => ({
   x: Math.round(r.x * s),
@@ -31,6 +34,7 @@ export function useBringToLife() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("idle");
   const [photo, setPhoto] = useState<string | null>(null);
+  const [closer, setCloser] = useState(false);
   const [result, setResult] = useState<{ drawing: string; cut: Cutout; photoCrop?: PixelRect } | null>(null);
 
   useEffect(
@@ -47,7 +51,16 @@ export function useBringToLife() {
     try {
       // Hold the scissors moment briefly even when cutting is instant, so the
       // child sees something happen to their drawing.
-      const [cut, photo] = await Promise.all([cutout(image), shrinkPhoto(image), wait(1100)]);
+      const [first, photo] = await Promise.all([cutout(image), shrinkPhoto(image), wait(1100)]);
+      let cut = first;
+      if (first.meta?.quality === "poor") {
+        // A messy cut-out gets one closer look with the on-device AI model
+        // before the child is asked to take the photo again.
+        setCloser(true);
+        const better = await Promise.race([cutout(image, { method: "ai" }).catch(() => null), wait(AI_RETRY_MS).then(() => null)]);
+        if (better && better.meta?.quality !== "poor") cut = better;
+        setCloser(false);
+      }
       setResult({ drawing: photo.dataUrl, cut, photoCrop: cut.meta ? scaleRect(photoCropFromCutout(cut.meta), photo.scale) : undefined });
       setPhase("preview");
     } catch {
@@ -86,10 +99,10 @@ export function useBringToLife() {
     }
   }, [result, router]);
 
-  return { phase, photo, result, start, reset, accept, backToPreview };
+  return { phase, photo, closer, result, start, reset, accept, backToPreview };
 }
 
-export function CuttingView({ photo }: { photo: string | null }) {
+export function CuttingView({ photo, closer = false }: { photo: string | null; closer?: boolean }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 py-6" role="status" aria-live="polite">
       <div className="crayon-edge relative w-full max-w-md overflow-hidden rounded-cut-lg bg-white p-3 shadow-soft">
@@ -108,7 +121,7 @@ export function CuttingView({ photo }: { photo: string | null }) {
           <Scissors size={44} weight="fill" className="[animation:wiggle_0.6s_ease-in-out_infinite]" />
         </span>
       </div>
-      <p className="font-display text-3xl font-extrabold text-ink">Cutting out your friend…</p>
+      <p className="font-display text-3xl font-extrabold text-ink">{closer ? "Looking closer…" : "Cutting out your friend…"}</p>
     </div>
   );
 }
