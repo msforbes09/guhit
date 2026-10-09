@@ -5,7 +5,9 @@ import { getAI, photoCropFromCutout, RealAI } from "@/lib/ai";
 import { chooseModels, detectSupport, type DeviceSupport, type ModelChoice } from "@/lib/ai/device";
 import type { CallMetric, LoadTimings } from "@/lib/ai/engine";
 import { LLM_MODELS, STT_MODELS } from "@/lib/ai/models";
-import type { ChatTurn, DrawingPhoto, LoadProgress } from "@/lib/ai/types";
+import { screen } from "@/lib/ai/safety";
+import { SAFETY_CASES, type SafetyCase } from "@/lib/ai/safety-cases";
+import type { ChatTurn, DrawingPhoto, LoadProgress, SafetyCategory } from "@/lib/ai/types";
 import type { Character, Story } from "@/lib/story/types";
 
 const TALA: Character = {
@@ -14,7 +16,15 @@ const TALA: Character = {
   description: "a purple dragon who loves pancakes and is a little shy",
   drawing: "",
 };
-const CHAT = ["", "Hi Tala! My name is Ana. Can you fly?", "Where do you live?", "What do you eat for breakfast?"];
+const CHAT = [
+  "",
+  "Hi Tala! My name is Ana. Can you fly?",
+  "Where do you live?",
+  "What do you eat for breakfast?",
+  // Must never reach the model: the character changes the subject instead.
+  "My brother has a gun.",
+  "My number is 0917 123 4567",
+];
 const ANSWERS = [
   "she lives in a castle made of clouds",
   "her best friend is a tiny turtle called Pip",
@@ -52,6 +62,7 @@ export function LabClient() {
   const [speakReplies, setSpeakReplies] = useState(true);
   const [recording, setRecording] = useState(false);
   const [drawings, setDrawings] = useState<DrawingResult[]>([]);
+  const [safety, setSafety] = useState<(SafetyCase & { got: SafetyCategory | null; pass: boolean })[]>([]);
   const recorder = useRef<MediaRecorder | null>(null);
   // The engine only exists in the browser; reading it before hydration would mismatch the server HTML.
   const mounted = useSyncExternalStore(
@@ -153,12 +164,23 @@ export function LabClient() {
     }
   }
 
+  function runSafety() {
+    setSafety(
+      SAFETY_CASES.map((c) => {
+        const result = screen(c.text, c.kind);
+        const got = result.ok ? null : (result.category ?? null);
+        return { ...c, got, pass: got === c.expect };
+      }),
+    );
+  }
+
   async function runAll() {
     await step("load", loadModels);
     await step("chat", runChat);
     await step("story", runStory);
     await step("whisper", transcribeSample);
     await step("describe drawings", describeSamples);
+    runSafety();
     report();
   }
 
@@ -206,6 +228,9 @@ export function LabClient() {
       transcribe: of("transcribe").map((m) => ({ ms: m.ms, audioSeconds: m.audioSeconds, text: m.text })),
       describeMsAvg: avg(of("describe").map((m) => m.ms)),
       drawings: drawings.map(({ name, input, label, caption, ms }) => ({ name, input, label, caption, ms })),
+      safety: safety.length
+        ? { asExpected: safety.filter((c) => c.pass).length, total: safety.length, failures: safety.filter((c) => !c.pass) }
+        : null,
       calls: metrics,
     };
   }
@@ -343,6 +368,9 @@ export function LabClient() {
         >
           Describe test drawings
         </button>
+        <button type="button" onClick={runSafety} className="rounded border px-3 py-2">
+          Safety tests
+        </button>
         <button
           type="button"
           disabled={!!busy && !recording}
@@ -386,6 +414,36 @@ export function LabClient() {
           ))}
         </tbody>
       </table>
+
+      {safety.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-bold">
+            Safety: {safety.filter((c) => c.pass).length}/{safety.length} as expected
+          </h2>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-stone-500">
+                <th>result</th>
+                <th>kind</th>
+                <th>expected</th>
+                <th>got</th>
+                <th>text</th>
+              </tr>
+            </thead>
+            <tbody>
+              {safety.map((c) => (
+                <tr key={`${c.kind}-${c.text}`} className={c.pass ? "" : "bg-red-50 text-red-800"}>
+                  <td className="pr-2 font-bold">{c.pass ? "pass" : "FAIL"}</td>
+                  <td className="pr-2">{c.kind}</td>
+                  <td className="pr-2">{c.expect ?? "allowed"}</td>
+                  <td className="pr-2">{c.got ?? "allowed"}</td>
+                  <td className="font-sans">{c.text}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {drawings.length > 0 && (
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">

@@ -20,7 +20,9 @@ import {
   cleanTitle,
   isUnsafe,
   SentenceStream,
+  splitSentences,
 } from "./sanitize";
+import { screen, topicChange } from "./safety";
 import type { STTClient } from "./stt";
 import type { VisionClient } from "./vision";
 import { Speaker, type VoiceInfo } from "./tts";
@@ -78,6 +80,27 @@ const FALLBACK_QUESTIONS = [
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** Compares questions ignoring case, punctuation and spacing. */
 const sameText = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+
+/** Said instead of a model sentence that failed the safety screen. */
+const SAFE_SENTENCE = "Let's think about something happy instead!";
+
+/** The character's name and description come from the child, so they are screened too. */
+function safeCharacter(character: Character): Character {
+  const name = screen(character.name, "child").ok ? character.name : "Friend";
+  const description = screen(character.description, "child").ok ? character.description : "";
+  return name === character.name && description === character.description
+    ? character
+    : { ...character, name, description };
+}
+
+/** Earlier answers that failed the screen are left out of every prompt. */
+function safeStory(story: Story): Story {
+  return {
+    ...story,
+    character: safeCharacter(story.character),
+    pages: story.pages.map((page) => (screen(page.answer, "child").ok ? page : { ...page, answer: "" })),
+  };
+}
 
 /** The on-device engine: WebLLM for words, Whisper for listening, the OS voice for speaking. */
 export class RealAI implements LocalAI {
@@ -288,6 +311,12 @@ export class RealAI implements LocalAI {
     try {
       // The original photo reads better than the cut-out on white (tested in /lab).
       const { caption } = photo ? await vision.describe(photo.image, photo.crop) : await vision.describe(png);
+      const verdict = screen(caption, "drawing");
+      if (!verdict.ok) {
+        const ms = performance.now() - started;
+        this.record({ kind: "describe", text: "", detail: `${caption} [flagged: ${verdict.category}]`, ms, fallback: true });
+        return { label: "", flagged: verdict.category };
+      }
       const label = cleanCaption(caption);
       this.record({ kind: "describe", text: label, detail: caption, ms: performance.now() - started, fallback: !label });
       return { label };
@@ -314,9 +343,28 @@ export class RealAI implements LocalAI {
   async reply(character: Character, history: ChatTurn[], childSays: string): Promise<string> {
     const { llm } = await this.ready();
     const started = performance.now();
-    const splitter = new SentenceStream();
     const playback = this.autoSpeakReplies ? this.speaker.stream("character") : null;
+
+    // Unsafe words from the child never reach the model: the character kindly changes the subject.
+    const heard = screen(childSays, "child");
+    if (!heard.ok) {
+      const text = topicChange(heard.category);
+      playback?.add(text);
+      playback?.end(text);
+      this.record({ kind: "reply", text, detail: `blocked child input: ${heard.category}`, ms: 0, fallback: true });
+      return text;
+    }
+
+    const splitter = new SentenceStream();
     const sentences: string[] = [];
+    // Small models ask "What's your name?" every turn; a question already asked is dropped.
+    const askedBefore = new Set(
+      history
+        .filter((t) => t.who === "character")
+        .flatMap((t) => splitSentences(t.text))
+        .filter((s) => s.endsWith("?"))
+        .map(sameText),
+    );
     let firstSentenceMs: number | undefined;
     let firstSpokenMs: number | undefined;
     let metric: CallMetric | null = null;
@@ -331,20 +379,27 @@ export class RealAI implements LocalAI {
       };
     }
 
+    const say = (sentence: string) => {
+      sentences.push(sentence);
+      firstSentenceMs ??= performance.now() - started;
+      playback?.add(sentence);
+    };
+    // Each sentence is checked before it is spoken; a bad one is replaced and generation stops.
     const accept = (raw: string): boolean => {
       const sentence = cleanLine(raw, character.name);
       if (!sentence) return true;
       if (isUnsafe(sentence) || breaksCharacter(sentence)) {
         rejected = true;
+        if (sentences.length) say(SAFE_SENTENCE);
         return false;
       }
-      sentences.push(sentence);
-      firstSentenceMs ??= performance.now() - started;
-      playback?.add(sentence);
+      if (sentence.endsWith("?") && askedBefore.has(sameText(sentence))) return false;
+      say(sentence);
       return sentences.length < MAX_REPLY_SENTENCES;
     };
 
-    await llm.generate(replyMessages(character, history, childSays), {
+    const safeHistory = history.filter((t) => t.who === "character" || screen(t.text, "child").ok);
+    await llm.generate(replyMessages(safeCharacter(character), safeHistory, childSays), {
       maxTokens: 60,
       // Lower than the default: small models drift into nonsense at higher temperatures.
       temperature: 0.6,
@@ -392,12 +447,14 @@ export class RealAI implements LocalAI {
   }
 
   firstQuestion(character: Character): Promise<string> {
-    return this.complete("firstQuestion", firstQuestionMessages(character), 40, cleanQuestion, () =>
-      FALLBACK_QUESTIONS[0](character.name),
+    const safe = safeCharacter(character);
+    return this.complete("firstQuestion", firstQuestionMessages(safe), 40, cleanQuestion, () =>
+      FALLBACK_QUESTIONS[0](safe.name),
     );
   }
 
-  nextQuestion(story: Story): Promise<string> {
+  nextQuestion(unscreened: Story): Promise<string> {
+    const story = safeStory(unscreened);
     const name = story.character.name;
     // Small models happily ask the same question again despite being told not to.
     const asked = new Set(story.pages.map((p) => sameText(p.question)));
@@ -411,15 +468,25 @@ export class RealAI implements LocalAI {
     return this.complete("nextQuestion", nextQuestionMessages(story), 40, fresh, unasked, [0.8, 1.1]);
   }
 
-  writePage(story: Story, question: string, answer: string): Promise<string> {
+  async writePage(unscreened: Story, question: string, answer: string): Promise<string> {
+    const story = safeStory(unscreened);
+    const name = story.character.name;
+    const heard = screen(answer, "child");
+    if (!heard.ok) {
+      // The child's words stay out of the model and out of the book.
+      const text = `${name} wanted to think about happy things instead. What happens next? Draw it for me!`;
+      this.record({ kind: "writePage", text, detail: `blocked child input: ${heard.category}`, ms: 0, fallback: true });
+      return text;
+    }
     return this.complete("writePage", writePageMessages(story, question, answer), 120, cleanPage, () => {
       const idea = answer.trim().replace(/[.!?]+$/, "");
-      const told = idea && !isUnsafe(idea) ? `${capitalize(idea)}. ` : "";
-      return `${told}${story.character.name} had a happy day. What happens next? Draw it for me!`;
+      const told = idea ? `${capitalize(idea)}. ` : "";
+      return `${told}${name} had a happy day. What happens next? Draw it for me!`;
     });
   }
 
-  titleFor(story: Story): Promise<string> {
+  titleFor(unscreened: Story): Promise<string> {
+    const story = safeStory(unscreened);
     return this.complete("title", titleMessages(story), 20, cleanTitle, () => `The Story of ${story.character.name}`);
   }
 

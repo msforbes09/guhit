@@ -4,12 +4,11 @@
  * Everything shown or spoken to a child goes through these helpers first.
  */
 
+import { screen } from "./safety";
+
 const EMOJI = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu;
 const LABEL = /^(?:question|page|answer|title|story|reply|response|guhit|assistant|narrator|character)\s*[:\-–]\s*/i;
 const WRAPPING_QUOTES = /^["'“”‘’]+|["'“”‘’]+$/g;
-
-const UNSAFE =
-  /\b(?:kill\w*|murder\w*|blood\w*|bleed\w*|guns?|knife|knives|stab\w*|shoot\w*|dead|die[sd]?|dying|death|weapons?|bombs?|stupid|shut up|sexy|naked|drugs?|beer|wine|cigarettes?|suicide)\b/i;
 
 const OUT_OF_CHARACTER =
   /\b(?:as an ai|an ai\b|language model|chatbot|artificial intelligence|i(?:'m| am) (?:a |an )?(?:computer|program|bot|real person|human))/i;
@@ -46,7 +45,8 @@ export function splitSentences(text: string): string[] {
 
 const wordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
-export const isUnsafe = (text: string) => UNSAFE.test(text);
+/** Model output a child must not see or hear (see safety.ts). */
+export const isUnsafe = (text: string) => !screen(text, "output").ok;
 export const breaksCharacter = (text: string) => OUT_OF_CHARACTER.test(text);
 
 /** One question, optionally led by a short reaction ("Wow! Where does Tala sleep?"). */
