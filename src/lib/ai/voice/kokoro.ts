@@ -1,18 +1,20 @@
 import type { TTSRequest, TTSResponse } from "@/workers/tts.worker";
 import type { ModelSource } from "../model-fetch";
 import { ModelWorker } from "../model-worker";
-import { isTransformersModelCached } from "../offline";
-import { KOKORO, styleFor, VOICE_CACHE, type KokoroDtype, type TTSDevice } from "./voices";
+import { KOKORO, kokoroFiles, styleFor, VOICE_CACHE, type KokoroDtype, type TTSDevice } from "./voices";
 
-/** True when the model for this device and the two voices in use are already stored. */
-export async function isKokoroCached(device: TTSDevice): Promise<boolean> {
+const stored = async (cacheName: string) =>
+  (await (await caches.open(cacheName)).keys()).map((r) => r.url).filter((url) => url.includes(KOKORO.id));
+
+/** True when the model files for this device and the two voices in use are already stored. */
+export async function isKokoroCached(device: TTSDevice, dtype: KokoroDtype = KOKORO.dtype[device]): Promise<boolean> {
   if (typeof caches === "undefined") return false;
-  if (!(await isTransformersModelCached(KOKORO.id, { model: KOKORO.dtype[device] }))) return false;
   try {
-    const cache = await caches.open(VOICE_CACHE);
-    const urls = (await cache.keys()).map((r) => r.url);
+    const models = await stored("transformers-cache");
+    if (!kokoroFiles(dtype).paths.every((path) => models.some((url) => url.endsWith(`/${path}`)))) return false;
+    const voices = await stored(VOICE_CACHE);
     return [styleFor("narrator").voice, styleFor("character").voice].every((voice) =>
-      urls.some((url) => url.includes(KOKORO.id) && url.endsWith(`/voices/${voice}.bin`)),
+      voices.some((url) => url.endsWith(`/voices/${voice}.bin`)),
     );
   } catch {
     return false;

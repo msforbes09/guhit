@@ -193,6 +193,7 @@ function describeVoices(spoken: SentenceMetric[], speaker: Speaker | null): stri
     );
   const kokoro = names("kokoro");
   const builtin = names("builtin");
+  if (!kokoro && !builtin) return `The drawings talk in playful sounds on this device${why ? `, because ${why}` : ""}.`;
   if (kokoro && !builtin) return `Spoken by Kokoro, the on-device storytelling voice (${kokoro}).`;
   if (!kokoro) return `Spoken by the built-in device voice (${builtin})${why ? `, because: ${why}` : ""}.`;
   return `Spoken by Kokoro (${kokoro}) and the built-in device voice (${builtin})${why ? `, because: ${why}` : ""}.`;

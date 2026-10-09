@@ -8,20 +8,37 @@ const DTYPES: KokoroDtype[] = ["fp32", "fp16", "q8", "q4f16"];
 
 /**
  * Kokoro-82M v1.0 (Apache-2.0, weights and voices) as converted to ONNX by
- * onnx-community. Every device runs the 8-bit file on the CPU (wasm), the
- * fastest there (see chooseTTSDevice); "webgpu" is only for /lab's
- * "?ttsDevice=webgpu", with the 8-bit file too. The repo's "q4" build is larger
- * than 8-bit, so it is no help.
+ * onnx-community. Laptops with WebGPU run the full-precision file on the GPU
+ * (fp16 produced invalid audio there, and 8-bit is slow on GPUs); everything
+ * else runs the 8-bit file on the CPU (wasm), the fastest there. The repo's
+ * "q4" build is larger than 8-bit, so it is no help.
  */
 export const KOKORO = {
   id: "onnx-community/Kokoro-82M-v1.0-ONNX",
   sampleRate: 24000,
-  dtype: { webgpu: "q8", wasm: "q8" } as Record<TTSDevice, KokoroDtype>,
-  /** Model file plus tokenizer and config, from the Hugging Face repo listing. */
-  modelMB: { webgpu: 92.4, wasm: 92.4 } as Record<TTSDevice, number>,
+  dtype: { webgpu: "fp32", wasm: "q8" } as Record<TTSDevice, KokoroDtype>,
+  /** Model files plus tokenizer and config, from the Hugging Face repo listing. */
+  modelMB: { webgpu: 325.6, wasm: 92.4 } as Record<TTSDevice, number>,
   /** Each voice is a 510×256 float32 style table. */
   voiceMB: 0.52,
 } as const;
+
+const SUFFIX: Record<KokoroDtype, string> = { fp32: "", fp16: "_fp16", q8: "_quantized", q4f16: "_q4f16" };
+
+/**
+ * The ONNX file Transformers.js loads for a precision (`name`, its
+ * model_file_name) and the weight files beside it (`dataFiles`, its
+ * use_external_data_format). The full-precision file (325 MB) is over R2's
+ * 300 MB upload limit, so scripts/split-onnx.py splits it into a graph and two
+ * weight files under the name "model_chunked".
+ */
+export function kokoroFiles(dtype: KokoroDtype): { name: string; dataFiles: number; paths: string[] } {
+  const name = dtype === "fp32" ? "model_chunked" : "model";
+  const dataFiles = dtype === "fp32" ? 2 : 0;
+  const graph = `onnx/${name}${SUFFIX[dtype]}.onnx`;
+  const data = Array.from({ length: dataFiles }, (_, i) => `${graph}_data${i ? `_${i}` : ""}`);
+  return { name, dataFiles, paths: [graph, ...data] };
+}
 
 /** The voice worker keeps the voice style tables in this Cache Storage bucket. */
 export const VOICE_CACHE = "kokoro-voices";
@@ -126,24 +143,35 @@ export function setStyle(role: VoiceRole, style: VoiceStyle | null) {
 
 const SLOW_KEY = "guhit:voice-slow";
 
-/**
- * A device where Kokoro measured slower than speech is remembered, so later
- * app starts skip loading it (on a phone that is ~10 s and ~300 MB of memory
- * for nothing). Choosing Kokoro in /lab forgets it and measures again.
- */
-export function slowVoiceMeasured(device: TTSDevice): number | null {
+function slowVoices(): Partial<Record<TTSDevice, number>> {
   try {
-    const saved = JSON.parse(localStorage.getItem(SLOW_KEY) ?? "null") as { device?: string; rtf?: number } | null;
-    return saved?.device === device && typeof saved.rtf === "number" ? saved.rtf : null;
+    const saved = JSON.parse(localStorage.getItem(SLOW_KEY) ?? "null") as Record<string, unknown> | null;
+    if (!saved) return {};
+    // Older versions kept one device: { device, rtf }.
+    if (typeof saved.device === "string" && typeof saved.rtf === "number") return { [saved.device]: saved.rtf };
+    return Object.fromEntries(
+      Object.entries(saved).filter(([device, rtf]) => (device === "webgpu" || device === "wasm") && typeof rtf === "number"),
+    );
   } catch {
-    return null;
+    return {};
   }
 }
 
-export function rememberSlowVoice(device: TTSDevice, rtf: number | null) {
+/**
+ * A device where Kokoro measured slower than speech is remembered, so later
+ * app starts skip loading it there (on a phone that is ~10 s and ~300 MB of
+ * memory for nothing). Choosing Kokoro in /lab forgets it and measures again.
+ */
+export function slowVoiceMeasured(device: TTSDevice): number | null {
+  return slowVoices()[device] ?? null;
+}
+
+/** `device` null forgets every device. */
+export function rememberSlowVoice(device: TTSDevice | null, rtf: number | null) {
   try {
-    if (rtf === null) localStorage.removeItem(SLOW_KEY);
-    else localStorage.setItem(SLOW_KEY, JSON.stringify({ device, rtf }));
+    const next = device ? { ...slowVoices(), [device]: rtf ?? undefined } : {};
+    if (Object.values(next).every((value) => value === undefined)) localStorage.removeItem(SLOW_KEY);
+    else localStorage.setItem(SLOW_KEY, JSON.stringify(next));
   } catch {
     // Blocked storage: it is measured again next time.
   }
@@ -152,23 +180,26 @@ export function rememberSlowVoice(device: TTSDevice, rtf: number | null) {
 /** Every voice the app may use offline is downloaded with the model, so /lab can switch with Wi-Fi off. */
 export const PRELOADED_VOICES = KOKORO_VOICES.map((v) => v.id);
 
-/**
- * WebGPU on laptops, the CPU (wasm) on phones; "?ttsDevice=wasm|webgpu"
- * overrides it so /lab can measure the phone path on a laptop.
- */
+/** The precision for a device; "?ttsDtype=" lets /lab try the others. */
 export function chooseTTSDtype(device: TTSDevice, search = ""): KokoroDtype {
   const override = new URLSearchParams(search).get("ttsDtype") as KokoroDtype | null;
   return override && DTYPES.includes(override) ? override : KOKORO.dtype[device];
 }
 
 /**
- * Every device runs the 8-bit voice on the CPU: the full-precision WebGPU file
- * is over R2's 300 MB upload limit, the 16-bit one produced invalid audio on
- * WebGPU, and 8-bit on the GPU is slower than speech. "?ttsDevice=" still lets
- * /lab try the GPU.
+ * WebGPU on laptops that have it, the CPU (wasm) everywhere else;
+ * "?ttsDevice=wasm|webgpu" overrides it so /lab can measure one path alone.
  */
-export function chooseTTSDevice(_support: { webgpu: boolean; mobile: boolean }, search = ""): TTSDevice {
+export function chooseTTSDevice(support: { webgpu: boolean; mobile: boolean }, search = ""): TTSDevice {
+  return chooseTTSDevices(support, search)[0];
+}
+
+/**
+ * The devices to try in order: a laptop whose GPU cannot start the voice, or
+ * runs it slower than speech, tries the CPU next. An override tries only that one.
+ */
+export function chooseTTSDevices(support: { webgpu: boolean; mobile: boolean }, search = ""): TTSDevice[] {
   const override = new URLSearchParams(search).get("ttsDevice");
-  if (override === "wasm" || override === "webgpu") return override;
-  return "wasm";
+  if (override === "wasm" || override === "webgpu") return [override];
+  return support.webgpu && !support.mobile ? ["webgpu", "wasm"] : ["wasm"];
 }
