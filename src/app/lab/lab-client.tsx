@@ -7,6 +7,7 @@ import type { CallMetric, LoadTimings } from "@/lib/ai/engine";
 import { LLM_MODELS, STT_MODELS } from "@/lib/ai/models";
 import type { ChatTurn, DrawingPhoto, LoadProgress } from "@/lib/ai/types";
 import type { Character, Story } from "@/lib/story/types";
+import { VoiceLab } from "./voice-lab";
 
 const TALA: Character = {
   id: "lab-tala",
@@ -366,6 +367,8 @@ export function LabClient() {
           Copy results
         </button>
       </section>
+
+      {real && <VoiceLab />}
 
       <p aria-live="polite" className="text-stone-500">
         {busy ? `Running: ${busy}… ${progress}` : progress}

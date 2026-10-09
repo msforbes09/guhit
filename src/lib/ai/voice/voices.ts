@@ -51,6 +51,11 @@ export interface VoiceStyle {
   voice: string;
   /** Kokoro's speed input: 1 is the voice's natural pace. */
   speed: number;
+  /**
+   * Playback rate of the finished audio: above 1 lifts the pitch (and the
+   * pace by the same factor). Kokoro has no pitch input; 1.05 is one semitone.
+   */
+  pitch: number;
 }
 
 /**
@@ -60,9 +65,12 @@ export interface VoiceStyle {
  * sounds like its own playful little person.
  */
 export const DEFAULT_STYLES: Record<VoiceRole, VoiceStyle> = {
-  narrator: { voice: "af_heart", speed: 0.95 },
-  character: { voice: "af_bella", speed: 1.08 },
+  narrator: { voice: "af_heart", speed: 0.95, pitch: 1 },
+  character: { voice: "af_bella", speed: 1.03, pitch: 1.05 },
 };
+
+const clamp = (value: unknown, min: number, max: number, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 
 export type VoiceEngine = "kokoro" | "builtin";
 
@@ -90,8 +98,13 @@ export function setPreferredEngine(engine: VoiceEngine) {
 export function styleFor(role: VoiceRole): VoiceStyle {
   try {
     const saved = JSON.parse(localStorage.getItem(styleKey(role)) ?? "null") as Partial<VoiceStyle> | null;
-    if (saved && typeof saved.voice === "string" && findVoice(saved.voice) && typeof saved.speed === "number") {
-      return { voice: saved.voice, speed: Math.min(1.3, Math.max(0.7, saved.speed)) };
+    const fallback = DEFAULT_STYLES[role];
+    if (saved && typeof saved.voice === "string" && findVoice(saved.voice)) {
+      return {
+        voice: saved.voice,
+        speed: clamp(saved.speed, 0.7, 1.3, fallback.speed),
+        pitch: clamp(saved.pitch, 0.9, 1.15, fallback.pitch),
+      };
     }
   } catch {
     // Fall through to the default.

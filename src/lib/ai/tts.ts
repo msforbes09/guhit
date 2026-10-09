@@ -246,6 +246,7 @@ export class Speaker {
   /** Set when the neural voice gave up for this session (or never loaded). */
   private reason: string | null = null;
   private loadMs: number | undefined;
+  private loading: Promise<VoiceInfo> | null = null;
   /** "?ttsForce=1" keeps the neural voice on even when it measures too slow (for /lab). */
   private forced = false;
   /** Every spoken sentence's timing, for /lab. */
@@ -306,7 +307,19 @@ export class Speaker {
    * the first setup), and always the built-in voices as the fallback. Never
    * throws: without Kokoro, Guhit speaks with the built-in voice.
    */
-  async load(
+  load(
+    support: { webgpu: boolean; mobile: boolean },
+    modelHost: string | null,
+    onProgress: (loaded: number, total: number, text: string) => void,
+  ): Promise<VoiceInfo> {
+    // /lab may load the voice on its own before the engine loads everything.
+    if (!this.loading) {
+      this.loading = this.loadVoice(support, modelHost, onProgress).finally(() => (this.loading = null));
+    }
+    return this.loading;
+  }
+
+  private async loadVoice(
     support: { webgpu: boolean; mobile: boolean },
     modelHost: string | null,
     onProgress: (loaded: number, total: number, text: string) => void,

@@ -176,10 +176,11 @@ export class NeuralPlayback implements SpeechPlayback {
     const buffer = host.out.buffer(result.audio as Float32Array<ArrayBuffer>, KOKORO.sampleRate);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
+    source.playbackRate.value = host.style.pitch;
     source.connect(host.out.input);
     const at = Math.max(ctx.currentTime + 0.02, this.scheduledEnd ? this.scheduledEnd + SENTENCE_GAP_S : 0);
     source.start(at);
-    this.scheduledEnd = at + buffer.duration;
+    this.scheduledEnd = at + buffer.duration / host.style.pitch;
     this.sources.add(source);
     source.onended = () => {
       this.sources.delete(source);
