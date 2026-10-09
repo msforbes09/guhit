@@ -1,23 +1,31 @@
 import { getAI, RealAI } from "@/lib/ai";
+import { CHARACTER_BABBLES, Speaker } from "@/lib/ai/tts";
 import type { Kind } from "@/lib/story/kind";
 import { babble, stopBabble } from "./babble";
 
 /**
  * Without the neural voice, the character babbles in 8-bit blips instead of
- * the device's built-in voice: never both at once. Set to false to let the
- * built-in voice speak for the character again (test mode, whose pretend
+ * the device's built-in voice: never both at once. The switch lives with the
+ * voice (src/lib/ai/tts.ts), which babbles for the character too; false lets
+ * the built-in voice speak for the character again (test mode, whose pretend
  * voice is silent, still babbles).
  */
-export const BABBLE_INSTEAD_OF_SYSTEM_VOICE = true;
+export const BABBLE_INSTEAD_OF_SYSTEM_VOICE = CHARACTER_BABBLES;
 
 /**
  * Whether the neural voice (Kokoro) is installed and is what speaks: the voice
- * part was chosen at setup, has started, and did not fall back to the
- * built-in voice (too slow on this device, or failed to load).
+ * part was chosen at setup, has started, and has not fallen back to the
+ * built-in voice (too slow on this device, failed to load, or stopped working
+ * since).
  */
 export function isVoiceReady(): boolean {
   const ai = getAI();
-  return ai instanceof RealAI && ai.partStatus("voice") === "ready" && ai.voices?.engine === "kokoro";
+  return (
+    ai instanceof RealAI &&
+    ai.partStatus("voice") === "ready" &&
+    ai.voices?.engine === "kokoro" &&
+    Speaker.latest?.engine === "kokoro"
+  );
 }
 
 /** True when the character's lines are babbled rather than spoken by the engine. */

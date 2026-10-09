@@ -1,7 +1,11 @@
+import { babbleLevel } from "@/lib/sfx/babble";
+import { listenForFirstTap, unlock as unlockSounds } from "@/lib/sfx/engine";
+import type { Kind } from "@/lib/story/kind";
 import type { ModelSource } from "./model-fetch";
 import { isMarkedReady } from "./offline";
 import { splitSentences } from "./sanitize";
 import { AudioOut } from "./voice/audio-out";
+import { BabblePlayback } from "./voice/babble-playback";
 import { isKokoroCached, KokoroClient } from "./voice/kokoro";
 import {
   NeuralPlayback,
@@ -11,9 +15,8 @@ import {
   type StartListener,
 } from "./voice/playback";
 import {
-  chooseTTSDevice,
+  chooseTTSDevices,
   chooseTTSDtype,
-  findVoice,
   KOKORO,
   PRELOADED_VOICES,
   preferredEngine,
@@ -29,8 +32,10 @@ import {
 
 export type { SentenceMetric, SpeechPlayback, VoiceEngine, VoiceRole };
 
-/** On the CPU, a voice slower than this (synthesis time ÷ speech time) would leave gaps; use the built-in one. */
-const MAX_WASM_RTF = 0.8;
+/** A voice slower than this (synthesis time ÷ speech time) would leave gaps: the next device, or the fallback, speaks. */
+const MAX_RTF = 0.8;
+/** The device voice starts within about half a second; one that has not started by then is stuck. */
+const DEVICE_VOICE_START_MS = 2500;
 /** A sentence that takes longer than this to synthesise is said by the built-in voice instead. */
 const SENTENCE_TIMEOUT_MS = 4000;
 /**
@@ -62,6 +67,24 @@ const NARRATOR_VOICES = [
 const CHARACTER_VOICES = ["Tessa", "Karen", "Moira", "Fiona", "Kate", "Ava", "Samantha", "Microsoft Jenny", "Microsoft Aria"];
 const NOVELTY =
   /^(?:Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Good News|Jester|Organ|Pipe Organ|Superstar|Trinoids|Whisper|Wobble|Zarvox|Deranged|Hysterical|Junior|Ralph|Fred|Grandpa|Grandma|Rocko|Eddy|Reed)\b/i;
+
+/**
+ * Without the neural voice, the character talks in 8-bit babble rather than
+ * the device's voice (never both). False lets the device voice speak for it.
+ */
+export const CHARACTER_BABBLES = true;
+
+/** The babble when no voice can speak; the kid screens babble the drawing's own kind themselves. */
+const BABBLE_KIND: Record<VoiceRole, Kind> = { narrator: "plant", character: "creature" };
+
+/** Why the storytelling voice is not speaking, in words a parent may read (setup shows them). */
+const WHY = {
+  noAudio: "this browser cannot play the storytelling voice",
+  slow: "the storytelling voice is too slow on this device",
+  notDownloaded: "the storytelling voice is not downloaded yet",
+  failed: "the storytelling voice could not start",
+  deviceVoice: "the device voice did not start",
+};
 
 const STYLE: Record<VoiceRole, { rate: number; pitch: number }> = {
   narrator: { rate: 0.95, pitch: 1.05 },
@@ -142,7 +165,22 @@ export class WordMeter {
 
 const NO_LISTENERS = new Set<StartListener>();
 
-/** One spoken message through the browser's built-in voice (speechSynthesis). */
+/**
+ * What the device voice falls back to when it does not work: `rescue` makes
+ * the playback that says the message instead; `broken` is told when the
+ * device voice is stuck for good (so later messages skip it).
+ */
+export interface DeviceVoiceRescue {
+  rescue(reason: string): SpeechPlayback;
+  broken(): void;
+}
+
+/**
+ * One spoken message through the browser's built-in voice (speechSynthesis).
+ * The voice can be stuck (Chrome on macOS has queued utterances that never
+ * start) or fail outright; then the message goes to `rescue` instead, so a
+ * message is never silent.
+ */
 export class Playback implements SpeechPlayback {
   text = "";
   finished = false;
@@ -157,6 +195,8 @@ export class Playback implements SpeechPlayback {
   private utterances: SpeechSynthesisUtterance[] = [];
   private release!: () => void;
   private watchdog: ReturnType<typeof setTimeout> | null = null;
+  private startTimer: ReturnType<typeof setTimeout> | null = null;
+  private rescued: SpeechPlayback | null = null;
 
   constructor(
     readonly role: VoiceRole,
@@ -165,6 +205,7 @@ export class Playback implements SpeechPlayback {
     private startListeners: Set<StartListener>,
     private metric: ((m: SentenceMetric) => void) | null = null,
     private reason?: string,
+    private fallback: DeviceVoiceRescue | null = null,
   ) {
     this.done = new Promise((resolve) => (this.release = resolve));
   }
@@ -172,7 +213,8 @@ export class Playback implements SpeechPlayback {
   add(sentence: string) {
     if (this.cancelled || !sentence.trim()) return;
     this.text = this.text ? `${this.text} ${sentence}` : sentence;
-    if (!("speechSynthesis" in window)) return;
+    if (this.rescued) return this.rescued.add(sentence);
+    if (!("speechSynthesis" in window)) return this.handOver(WHY.deviceVoice, true);
     const addedAt = performance.now();
     const index = this.count++;
     const utterance = new SpeechSynthesisUtterance(sentence);
@@ -185,7 +227,8 @@ export class Playback implements SpeechPlayback {
     utterance.rate = STYLE[this.role].rate;
     utterance.pitch = STYLE[this.role].pitch;
     utterance.onstart = () => {
-      if (this.cancelled) return;
+      if (this.cancelled || this.rescued) return;
+      if (this.startTimer) clearTimeout(this.startTimer);
       this.meter.start();
       this.metric?.({
         engine: "builtin",
@@ -212,10 +255,12 @@ export class Playback implements SpeechPlayback {
     utterance.onerror = (event) => {
       this.meter.stop();
       // "interrupted"/"canceled" are this app stopping the voice, not failures.
-      if (!this.cancelled && event.error !== "interrupted" && event.error !== "canceled") {
+      if (!this.cancelled && !this.rescued && event.error !== "interrupted" && event.error !== "canceled") {
         const voice = this.voice?.name ?? "default";
-        const fallback = `${this.reason ? `${this.reason}; ` : ""}built-in voice error: ${event.error}`;
-        this.metric?.({ engine: "builtin", role: this.role, voice, text: sentence, index, fallback });
+        console.warn(`[voice] device voice error: ${event.error}`);
+        this.metric?.({ engine: "builtin", role: this.role, voice, text: sentence, index, fallback: WHY.deviceVoice });
+        // Before any tap the browser refuses speech ("not-allowed"); it works after one.
+        if (!this.started) this.handOver(WHY.deviceVoice, event.error !== "not-allowed");
       }
       this.pending--;
       this.check();
@@ -224,25 +269,77 @@ export class Playback implements SpeechPlayback {
     // Chrome drops the end event of utterances that were garbage collected.
     this.utterances.push(utterance);
     window.speechSynthesis.speak(utterance);
+    // Sentences queue behind the first: if it starts, the voice works.
+    if (index === 0 && this.fallback) {
+      this.startTimer = setTimeout(() => {
+        if (this.started || this.cancelled) return;
+        console.warn(`[voice] device voice did not start within ${DEVICE_VOICE_START_MS} ms`);
+        this.metric?.({
+          engine: "builtin",
+          role: this.role,
+          voice: this.voice?.name ?? "default",
+          text: sentence,
+          index,
+          fallback: WHY.deviceVoice,
+        });
+        this.handOver(WHY.deviceVoice, true);
+      }, DEVICE_VOICE_START_MS);
+    }
+  }
+
+  /** Nothing was heard yet: the whole message goes to the rescue playback, and this one ends with it. */
+  private handOver(reason: string, broken: boolean) {
+    if (this.rescued || this.cancelled) return;
+    if (!this.fallback) {
+      if (!this.open) this.finish();
+      return;
+    }
+    if (this.startTimer) clearTimeout(this.startTimer);
+    if (this.watchdog) clearTimeout(this.watchdog);
+    if (broken) this.fallback.broken();
+    if (this.utterances.length && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    this.utterances = [];
+    this.meter.stop();
+    const rescued = this.fallback.rescue(reason);
+    rescued.onStart = () => {
+      if (this.started) return;
+      this.started = true;
+      this.onStart?.();
+    };
+    this.rescued = rescued;
+    rescued.add(this.text);
+    if (!this.open) this.endRescued();
+  }
+
+  private endRescued() {
+    const rescued = this.rescued!;
+    rescued.end();
+    void rescued.done.then(() => this.finish());
   }
 
   end(fullText?: string) {
     this.open = false;
     if (fullText !== undefined) this.text = fullText;
+    if (this.rescued) return this.endRescued();
+    if (this.count === 0) return this.finish();
     // Chrome occasionally never fires "end"; never leave the caller waiting forever.
     const words = this.text.split(/\s+/).length;
-    this.watchdog = setTimeout(() => this.finish(), 4000 + (words / 2.5 / STYLE[this.role].rate) * 1000);
+    this.watchdog = setTimeout(
+      () => this.finish(),
+      DEVICE_VOICE_START_MS + 4000 + (words / 2.5 / STYLE[this.role].rate) * 1000,
+    );
     this.check();
   }
 
   cancel() {
     this.cancelled = true;
     this.open = false;
+    this.rescued?.cancel();
     this.finish();
   }
 
   private check() {
-    if (!this.open && this.pending <= 0) this.finish();
+    if (!this.open && this.pending <= 0 && !this.rescued) this.finish();
   }
 
   private finish() {
@@ -250,6 +347,7 @@ export class Playback implements SpeechPlayback {
     this.finished = true;
     this.meter.stop();
     if (this.watchdog) clearTimeout(this.watchdog);
+    if (this.startTimer) clearTimeout(this.startTimer);
     this.utterances = [];
     this.release();
   }
@@ -286,6 +384,8 @@ export class Speaker {
   private timeoutsInARow = 0;
   /** "?ttsTimeout=<ms>" replaces both sentence timeouts, so /lab can exercise the fallback. */
   private timeoutOverride: number | null = null;
+  /** Set when the device voice was stuck or failed: babble speaks instead for the rest of the session. */
+  private deviceVoiceBroken = false;
   /** Every spoken sentence's timing, for /lab. */
   onMetric: ((metric: SentenceMetric) => void) | null = null;
 
@@ -297,9 +397,17 @@ export class Speaker {
     return typeof window !== "undefined" && ("speechSynthesis" in window || this.out.supported);
   }
 
-  /** Picks the built-in voices (always needed: they are the fallback). */
+  /** Which voice speaks now. */
+  get engine(): VoiceEngine {
+    return this.useNeural() ? "kokoro" : "builtin";
+  }
+
+  /** Picks the built-in voices (always needed: they are the fallback), and lets the babble sound after a tap. */
   init(): Promise<void> {
-    if (!this.initPromise) this.initPromise = this.pickVoices();
+    if (!this.initPromise) {
+      listenForFirstTap();
+      this.initPromise = this.pickVoices();
+    }
     return this.initPromise;
   }
 
@@ -330,7 +438,7 @@ export class Speaker {
       narrator: narrator?.name ?? null,
       character: character?.name ?? null,
       local: narrator?.localService ?? false,
-      engine: this.useNeural() ? "kokoro" : "builtin",
+      engine: this.engine,
       kokoro: this.neural
         ? { ...this.neural, narrator: styleFor("narrator").voice, character: styleFor("character").voice }
         : null,
@@ -370,58 +478,86 @@ export class Speaker {
     this.forced = new URLSearchParams(search).get("ttsForce") === "1";
     const timeout = Number(new URLSearchParams(search).get("ttsTimeout"));
     this.timeoutOverride = Number.isFinite(timeout) && timeout > 0 ? timeout : null;
-    const device = chooseTTSDevice(support, search);
-    const dtype = chooseTTSDtype(device, search);
-    const total = (KOKORO.modelMB[device] + KOKORO.voiceMB * PRELOADED_VOICES.length) * 1e6;
+    const devices = chooseTTSDevices(support, search);
+    const total = (KOKORO.modelMB[devices[0]] + KOKORO.voiceMB * PRELOADED_VOICES.length) * 1e6;
     // The download may start only where a parent asked for it, never on a kid screen.
     const mayDownload = !isMarkedReady() || /^\/(setup|lab)\b/.test(window.location.pathname);
-    const measuredSlow = this.forced ? null : slowVoiceMeasured(device);
 
     if (!this.out.supported) {
-      this.reason = "Web Audio is missing";
-    } else if (!this.kokoro && measuredSlow !== null) {
-      this.reason = `Kokoro measured slower than speech on this device (real-time factor ${measuredSlow.toFixed(2)})`;
-    } else if (!this.kokoro && !mayDownload && !(await isKokoroCached(device))) {
-      this.reason = "Kokoro is not downloaded yet (open /setup)";
+      this.reason = WHY.noAudio;
     } else if (!this.kokoro) {
-      onProgress(0, total, "Getting the storytelling voice ready…");
-      const kokoro = new KokoroClient();
-      try {
-        const first = [styleFor("narrator").voice, styleFor("character").voice];
-        const voices = [...new Set([...first, ...PRELOADED_VOICES])];
-        const { warmupMs, rtf } = await kokoro.load(device, dtype, modelHost, source, voices, (loaded, size) => {
-          const expected = Math.max(size, total);
-          onProgress(loaded, expected, `Downloading the storytelling voice… ${Math.round((loaded / expected) * 100)}%`);
-        });
-        if (device === "wasm" && rtf > MAX_WASM_RTF && !this.forced) {
-          kokoro.dispose();
-          rememberSlowVoice(device, rtf);
-          this.reason = `Kokoro is slower than speech on this device (real-time factor ${rtf.toFixed(2)})`;
-        } else {
-          this.kokoro = kokoro;
-          this.neural = { device, dtype, rtf, warmupMs };
-          this.reason = null;
-          this.coldStart = true;
-          this.timeoutsInARow = 0;
-        }
-      } catch (error) {
-        kokoro.dispose();
-        this.reason = `Kokoro failed to load: ${error instanceof Error ? error.message : String(error)}`;
+      // The GPU first where there is one; the CPU when the GPU cannot start it or is too slow.
+      for (const device of devices) {
+        const dtype = chooseTTSDtype(device, search);
+        const attempt = () => this.tryKokoro(device, dtype, modelHost, source, mayDownload, onProgress);
+        let outcome = await attempt();
+        // A first, cold load can fail while other models fill the GPU; on its own it usually succeeds.
+        if (outcome === "failed") outcome = await attempt();
+        if (outcome === "ready") break;
       }
     }
     this.loadMs = performance.now() - started;
     const info = this.info();
-    const voiceName = (id: string) => findVoice(id)?.name ?? id;
     onProgress(
       total,
       total,
-      info.engine === "kokoro" && info.kokoro
-        ? `Voice ready (Kokoro ${voiceName(info.kokoro.narrator)} and ${voiceName(info.kokoro.character)})`
+      info.engine === "kokoro"
+        ? "Storytelling voice ready"
         : info.narrator
-          ? `Using the device voice (${info.narrator})${info.reason ? `. Why: ${info.reason}` : ""}`
-          : "No voice found on this device",
+          ? "This device will use its built-in voice."
+          : "The drawings will talk in playful sounds on this device.",
     );
     return info;
+  }
+
+  /** Loads Kokoro on one device and keeps it when it is faster than speech; the details go to the console. */
+  private async tryKokoro(
+    device: TTSDevice,
+    dtype: KokoroDtype,
+    modelHost: string | null,
+    source: ModelSource,
+    mayDownload: boolean,
+    onProgress: (loaded: number, total: number, text: string) => void,
+  ): Promise<"ready" | "slow" | "missing" | "failed"> {
+    const total = (KOKORO.modelMB[device] + KOKORO.voiceMB * PRELOADED_VOICES.length) * 1e6;
+    const measuredSlow = this.forced ? null : slowVoiceMeasured(device);
+    if (measuredSlow !== null) {
+      console.info(`[voice] Kokoro on ${device} measured slower than speech before (real-time factor ${measuredSlow.toFixed(2)})`);
+      this.reason = WHY.slow;
+      return "slow";
+    }
+    if (!mayDownload && !(await isKokoroCached(device, dtype))) {
+      this.reason = WHY.notDownloaded;
+      return "missing";
+    }
+    onProgress(0, total, "Getting the storytelling voice ready…");
+    const kokoro = new KokoroClient();
+    try {
+      const first = [styleFor("narrator").voice, styleFor("character").voice];
+      const voices = [...new Set([...first, ...PRELOADED_VOICES])];
+      const { warmupMs, rtf } = await kokoro.load(device, dtype, modelHost, source, voices, (loaded, size) => {
+        const expected = Math.max(size, total);
+        onProgress(loaded, expected, `Downloading the storytelling voice… ${Math.round((loaded / expected) * 100)}%`);
+      });
+      console.info(`[voice] Kokoro ${dtype} on ${device}: real-time factor ${rtf.toFixed(2)}, warm-up ${Math.round(warmupMs)} ms`);
+      if (!(rtf <= MAX_RTF) && !this.forced) {
+        kokoro.dispose();
+        rememberSlowVoice(device, rtf);
+        this.reason = WHY.slow;
+        return "slow";
+      }
+      this.kokoro = kokoro;
+      this.neural = { device, dtype, rtf, warmupMs };
+      this.reason = null;
+      this.coldStart = true;
+      this.timeoutsInARow = 0;
+      return "ready";
+    } catch (error) {
+      kokoro.dispose();
+      console.warn(`[voice] Kokoro ${dtype} on ${device} failed to load:`, error);
+      this.reason = WHY.failed;
+      return "failed";
+    }
   }
 
   private useNeural(): boolean {
@@ -432,13 +568,26 @@ export class Speaker {
   setEngine(engine: VoiceEngine) {
     setPreferredEngine(engine);
     // Choosing Kokoro again measures it again on the next load.
-    if (engine === "kokoro") rememberSlowVoice("wasm", null);
+    if (engine === "kokoro") rememberSlowVoice(null, null);
     if (engine === "kokoro" && this.kokoro) this.reason = null;
   }
 
-  private builtinPlayback(role: VoiceRole, notifyStart: boolean, reason?: string): Playback {
+  /**
+   * A message without the neural voice: the character babbles, the narrator
+   * uses the device voice, and babbles too when the device voice does not work.
+   */
+  private builtinPlayback(role: VoiceRole, notifyStart: boolean, reason?: string): SpeechPlayback {
     const listeners = notifyStart ? this.startListeners : NO_LISTENERS;
-    return new Playback(role, this.voices[role], this.meter, listeners, (m) => this.onMetric?.(m), reason);
+    const metric = (m: SentenceMetric) => this.onMetric?.(m);
+    const babble = (why?: string) => new BabblePlayback(role, BABBLE_KIND[role], listeners, metric, why);
+    if (role === "character" && CHARACTER_BABBLES) return babble(reason);
+    if (this.deviceVoiceBroken) return babble(reason ?? WHY.deviceVoice);
+    return new Playback(role, this.voices[role], this.meter, listeners, metric, reason, {
+      rescue: (why) => babble(why),
+      broken: () => {
+        this.deviceVoiceBroken = true;
+      },
+    });
   }
 
   private neuralHost(role: VoiceRole, kokoro: KokoroClient, device: TTSDevice): NeuralHost {
@@ -448,14 +597,17 @@ export class Speaker {
       style: styleFor(role),
       device,
       startListeners: this.startListeners,
-      maxRtf: device === "wasm" && !this.forced ? MAX_WASM_RTF : null,
+      maxRtf: device === "wasm" && !this.forced ? MAX_RTF : null,
       timeoutMs: this.timeoutOverride ?? (this.coldStart ? FIRST_MESSAGE_TIMEOUT_MS : SENTENCE_TIMEOUT_MS),
       disable: (reason) => {
         this.reason = reason;
       },
       timedOut: (reason) => {
         this.timeoutsInARow++;
-        if (this.timeoutsInARow >= MAX_TIMEOUTS_IN_A_ROW) this.reason = `${reason} (${this.timeoutsInARow} times in a row)`;
+        if (this.timeoutsInARow >= MAX_TIMEOUTS_IN_A_ROW) {
+          console.warn(`[voice] Kokoro ${reason} ${this.timeoutsInARow} times in a row; the fallback speaks from now on`);
+          this.reason = WHY.slow;
+        }
       },
       succeeded: () => {
         this.timeoutsInARow = 0;
@@ -473,7 +625,7 @@ export class Speaker {
       playback = new NeuralPlayback(role, this.neuralHost(role, this.kokoro, this.neural.device));
       this.coldStart = false;
     } else {
-      playback = this.builtinPlayback(role, true, this.kokoro ? (this.reason ?? undefined) : undefined);
+      playback = this.builtinPlayback(role, true, this.reason ?? undefined);
     }
     this.active = playback;
     return playback;
@@ -485,6 +637,7 @@ export class Speaker {
    * samples arrive later. Also nudges Chrome's speech queue, which can get stuck.
    */
   prime() {
+    unlockSounds();
     if (this.out.supported) void this.out.resume();
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.resume();
   }
@@ -521,7 +674,7 @@ export class Speaker {
 
   /** 0..1: the neural voice's measured loudness, or the built-in voice's word-by-word estimate. */
   level(): number {
-    return Math.max(this.out.level(), this.meter.level());
+    return Math.max(this.out.level(), this.meter.level(), babbleLevel());
   }
 
   onStart(listener: StartListener): () => void {
