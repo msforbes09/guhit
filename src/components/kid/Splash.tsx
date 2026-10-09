@@ -1,30 +1,38 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BLOCK, BRAND, CURSIVE, MARK } from "./brand";
+import { BLOCK, BRAND, MARK } from "./brand";
 
 /** Timeline, in ms. */
 const T = {
-  enter: [0, 250],
-  write: [250, 1450],
-  hop: [1450, 1750],
-  dot: [1750, 1980],
-  tBar: [1790, 1940],
-  morph: [1960, 2250],
-  mark: [1950, 2250],
-  loop: [1980, 2330],
-  face: [2250, 2400],
-  eyes: [2300, 2420],
-  blink: [2480, 2600],
-  smile: [2350, 2500],
-  rays: [2250, 2450],
-  tagline: [2250, 2600],
-  footer: [2400, 2600],
+  enter: [0, 180],
+  write: [140, 1240],
+  hop: [1240, 1480],
+  squash: [1400, 1520],
+  land: [1480, 1620],
+  dot: [1460, 1640],
+  mark: [1480, 1780],
+  loop: [1500, 1800],
+  face: [1720, 1840],
+  eyes: [1760, 1870],
+  blink: [1900, 2000],
+  smile: [1800, 1920],
+  rays: [1720, 1880],
+  bounce: [1960, 2160],
+  wave: [2060, 2380],
+  crouch: [2380, 2440],
+  leave: [2440, 2740],
+  tagline: [1800, 2140],
+  footer: [1950, 2150],
 } as const;
-const BUILT = 2650;
+const BUILT = 2760;
 const HOLD = 500;
 const FADE = 350;
 const REDUCED_HOLD = 1000;
+/** The pen lifts between strokes, in ms: within a letter, and on to the next letter. */
+const LIFT = { stroke: 30, letter: 60 };
+/** Added to every stroke's length when sharing out the writing time, so the i's dot still takes a beat. */
+const STROKE_PAD = 40;
 
 type Ease = (p: number) => number;
 const clamp = (x: number) => Math.max(0, Math.min(1, x));
@@ -35,20 +43,35 @@ const ease = {
   back: (p: number) => 1 + 2.9 * (p - 1) ** 3 + 1.9 * (p - 1) ** 2,
   linear: (p: number) => p,
 };
+/** A hand's speed along one stroke: quick through the middle, easing at both ends. */
+const hand: Ease = (p) => 0.4 * p + 0.6 * ease.sine(p);
 const along = (t: number, [a, b]: readonly [number, number], e: Ease = ease.out) => e(clamp((t - a) / (b - a)));
 
-/** The word box shares the cursive art's shape; the printed art is fitted inside it. */
-const WORD_ASPECT = CURSIVE.viewBox.w / CURSIVE.viewBox.h;
-const toPrinted = (() => {
-  const su = 1 / CURSIVE.viewBox.w;
-  const sb = Math.min(1 / BLOCK.viewBox.w, 1 / WORD_ASPECT / BLOCK.viewBox.h);
-  const offX = (1 - BLOCK.viewBox.w * sb) / 2;
-  const offY = (1 / WORD_ASPECT - BLOCK.viewBox.h * sb) / 2;
-  return (x: number, y: number) => ({
-    x: ((x - CURSIVE.viewBox.x) * su - offX) / sb,
-    y: ((y - CURSIVE.viewBox.y) * su - offY) / sb,
-  });
+/** The word box is a little taller than the printed art, which sits centred in it. */
+const WORD_ASPECT = 58 / 30;
+
+const I_X = BLOCK.crayon.point.x;
+/**
+ * The printed word in writing order: one entry per letter, one path per pen
+ * stroke. The i is plain ink here, a stand-in the crayon squashes out when it
+ * lands in its place.
+ */
+const LETTERS = (() => {
+  const [g, u, h, t] = BLOCK.letters.map((d) => d.split(/(?=M)/).map((s) => s.trim()));
+  const { cx, cy, r } = BLOCK.gBowl;
+  return [
+    // The g's bowl starts on its right and goes up and round, the way a hand writes it.
+    [`M${cx + r},${cy} A${r},${r} 0 0 0 ${cx - r},${cy} A${r},${r} 0 0 0 ${cx + r},${cy}`, ...g],
+    u,
+    h,
+    [`M${I_X},62 V132`, `M${I_X},34 V34.5`],
+    t,
+  ];
 })();
+const INK_I = 3;
+const STROKES = LETTERS.flatMap((paths, letter) => paths.map((d) => ({ d, letter })));
+/** The crayon's flat end, which it squashes onto as it lands. */
+const CRAYON_FOOT = { x: I_X, y: 134 };
 
 const scaleAbout = (el: Element, cx: number, cy: number, sx: number, sy = sx) =>
   el.setAttribute("transform", `translate(${cx} ${cy}) scale(${Math.max(sx, 0.001)} ${Math.max(sy, 0.001)}) translate(${-cx} ${-cy})`);
@@ -66,21 +89,20 @@ function Crayon() {
 }
 
 /**
- * Cold-load splash: a crayon writes "guhit", hops into place as the i of the
- * printed logo, the word settles into print, the creature mark wakes up,
- * then everything fades to the screen underneath. Tap to skip.
+ * Cold-load splash: a crayon writes the printed "guhit" letter by letter,
+ * hops into the i's place and stays there as the logo's i, then the creature
+ * scribbles itself in, wakes up, bounces, waves and hops away, leaving the
+ * wordmark and tagline before everything fades to the screen underneath.
+ * Tap to skip.
  *
- * The crayon lives in its own layer drawn with the printed logo's geometry
- * and colours, so it lands exactly on the printed i and nothing changes
- * colour or jumps when the cursive word turns into print.
+ * The writing crayon is drawn with the printed logo's geometry and colours,
+ * so it lands exactly on the printed i and the last frame is the logo.
  */
 export function Splash({ version }: { version: string }) {
   const [done, setDone] = useState(false);
   const root = useRef<HTMLDivElement>(null);
-  const cursive = useRef<HTMLDivElement>(null);
-  const printed = useRef<HTMLDivElement>(null);
-  const stroke = useRef<SVGPathElement>(null);
-  const tBar = useRef<SVGPathElement>(null);
+  const strokes = useRef<(SVGPathElement | null)[]>([]);
+  const inkI = useRef<SVGGElement>(null);
   const pen = useRef<SVGGElement>(null);
   const crayon = useRef<SVGGElement>(null);
   const dot = useRef<SVGCircleElement>(null);
@@ -96,36 +118,65 @@ export function Splash({ version }: { version: string }) {
   const clock = useRef(0);
 
   useEffect(() => {
-    const path = stroke.current;
-    if (!path) return;
+    const paths = strokes.current.filter((p): p is SVGPathElement => p !== null);
+    if (paths.length < STROKES.length) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const length = path.getTotalLength();
-    const end = path.getPointAtLength(length);
     const tip = BLOCK.crayon.point;
-    const landFrom = toPrinted(end.x, end.y);
+
+    // Share the writing time out by stroke length, with the pen lifted between strokes.
+    const lengths = paths.map((p) => p.getTotalLength());
+    const lifts = STROKES.map((s, k) => (k === 0 ? 0 : s.letter === STROKES[k - 1].letter ? LIFT.stroke : LIFT.letter));
+    const inkTime = T.write[1] - T.write[0] - lifts.reduce((a, b) => a + b, 0);
+    const weight = lengths.reduce((a, b) => a + b + STROKE_PAD, 0);
+    let at = T.write[0];
+    const plan = paths.map((path, k) => {
+      const start = at + lifts[k];
+      at = start + (inkTime * (lengths[k] + STROKE_PAD)) / weight;
+      return { path, length: lengths[k], start, end: at, from: path.getPointAtLength(0), to: path.getPointAtLength(lengths[k]) };
+    });
+    const landFrom = plan[plan.length - 1].to;
+
+    /** Where the crayon's point is while it writes, and how far it is lifted off the paper (0 to 1). */
+    const penAt = (c: number) => {
+      const k = plan.findIndex((s) => c < s.end);
+      if (k === -1) return { x: landFrom.x, y: landFrom.y, lift: 0 };
+      const s = plan[k];
+      if (c >= s.start) {
+        const p = s.path.getPointAtLength(s.length * along(c, [s.start, s.end], hand));
+        return { x: p.x, y: p.y, lift: 0 };
+      }
+      if (k === 0) return { x: s.from.x, y: s.from.y, lift: 0 };
+      const prev = plan[k - 1];
+      const q = along(c, [prev.end, s.start], ease.inOut);
+      return { x: prev.to.x + (s.from.x - prev.to.x) * q, y: prev.to.y + (s.from.y - prev.to.y) * q, lift: Math.sin(Math.PI * q) };
+    };
+
+    // How far the creature hops: up past the top edge, and a little to the right.
+    const away = mark.current ? { x: window.innerWidth * 0.3, y: mark.current.offsetTop + mark.current.offsetHeight * 1.4 } : { x: 0, y: 0 };
 
     const render = (t: number) => {
       const still = reduced || skipAt.current !== null;
       const c = still ? BUILT : t;
 
-      // 1. The crayon comes in and writes the cursive word.
-      const enter = along(c, T.enter);
-      const written = along(c, T.write, (p) => 0.4 * p + 0.6 * ease.sine(p));
-      path.style.strokeDashoffset = `${100 * (1 - written)}`;
-      path.style.visibility = written > 0 ? "visible" : "hidden";
+      // 1. The crayon comes in and writes the printed word, a plain ink i included.
+      plan.forEach((s) => {
+        const p = along(c, [s.start, s.end], hand);
+        s.path.style.strokeDashoffset = `${1 - p}`;
+        s.path.style.visibility = p > 0 ? "visible" : "hidden";
+      });
 
+      const enter = along(c, T.enter);
       const hop = along(c, T.hop, ease.inOut);
       let x: number, y: number, rot: number, s: number;
       if (hop <= 0) {
-        const at = path.getPointAtLength(written * length);
-        const p = toPrinted(at.x, at.y);
+        const at = penAt(c);
         const wobble = c > T.write[0] && c < T.write[1] ? Math.sin(c * 0.045) : 0;
-        x = p.x - (1 - enter) * 80 + wobble * 0.6;
-        y = p.y - (1 - enter) * 110 + Math.cos(c * 0.06) * 0.4;
+        x = at.x - (1 - enter) * 80 + wobble * 0.6;
+        y = at.y - (1 - enter) * 110 - 12 * at.lift + Math.cos(c * 0.06) * 0.4;
         rot = -140 + wobble * 3 - (1 - enter) * 20;
         s = 0.42 + 0.04 * enter;
       } else {
-        // Hop back and land upright as the printed i.
+        // 2. Hop back and land upright on the ink i, squashing it out.
         x = landFrom.x + (tip.x - landFrom.x) * hop;
         y = landFrom.y + (tip.y - landFrom.y) * hop - 280 * hop * (1 - hop);
         rot = -140 + 140 * hop;
@@ -136,38 +187,41 @@ export function Splash({ version }: { version: string }) {
         pen.current.setAttribute("transform", `translate(${x} ${y}) rotate(${rot}) scale(${s}) translate(${-tip.x} ${-tip.y})`);
         pen.current.style.opacity = landed ? "0" : `${Math.min(1, enter * 3)}`;
       }
-      if (crayon.current) crayon.current.style.opacity = landed ? "1" : "0";
+      if (crayon.current) {
+        const thud = Math.sin(Math.PI * along(c, T.land, ease.linear));
+        scaleAbout(crayon.current, CRAYON_FOOT.x, CRAYON_FOOT.y, 1 + 0.08 * thud, 1 - 0.1 * thud);
+        crayon.current.style.opacity = landed ? "1" : "0";
+      }
+      const sq = along(c, T.squash, ease.inOut);
+      if (inkI.current) {
+        scaleAbout(inkI.current, I_X, 132, 1 + 0.6 * sq, 1 - sq);
+        inkI.current.style.opacity = `${1 - sq}`;
+      }
 
       const dp = along(c, T.dot, ease.back);
       if (dot.current) {
         scaleAbout(dot.current, BLOCK.dot.cx, BLOCK.dot.cy, dp);
         dot.current.style.opacity = dp > 0 ? "1" : "0";
       }
-      const tp = along(c, T.tBar);
-      if (tBar.current) {
-        tBar.current.style.strokeDashoffset = `${100 * (1 - tp)}`;
-        tBar.current.style.visibility = tp > 0 ? "visible" : "hidden";
-      }
 
-      // 2. The cursive word settles into the printed one.
-      const m = along(c, T.morph, ease.inOut);
-      if (cursive.current) {
-        cursive.current.style.opacity = `${1 - m}`;
-        cursive.current.style.transform = `scale(${1 + 0.05 * m})`;
-        cursive.current.style.filter = m > 0 ? `blur(${m * 6}px)` : "none";
-      }
-      if (printed.current) {
-        printed.current.style.opacity = `${m}`;
-        printed.current.style.transform = `scale(${0.95 + 0.05 * m})`;
-        printed.current.style.filter = m < 1 ? `blur(${(1 - m) * 6}px)` : "none";
-      }
-
-      // 3. The creature mark wakes up above it.
+      // 3. The creature scribbles itself in above the word, wakes up, bounces,
+      // waves and hops away.
       const mo = along(c, [T.mark[0], T.mark[0] + 150]);
       const mp = along(c, T.mark, ease.back);
+      const bounce = Math.sin(Math.PI * along(c, T.bounce, ease.linear));
+      const wq = along(c, T.wave, ease.linear);
+      const crouch = along(c, T.crouch);
+      const gone = along(c, T.leave, (p) => p * p);
       if (mark.current) {
-        mark.current.style.opacity = `${mo}`;
-        mark.current.style.transform = `translateY(${(1 - mo) * 10}px) scale(${0.8 + 0.2 * mp})`;
+        const grow = 0.8 + 0.2 * mp;
+        const stretch = Math.min(1, gone * 4);
+        const sx = grow * (1 - 0.03 * bounce + 0.1 * crouch - 0.12 * stretch);
+        const sy = grow * (1 + 0.06 * bounce - 0.14 * crouch + 0.24 * stretch);
+        const tilt = 9 * Math.sin(4 * Math.PI * wq) * (1 - wq) + 30 * gone;
+        const mx = away.x * gone;
+        const my = (1 - mo) * 10 - 18 * bounce - away.y * gone;
+        mark.current.style.opacity = gone < 1 ? `${mo}` : "0";
+        mark.current.style.transform = `translate(${mx}px, ${my}px) rotate(${tilt}deg) scale(${sx}, ${sy})`;
       }
       const lp = along(c, T.loop);
       if (loop.current) {
@@ -246,6 +300,18 @@ export function Splash({ version }: { version: string }) {
     setTimeout(() => setDone(true), FADE + 100);
   };
 
+  const ink = (d: string, k: number) => (
+    <path
+      key={k}
+      ref={(el) => {
+        strokes.current[k] = el;
+      }}
+      d={d}
+      pathLength={1}
+      style={{ strokeDasharray: "1 1", strokeDashoffset: 1, visibility: "hidden" }}
+    />
+  );
+
   return (
     <div
       ref={root}
@@ -254,7 +320,7 @@ export function Splash({ version }: { version: string }) {
       className="splash fixed inset-0 z-[100] flex justify-center bg-[#fff8ee]"
     >
       <div className="relative flex h-full w-full max-w-[420px] flex-col items-center justify-center px-6 pb-14">
-        <div ref={mark} className="aspect-square w-[min(46vw,170px)]" style={{ opacity: 0 }}>
+        <div ref={mark} className="aspect-square w-[min(46vw,170px)] origin-bottom" style={{ opacity: 0 }}>
           <svg viewBox="0 0 512 512" className="block h-full w-full overflow-visible">
             <defs>
               <filter id="splash-crayon" x="-5%" y="-5%" width="110%" height="110%">
@@ -315,52 +381,15 @@ export function Splash({ version }: { version: string }) {
         </div>
 
         <div className="relative -mt-1.5 w-full" style={{ aspectRatio: `${WORD_ASPECT}` }}>
-          <div ref={cursive} className="absolute inset-0 will-change-[transform,opacity,filter]">
-            <svg
-              viewBox={`${CURSIVE.viewBox.x} ${CURSIVE.viewBox.y} ${CURSIVE.viewBox.w} ${CURSIVE.viewBox.h}`}
-              className="block h-full w-full overflow-visible"
-            >
-              <path
-                ref={stroke}
-                d={CURSIVE.stroke}
-                pathLength={100}
-                fill="none"
-                stroke={BRAND.ink}
-                strokeWidth={17}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ strokeDasharray: "100 100", strokeDashoffset: 100, visibility: "hidden" }}
-              />
-              <path
-                ref={tBar}
-                d={CURSIVE.tBar}
-                pathLength={100}
-                fill="none"
-                stroke={BRAND.ink}
-                strokeWidth={17}
-                strokeLinecap="round"
-                style={{ strokeDasharray: "100 100", strokeDashoffset: 100, visibility: "hidden" }}
-              />
-            </svg>
-          </div>
-          <div ref={printed} className="absolute inset-0 will-change-[transform,opacity,filter]" style={{ opacity: 0 }}>
-            <svg
-              viewBox={`${BLOCK.viewBox.x} ${BLOCK.viewBox.y} ${BLOCK.viewBox.w} ${BLOCK.viewBox.h}`}
-              className="block h-full w-full overflow-visible"
-            >
-              <g fill="none" stroke={BRAND.ink} strokeWidth={15} strokeLinecap="round" strokeLinejoin="round">
-                <circle {...BLOCK.gBowl} />
-                {BLOCK.letters.map((d) => (
-                  <path key={d} d={d} />
-                ))}
-              </g>
-            </svg>
-          </div>
-          {/* The crayon and its dot never fade with the words: they are the printed i throughout. */}
           <svg
             viewBox={`${BLOCK.viewBox.x} ${BLOCK.viewBox.y} ${BLOCK.viewBox.w} ${BLOCK.viewBox.h}`}
             className="absolute inset-0 block h-full w-full overflow-visible"
           >
+            <g fill="none" stroke={BRAND.ink} strokeWidth={15} strokeLinecap="round" strokeLinejoin="round">
+              {STROKES.map((s, k) => s.letter !== INK_I && ink(s.d, k))}
+              <g ref={inkI}>{STROKES.map((s, k) => s.letter === INK_I && ink(s.d, k))}</g>
+            </g>
+            {/* The crayon that lands stays as the printed logo's i. */}
             <g ref={crayon} style={{ opacity: 0 }}>
               <Crayon />
             </g>
