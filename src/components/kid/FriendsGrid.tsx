@@ -77,11 +77,16 @@ function FriendCard({
       style={{ transform: `rotate(${TILTS[index % TILTS.length]}deg)` } as CSSProperties}
     >
       {asking ? (
-        <div className="flex aspect-[4/5] flex-col items-center justify-center gap-3 text-center" role="alertdialog" aria-label={`Let ${name} go?`}>
+        // No fixed shape: on a phone's narrow card the question grows taller, never wider than its card.
+        <div
+          className="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 text-center [overflow-wrap:anywhere]"
+          role="alertdialog"
+          aria-label={`Let ${name} go?`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element -- local data URL */}
-          <img src={friend.cutout ?? friend.drawing} alt="" className="sticker h-20 w-20 object-contain opacity-80" />
-          <p className="font-display text-xl font-extrabold text-ink">Say goodbye to {name}?</p>
-          <p className="text-base text-ink-soft">Their stories will go too.</p>
+          <img src={friend.cutout ?? friend.drawing} alt="" className="sticker h-16 w-16 object-contain opacity-80" />
+          <p className="font-display text-lg leading-tight font-extrabold text-ink sm:text-xl">Say goodbye to {name}?</p>
+          <p className="text-sm text-ink-soft sm:text-base">Their stories will go too.</p>
           <div className="flex w-full flex-col gap-2">
             <Button tone="paper" size="sm" onClick={() => setAsking(false)} autoFocus disabled={going}>
               Keep {friend.name || "them"}

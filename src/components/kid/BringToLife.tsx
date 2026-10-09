@@ -117,6 +117,8 @@ export function useBringToLife() {
           const better = await Promise.race([cutout(image, { method: "ai", editable: true }).catch(() => null), wait(AI_RETRY_MS).then(() => null)]);
           if (better && better.meta?.quality !== "poor") cut = better;
         }
+        // Nothing drawn was found: never kept as an empty "New friend".
+        if (cut.meta?.reasons.includes("no drawing found")) throw new Error("No drawing in the picture.");
         const photoCrop = cut.meta ? scaleRect(photoCropFromCutout(cut.meta), picture.scale) : undefined;
         // The engine looks before anything comes alive or is saved.
         setWorking("looking");
