@@ -1,7 +1,7 @@
 import type { TTSRequest, TTSResponse } from "@/workers/tts.worker";
 import { ModelWorker } from "../model-worker";
 import { isTransformersModelCached } from "../offline";
-import { KOKORO, styleFor, VOICE_CACHE, type TTSDevice } from "./voices";
+import { KOKORO, styleFor, VOICE_CACHE, type KokoroDtype, type TTSDevice } from "./voices";
 
 /** True when the model for this device and the two voices in use are already stored. */
 export async function isKokoroCached(device: TTSDevice): Promise<boolean> {
@@ -22,6 +22,8 @@ export interface Synthesis {
   audio: Float32Array;
   /** Time the worker spent on this sentence. */
   ms: number;
+  g2pMs: number;
+  modelMs: number;
   phonemes: string;
 }
 
@@ -37,6 +39,7 @@ export class KokoroClient {
 
   async load(
     device: TTSDevice,
+    dtype: KokoroDtype,
     modelHost: string | null,
     voices: string[],
     onProgress: (loaded: number, total: number) => void,
@@ -52,7 +55,7 @@ export class KokoroClient {
     this.worker.addEventListener("message", capture);
     try {
       const { warmupMs } = await this.model.load(
-        { type: "load", device, modelHost, voices } satisfies TTSRequest,
+        { type: "load", device, dtype, modelHost, voices } satisfies TTSRequest,
         onProgress,
       );
       this.loadRtf = rtf;
@@ -65,7 +68,8 @@ export class KokoroClient {
   async synthesize(text: string, voice: string, speed: number): Promise<Synthesis> {
     if (!this.model) throw new Error("The voice is not loaded yet.");
     const result = await this.model.call({ type: "speak", epoch: this.epoch, text, voice, speed });
-    return { audio: result.audio, ms: result.ms, phonemes: result.phonemes };
+    const { audio, ms, g2pMs, modelMs, phonemes } = result;
+    return { audio, ms, g2pMs, modelMs, phonemes };
   }
 
   /** Skips every sentence still waiting in the worker (the speech was stopped). */

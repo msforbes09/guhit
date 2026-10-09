@@ -65,19 +65,16 @@ export function VoiceLab() {
     const s = Speaker.latest;
     if (s) s.onMetric = (m) => setMetrics((all) => [...all, m]);
     // The level meter reads the public contract, exactly as a kid screen would.
-    let frame = 0;
     let top = 0;
-    const tick = () => {
+    const timer = setInterval(() => {
       const level = ai.speechLevel();
       top = Math.max(level, top * 0.995);
       if (meter.current) meter.current.style.width = `${level * 100}%`;
       if (peak.current) peak.current.textContent = `${level.toFixed(2)} (peak ${top.toFixed(2)})`;
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
+    }, 33);
     return () => {
       offStart();
-      cancelAnimationFrame(frame);
+      clearInterval(timer);
       if (s) s.onMetric = null;
     };
   }, []);
@@ -152,7 +149,7 @@ export function VoiceLab() {
       <p>
         Engine: <strong>{info?.engine ?? "not loaded"}</strong>
         {info?.kokoro &&
-          ` · Kokoro on ${info.kokoro.device} · load RTF ${info.kokoro.rtf.toFixed(2)} · warm-up ${ms(info.kokoro.warmupMs)}`}
+          ` · Kokoro ${info.kokoro.dtype} on ${info.kokoro.device} · load RTF ${info.kokoro.rtf.toFixed(2)} · warm-up ${ms(info.kokoro.warmupMs)}`}
         {info?.reason && ` · built-in because: ${info.reason}`}
         {info && ` · built-in voices: ${info.narrator ?? "none"} / ${info.character ?? "none"}`}
       </p>
@@ -304,7 +301,10 @@ export function VoiceLab() {
               </td>
               <td className="pr-2">{m.voice}</td>
               <td className="pr-2">{m.index}</td>
-              <td className="pr-2">{ms(m.synthMs)}</td>
+              <td className="pr-2">
+                {ms(m.synthMs)}
+                {m.modelMs !== undefined ? ` (g2p ${Math.round(m.g2pMs ?? 0)} · model ${Math.round(m.modelMs)})` : ""}
+              </td>
               <td className="pr-2">{m.audioSeconds ? `${m.audioSeconds.toFixed(2)} s` : "–"}</td>
               <td className="pr-2">{m.rtf?.toFixed(2) ?? "–"}</td>
               <td className="pr-2">{ms(m.firstAudioMs)}</td>

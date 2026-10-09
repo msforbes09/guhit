@@ -86,7 +86,7 @@ export class AudioOut {
     analyser.getFloatTimeDomainData(samples);
     let sum = 0;
     for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
-    const rms = Math.sqrt(sum / samples.length);
+    const rms = Math.sqrt(sum / samples.length) || 0;
     // Kokoro speaks at about -23 dBFS RMS; -50 dB is silence and -12 dB a loud vowel.
     const db = 20 * Math.log10(rms + 1e-9);
     const target = Math.min(1, Math.max(0, (db + 50) / 38));

@@ -2,6 +2,9 @@ import type { Accent } from "./phonemize";
 
 export type VoiceRole = "narrator" | "character";
 export type TTSDevice = "webgpu" | "wasm";
+/** Precisions of the Kokoro ONNX export; /lab can try the others with "?ttsDtype=". */
+export type KokoroDtype = "fp32" | "fp16" | "q8" | "q4f16";
+const DTYPES: KokoroDtype[] = ["fp32", "fp16", "q8", "q4f16"];
 
 /**
  * Kokoro-82M v1.0 (Apache-2.0, weights and voices) as converted to ONNX by
@@ -13,7 +16,7 @@ export type TTSDevice = "webgpu" | "wasm";
 export const KOKORO = {
   id: "onnx-community/Kokoro-82M-v1.0-ONNX",
   sampleRate: 24000,
-  dtype: { webgpu: "fp32", wasm: "q8" } as Record<TTSDevice, "fp32" | "q8">,
+  dtype: { webgpu: "fp32", wasm: "q8" } as Record<TTSDevice, KokoroDtype>,
   /** Model file plus tokenizer and config, from the Hugging Face repo listing. */
   modelMB: { webgpu: 325.5, wasm: 92.4 } as Record<TTSDevice, number>,
   /** Each voice is a 510×256 float32 style table. */
@@ -128,6 +131,11 @@ export const PRELOADED_VOICES = KOKORO_VOICES.map((v) => v.id);
  * WebGPU on laptops, the CPU (wasm) on phones; "?ttsDevice=wasm|webgpu"
  * overrides it so /lab can measure the phone path on a laptop.
  */
+export function chooseTTSDtype(device: TTSDevice, search = ""): KokoroDtype {
+  const override = new URLSearchParams(search).get("ttsDtype") as KokoroDtype | null;
+  return override && DTYPES.includes(override) ? override : KOKORO.dtype[device];
+}
+
 export function chooseTTSDevice(support: { webgpu: boolean; mobile: boolean }, search = ""): TTSDevice {
   const override = new URLSearchParams(search).get("ttsDevice");
   if (override === "wasm" || override === "webgpu") return override;

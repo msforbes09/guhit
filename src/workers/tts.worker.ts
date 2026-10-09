@@ -1,6 +1,6 @@
 import { AutoTokenizer, env, StyleTextToSpeech2Model, Tensor } from "@huggingface/transformers";
 import { phonemize } from "@/lib/ai/voice/phonemize";
-import { findVoice, KOKORO, VOICE_CACHE, type TTSDevice } from "@/lib/ai/voice/voices";
+import { findVoice, KOKORO, VOICE_CACHE, type KokoroDtype, type TTSDevice } from "@/lib/ai/voice/voices";
 import { configureTransformers, type FileProgress } from "./ort-env";
 
 type Tokenizer = (text: string, options: { truncation: boolean }) => { input_ids: Tensor };
@@ -10,6 +10,7 @@ export type TTSRequest =
   | {
       type: "load";
       device: TTSDevice;
+      dtype: KokoroDtype;
       /** A mirror with Hugging Face's layout, or null for Hugging Face itself. */
       modelHost: string | null;
       /** Voices to fetch now so they work offline later; the first one is used for the warm-up. */
@@ -22,7 +23,18 @@ export type TTSRequest =
 export type TTSResponse =
   | { type: "progress"; file: string; loaded: number; total: number }
   | { type: "ready"; warmupMs: number; rtf: number }
-  | { type: "result"; id: number; audio: Float32Array; ms: number; phonemes: string }
+  | {
+      type: "result";
+      id: number;
+      audio: Float32Array;
+      /** Message received → samples ready. */
+      ms: number;
+      /** Text → phonemes (eSpeak), which runs while the previous sentence is still being voiced. */
+      g2pMs: number;
+      /** The model alone. */
+      modelMs: number;
+      phonemes: string;
+    }
   | { type: "error"; id?: number; message: string };
 
 const post = (message: TTSResponse, transfer: Transferable[] = []) => self.postMessage(message, { transfer });
@@ -57,9 +69,10 @@ async function loadVoice(id: string): Promise<Float32Array> {
   return table;
 }
 
-async function synthesize(text: string, voice: string, speed: number) {
+const toPhonemes = (text: string, voice: string) => phonemize(text, findVoice(voice)?.accent ?? "us");
+
+async function voiceIt(phonemes: string, voice: string, speed: number): Promise<Float32Array> {
   if (!model || !tokenizer) throw new Error("The voice is not loaded yet.");
-  const phonemes = await phonemize(text, findVoice(voice)?.accent ?? "us");
   const { input_ids } = tokenizer(phonemes, { truncation: true });
   // The voice file holds one 256-value style per input length (Kokoro's design).
   const tokens = Math.min(Math.max(input_ids.dims.at(-1)! - 2, 0), 509);
@@ -69,60 +82,92 @@ async function synthesize(text: string, voice: string, speed: number) {
     style: new Tensor("float32", style, [1, 256]),
     speed: new Tensor("float32", [speed], [1]),
   });
-  return { audio: waveform.data as Float32Array, phonemes };
+  const audio = waveform.data as Float32Array;
+  // Reduced precisions can overflow on some GPUs (fp16 gave NaN samples on a
+  // Mac): never play that, let the built-in voice say the sentence instead.
+  for (let i = 0; i < audio.length; i += 97) {
+    if (!Number.isFinite(audio[i])) throw new Error("produced invalid audio");
+  }
+  return audio;
 }
 
-const WARMUP = "Hello there! Let's make a story together.";
+const synthesize = async (text: string, voice: string, speed: number) =>
+  voiceIt(await toPhonemes(text, voice), voice, speed);
+
+/**
+ * WebGPU compiles kernels per input size, so the warm-up says a short, a
+ * medium and a long line; the medium one is then timed again for the speed.
+ */
+const WARMUPS = [
+  "Hi!",
+  "Hello there! Let's make a story together.",
+  "Once upon a time, a little dragon lived in a castle on a cloud, and she loved pancakes.",
+];
+
+async function load(request: Extract<TTSRequest, { type: "load" }>) {
+  await configureTransformers(request.modelHost);
+  const progress_callback = (p: FileProgress) => {
+    if (p.status === "progress" && p.file) {
+      post({ type: "progress", file: p.file, loaded: p.loaded ?? 0, total: p.total ?? 0 });
+    }
+  };
+  const [loadedModel, loadedTokenizer] = await Promise.all([
+    StyleTextToSpeech2Model.from_pretrained(KOKORO.id, {
+      device: request.device,
+      dtype: request.dtype,
+      progress_callback,
+    }),
+    AutoTokenizer.from_pretrained(KOKORO.id, { progress_callback }),
+    ...request.voices.map(loadVoice),
+  ]);
+  model = loadedModel as unknown as Synthesizer;
+  tokenizer = loadedTokenizer as unknown as Tokenizer;
+  const started = performance.now();
+  for (const line of WARMUPS) await synthesize(line, request.voices[0], 1);
+  const warmupMs = performance.now() - started;
+  const timed = performance.now();
+  const audio = await synthesize(WARMUPS[1], request.voices[0], 1);
+  const rtf = (performance.now() - timed) / 1000 / (audio.length / KOKORO.sampleRate);
+  post({ type: "ready", warmupMs, rtf });
+}
+
+function speak(request: Extract<TTSRequest, { type: "speak" }>) {
+  const received = performance.now();
+  // eSpeak runs now, on this thread, while the GPU may still be voicing the
+  // previous sentence; only the model waits its turn.
+  const g2p = toPhonemes(request.text, request.voice).then((phonemes) => ({
+    phonemes,
+    g2pMs: performance.now() - received,
+  }));
+  g2p.catch(() => {});
+  queue = queue.then(async () => {
+    try {
+      if (request.epoch < epoch) throw new Error("cancelled");
+      const { phonemes, g2pMs } = await g2p;
+      const started = performance.now();
+      const audio = await voiceIt(phonemes, request.voice, request.speed);
+      const done = performance.now();
+      post(
+        { type: "result", id: request.id, audio, ms: done - received, g2pMs, modelMs: done - started, phonemes },
+        [audio.buffer],
+      );
+    } catch (error) {
+      post({ type: "error", id: request.id, message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+}
 
 self.onmessage = (event: MessageEvent<TTSRequest>) => {
   const request = event.data;
   if (request.type === "cancel") {
     epoch = Math.max(epoch, request.epoch);
-    return;
+  } else if (request.type === "speak") {
+    speak(request);
+  } else {
+    queue = queue.then(() =>
+      load(request).catch((error) =>
+        post({ type: "error", message: error instanceof Error ? error.message : String(error) }),
+      ),
+    );
   }
-  queue = queue.then(async () => {
-    try {
-      if (request.type === "load") {
-        await configureTransformers(request.modelHost);
-        const progress_callback = (p: FileProgress) => {
-          if (p.status === "progress" && p.file) {
-            post({ type: "progress", file: p.file, loaded: p.loaded ?? 0, total: p.total ?? 0 });
-          }
-        };
-        const [loadedModel, loadedTokenizer] = await Promise.all([
-          StyleTextToSpeech2Model.from_pretrained(KOKORO.id, {
-            device: request.device,
-            dtype: KOKORO.dtype[request.device],
-            progress_callback,
-          }),
-          AutoTokenizer.from_pretrained(KOKORO.id, { progress_callback }),
-          ...request.voices.map(loadVoice),
-        ]);
-        model = loadedModel as unknown as Synthesizer;
-        tokenizer = loadedTokenizer as unknown as Tokenizer;
-        // The first run compiles GPU kernels; the second one is a fair speed sample.
-        const started = performance.now();
-        await synthesize(WARMUP, request.voices[0], 1);
-        const warmupMs = performance.now() - started;
-        const timed = performance.now();
-        const { audio } = await synthesize(WARMUP, request.voices[0], 1);
-        const rtf = (performance.now() - timed) / 1000 / (audio.length / KOKORO.sampleRate);
-        post({ type: "ready", warmupMs, rtf });
-        return;
-      }
-
-      if (request.type === "speak") {
-        if (request.epoch < epoch) throw new Error("cancelled");
-        const started = performance.now();
-        const { audio, phonemes } = await synthesize(request.text, request.voice, request.speed);
-        post({ type: "result", id: request.id, audio, ms: performance.now() - started, phonemes }, [audio.buffer]);
-      }
-    } catch (error) {
-      post({
-        type: "error",
-        id: request.type === "speak" ? request.id : undefined,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
 };

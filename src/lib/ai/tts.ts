@@ -11,12 +11,14 @@ import {
 } from "./voice/playback";
 import {
   chooseTTSDevice,
+  chooseTTSDtype,
   findVoice,
   KOKORO,
   PRELOADED_VOICES,
   preferredEngine,
   setPreferredEngine,
   styleFor,
+  type KokoroDtype,
   type TTSDevice,
   type VoiceEngine,
   type VoiceRole,
@@ -66,7 +68,14 @@ export interface VoiceInfo {
   /** Which voice speaks now. */
   engine: VoiceEngine;
   /** The neural voice when it loaded: device, measured speed and the Kokoro voices in use. */
-  kokoro: { device: TTSDevice; rtf: number; warmupMs: number; narrator: string; character: string } | null;
+  kokoro: {
+    device: TTSDevice;
+    dtype: KokoroDtype;
+    rtf: number;
+    warmupMs: number;
+    narrator: string;
+    character: string;
+  } | null;
   /** Why the neural voice is not speaking, when it is not. */
   reason: string | null;
   loadMs?: number;
@@ -185,8 +194,18 @@ export class Playback implements SpeechPlayback {
     utterance.onboundary = (event) => {
       if (!this.cancelled && event.name === "word") this.meter.word();
     };
-    utterance.onend = utterance.onerror = () => {
+    utterance.onend = () => {
       this.meter.stop();
+      this.pending--;
+      this.check();
+    };
+    utterance.onerror = (event) => {
+      this.meter.stop();
+      if (!this.cancelled) {
+        const voice = this.voice?.name ?? "default";
+        const fallback = `${this.reason ? `${this.reason}; ` : ""}built-in voice error: ${event.error}`;
+        this.metric?.({ engine: "builtin", role: this.role, voice, text: sentence, index, fallback });
+      }
       this.pending--;
       this.check();
     };
@@ -242,7 +261,7 @@ export class Speaker {
   private out = new AudioOut();
   private startListeners = new Set<StartListener>();
   private kokoro: KokoroClient | null = null;
-  private neural: { device: TTSDevice; rtf: number; warmupMs: number } | null = null;
+  private neural: { device: TTSDevice; dtype: KokoroDtype; rtf: number; warmupMs: number } | null = null;
   /** Set when the neural voice gave up for this session (or never loaded). */
   private reason: string | null = null;
   private loadMs: number | undefined;
@@ -330,6 +349,7 @@ export class Speaker {
     const search = window.location.search;
     this.forced = new URLSearchParams(search).get("ttsForce") === "1";
     const device = chooseTTSDevice(support, search);
+    const dtype = chooseTTSDtype(device, search);
     const total = (KOKORO.modelMB[device] + KOKORO.voiceMB * PRELOADED_VOICES.length) * 1e6;
     // The download may start only where a parent asked for it, never on a kid screen.
     const mayDownload = !isMarkedReady() || /^\/(setup|lab)\b/.test(window.location.pathname);
@@ -344,7 +364,7 @@ export class Speaker {
       try {
         const first = [styleFor("narrator").voice, styleFor("character").voice];
         const voices = [...new Set([...first, ...PRELOADED_VOICES])];
-        const { warmupMs, rtf } = await kokoro.load(device, modelHost, voices, (loaded, size) => {
+        const { warmupMs, rtf } = await kokoro.load(device, dtype, modelHost, voices, (loaded, size) => {
           const expected = Math.max(size, total);
           onProgress(loaded, expected, `Downloading the storytelling voice… ${Math.round((loaded / expected) * 100)}%`);
         });
@@ -353,7 +373,7 @@ export class Speaker {
           this.reason = `Kokoro is slower than speech on this device (real-time factor ${rtf.toFixed(2)})`;
         } else {
           this.kokoro = kokoro;
-          this.neural = { device, rtf, warmupMs };
+          this.neural = { device, dtype, rtf, warmupMs };
           this.reason = null;
         }
       } catch (error) {
