@@ -123,7 +123,8 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
     // effects twice) still lets the second one say hello.
     const id = setTimeout(() => {
       greeted.current = true;
-      answer("Hi!", []);
+      // An empty first line asks the engine for the character's own hello.
+      answer("", []);
     }, 400);
     return () => clearTimeout(id);
   }, [ready, answer]);
@@ -274,11 +275,15 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
               {oops && (
                 <div role="alert" className="flex w-full flex-col items-center gap-3 rounded-cut bg-sun/35 px-4 py-3 text-center">
                   <p className="text-lg font-bold text-ink">{oops.message}</p>
-                  {oops.retry && (
+                  {oops.retry !== undefined && (
                     <Button
                       tone="sun"
                       size="sm"
-                      onClick={() => answer(oops.retry!, friendRef.current.chat.slice(0, -1))}
+                      onClick={() => {
+                        const retry = oops.retry ?? "";
+                        // A failed greeting left no child line to drop from the history.
+                        answer(retry, retry ? friendRef.current.chat.slice(0, -1) : friendRef.current.chat);
+                      }}
                       icon={<ArrowsClockwise size={24} weight="bold" aria-hidden="true" />}
                     >
                       Try again

@@ -1,18 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getAI } from "@/lib/ai";
+import { getAI, isMarkedReady, RealAI } from "@/lib/ai";
 import type { AIStatus } from "@/lib/ai";
 
-/** Set by /setup after the models were downloaded and loaded once. */
-export const READY_FLAG = "guhit:ready";
-
-function readFlag(): boolean {
-  try {
-    return localStorage.getItem(READY_FLAG) === "1";
-  } catch {
-    return false;
-  }
+/**
+ * Models are on this device: /setup finished once, or the canned engine
+ * (?mock=1) is in use, which needs no download at all.
+ */
+function onThisDevice(): boolean {
+  return isMarkedReady() || !(getAI() instanceof RealAI);
 }
 
 // getAI().status() is a plain getter, so watch it with a light poll.
@@ -28,7 +25,7 @@ export function useAIStatus(): { status: AIStatus | "unknown"; onDevice: boolean
     () => getAI().status(),
     () => "unknown",
   );
-  const onDevice = useSyncExternalStore(subscribeStatus, readFlag, () => false);
+  const onDevice = useSyncExternalStore(subscribeStatus, onThisDevice, () => false);
   return { status, onDevice };
 }
 
