@@ -1,6 +1,7 @@
-import { alphaToMaskRgba, context2d, decodeToPixels, round1, runClassical, type RunResult } from "./cutout-run";
+import { finishFromEdit } from "./cutout-core";
+import { alphaToMaskRgba, context2d, decodeToPixels, encodeRgba, round1, runClassical, type RunResult } from "./cutout-run";
 import type { WorkerRequest, WorkerResponse } from "./segment.worker";
-import type { Cutout, CutoutOptions, CutoutWithDebug } from "./types";
+import type { Cutout, CutoutEdit, CutoutMeta, CutoutOptions, CutoutWithDebug } from "./types";
 
 /**
  * Cut the character out of a photo of a drawing (or an on-screen drawing).
@@ -13,16 +14,43 @@ export async function cutout(image: Blob | string, options: CutoutOptions = {}):
   const maxSide = options.maxSide ?? 1024;
   const debug = options.debug ?? false;
   const method = options.method ?? "classical";
+  const editable = options.editable ?? false;
 
   let run: RunResult;
   const worker = getWorker();
   if (worker) {
-    run = await callWorker(worker, { type: "cutout", blob, maxSide, method, debug }, options.onProgress);
+    run = (await callWorker(worker, { type: "cutout", blob, maxSide, method, debug, editable }, options.onProgress))!;
+  } else if (method === "ai") {
+    throw new Error("AI cut-out needs Web Worker and OffscreenCanvas support");
   } else {
-    run = await runClassical(blob, maxSide, debug);
+    run = await runClassical(blob, maxSide, debug, editable);
   }
   run.meta.timings.total = round1(performance.now() - t0);
   return toCutout(run);
+}
+
+/**
+ * Download and warm up the AI cut-out model while online (e.g. on the setup
+ * screen) so "Try AI cut-out" also works later with the network off.
+ */
+export async function preloadAiCutout(onProgress?: (text: string) => void): Promise<void> {
+  const worker = getWorker();
+  if (!worker) throw new Error("AI cut-out needs Web Worker and OffscreenCanvas support");
+  await callWorker(worker, { type: "preload" }, onProgress);
+}
+
+/** Turn a touched-up mask back into a cut-out (same soft edge and crop). */
+export async function applyTouchUp(edit: CutoutEdit, mask: Uint8Array, base?: CutoutMeta): Promise<Cutout> {
+  const core = finishFromEdit({ ...edit, mask });
+  const png = await encodeRgba(core.rgba, core.width, core.height);
+  return {
+    png,
+    width: core.width,
+    height: core.height,
+    mask: new ImageData(alphaToMaskRgba(core.alpha), core.width, core.height),
+    meta: base ? { ...base, crop: core.crop, reasons: core.reasons, quality: core.quality } : undefined,
+    edit: { ...edit, mask },
+  };
 }
 
 /** On-screen drawing: same pipeline, the canvas is read as a PNG. */
@@ -57,6 +85,7 @@ function toCutout(run: RunResult): CutoutWithDebug {
     height: run.height,
     mask: new ImageData(new Uint8ClampedArray(run.mask), run.width, run.height),
     meta: run.meta,
+    edit: run.edit,
   };
   if (run.fullAlpha) {
     out.debug = { fullAlpha: run.fullAlpha, width: run.processedWidth, height: run.processedHeight };
@@ -68,9 +97,11 @@ function toCutout(run: RunResult): CutoutWithDebug {
 
 let worker: Worker | null | undefined;
 let nextId = 1;
+type WorkerJob = WorkerRequest extends infer R ? (R extends { id: number } ? Omit<R, "id"> : never) : never;
+
 const pending = new Map<
   number,
-  { resolve: (r: RunResult) => void; reject: (e: Error) => void; onProgress?: (t: string) => void }
+  { resolve: (r: RunResult | null) => void; reject: (e: Error) => void; onProgress?: (t: string) => void }
 >();
 
 function getWorker(): Worker | null {
@@ -96,6 +127,7 @@ function getWorker(): Worker | null {
     worker.onerror = (e) => {
       // A worker that fails to boot (old browser, blocked module workers)
       // must not strand callers: fail them and fall back to the main thread.
+      console.warn("[alive] cut-out worker failed:", e.message || e);
       for (const [, p] of pending) p.reject(new Error(e.message || "cut-out worker failed"));
       pending.clear();
       worker?.terminate();
@@ -107,17 +139,16 @@ function getWorker(): Worker | null {
   return worker;
 }
 
-function callWorker(
-  w: Worker,
-  req: Omit<WorkerRequest, "id">,
-  onProgress?: (t: string) => void,
-): Promise<RunResult> {
+function callWorker(w: Worker, req: WorkerJob, onProgress?: (t: string) => void): Promise<RunResult | null> {
   const id = nextId++;
-  return new Promise<RunResult>((resolve, reject) => {
+  return new Promise<RunResult | null>((resolve, reject) => {
     pending.set(id, { resolve, reject, onProgress });
-    w.postMessage({ ...req, id } satisfies WorkerRequest);
+    w.postMessage({ ...req, id } as WorkerRequest);
   }).catch(async (err) => {
-    if (req.method === "classical") return runClassical(req.blob, req.maxSide, req.debug);
+    // The classical pipeline can always run on the main thread instead.
+    if (req.type === "cutout" && req.method === "classical") {
+      return runClassical(req.blob, req.maxSide, req.debug, req.editable);
+    }
     throw err;
   });
 }

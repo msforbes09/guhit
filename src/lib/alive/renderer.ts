@@ -1,5 +1,6 @@
 import type { Pose } from "./motion";
 import type { Mesh, RigInfo } from "./rig";
+import { boneMatrices, MAX_BONES, type Skeleton, type Skin } from "./skeleton";
 
 /**
  * Draws the character as a deformed mesh in WebGL2 (one draw for the
@@ -16,9 +17,15 @@ export interface Placement {
   scale: number;
 }
 
+export interface Rigging {
+  skeleton: Skeleton;
+  skin: Skin;
+}
+
 export interface Renderer {
   readonly kind: "webgl2" | "canvas2d";
-  setCharacter(image: TexImageSource, mesh: Mesh, rig: RigInfo): void;
+  /** `rigging` turns on joint mode (skinned limbs); the 2D fallback ignores it. */
+  setCharacter(image: TexImageSource, mesh: Mesh, rig: RigInfo, rigging?: Rigging): void;
   resize(width: number, height: number): void;
   draw(pose: Pose, place: Placement, shadow: boolean): void;
   /** Block until the GPU has finished (benchmarks only). */
@@ -29,6 +36,11 @@ export interface Renderer {
 const VS = `#version 300 es
 in vec2 a_pos;
 in vec2 a_uv;
+in vec4 a_bi;
+in vec4 a_bw;
+uniform mat3 u_bones[${MAX_BONES}];
+uniform float u_skin;
+uniform vec2 u_neck;
 uniform vec2 u_res;
 uniform vec2 u_root;
 uniform float u_scale;
@@ -49,6 +61,15 @@ vec2 rot(vec2 p, float a) {
 void main() {
   vec2 p = a_pos;
 
+  // Joint mode: linear blend skinning over the tapped skeleton.
+  if (u_skin > 0.5) {
+    vec3 r = vec3(p, 1.0);
+    p = (a_bw.x * (u_bones[int(a_bi.x)] * r)
+       + a_bw.y * (u_bones[int(a_bi.y)] * r)
+       + a_bw.z * (u_bones[int(a_bi.z)] * r)
+       + a_bw.w * (u_bones[int(a_bi.w)] * r)).xy;
+  }
+
   // Arm: points past the shoulder on one side swing about it, blending in
   // smoothly so the drawing bends instead of tearing.
   float side = u_arm.w;
@@ -60,9 +81,8 @@ void main() {
   }
 
   // Head nod: the upper part tilts about the neck.
-  float hw = smoothstep(0.42, 0.78, p.y);
-  vec2 neck = vec2(0.0, 0.6);
-  p = mix(p, neck + rot(p - neck, u_head), hw);
+  float hw = smoothstep(u_neck.y - 0.18, u_neck.y + 0.18, p.y);
+  p = mix(p, u_neck + rot(p - u_neck, u_head), hw);
 
   // Squash and stretch about the feet, roughly keeping volume.
   p.y *= 1.0 + u_squash;
@@ -171,6 +191,8 @@ class GLRenderer implements Renderer {
   private tex: WebGLTexture | null = null;
   private count = 0;
   private rig: RigInfo | null = null;
+  private rigging: Rigging | null = null;
+  private bones = new Float32Array(MAX_BONES * 9);
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -190,6 +212,9 @@ class GLRenderer implements Renderer {
       "u_arm",
       "u_armSize",
       "u_tex",
+      "u_bones",
+      "u_skin",
+      "u_neck",
     ]);
     this.su = uniforms(gl, this.shadowProg, ["u_res", "u_center", "u_size", "u_alpha"]);
 
@@ -208,9 +233,10 @@ class GLRenderer implements Renderer {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
 
-  setCharacter(image: TexImageSource, mesh: Mesh, rig: RigInfo) {
+  setCharacter(image: TexImageSource, mesh: Mesh, rig: RigInfo, rigging?: Rigging) {
     const gl = this.gl;
     this.rig = rig;
+    this.rigging = rigging ?? null;
     if (this.tex) gl.deleteTexture(this.tex);
     this.tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -227,17 +253,22 @@ class GLRenderer implements Renderer {
     if (this.vao) gl.deleteVertexArray(this.vao);
     this.vao = gl.createVertexArray();
     gl.bindVertexArray(this.vao);
-    const put = (name: string, data: Float32Array) => {
+    const put = (name: string, data: Float32Array, size: number) => {
+      const loc = gl.getAttribLocation(this.prog, name);
+      if (loc < 0) return;
       const b = gl.createBuffer()!;
       this.buffers.push(b);
       gl.bindBuffer(gl.ARRAY_BUFFER, b);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      const loc = gl.getAttribLocation(this.prog, name);
       gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
     };
-    put("a_pos", mesh.positions);
-    put("a_uv", mesh.uvs);
+    put("a_pos", mesh.positions, 2);
+    put("a_uv", mesh.uvs, 2);
+    if (rigging) {
+      put("a_bi", rigging.skin.index, 4);
+      put("a_bw", rigging.skin.weight, 4);
+    }
     const ib = gl.createBuffer()!;
     this.buffers.push(ib);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
@@ -289,8 +320,21 @@ class GLRenderer implements Renderer {
     gl.uniform1f(this.u.u_bend, pose.bend);
     gl.uniform1f(this.u.u_lean, pose.lean);
     gl.uniform2f(this.u.u_wiggle, pose.wiggleAmp, pose.wigglePhase);
-    gl.uniform1f(this.u.u_head, pose.head);
-    gl.uniform4f(this.u.u_arm, rig.arm.pivotX, rig.arm.pivotY, pose.arm, rig.arm.side);
+    const rg = this.rigging;
+    if (rg) {
+      // Bones carry the arms, legs and head; the region-based arm and nod step aside.
+      boneMatrices(rg.skeleton, pose, this.bones);
+      gl.uniformMatrix3fv(this.u.u_bones, false, this.bones);
+      gl.uniform1f(this.u.u_skin, 1);
+      gl.uniform1f(this.u.u_head, 0);
+      gl.uniform2f(this.u.u_neck, rg.skeleton.neck[0], rg.skeleton.neck[1]);
+      gl.uniform4f(this.u.u_arm, rig.arm.pivotX, rig.arm.pivotY, 0, rig.arm.side);
+    } else {
+      gl.uniform1f(this.u.u_skin, 0);
+      gl.uniform1f(this.u.u_head, pose.head);
+      gl.uniform2f(this.u.u_neck, 0, 0.6);
+      gl.uniform4f(this.u.u_arm, rig.arm.pivotX, rig.arm.pivotY, pose.arm, rig.arm.side);
+    }
     gl.uniform2f(this.u.u_armSize, rig.arm.reach, rig.arm.halfHeight);
     gl.drawElements(gl.TRIANGLES, this.count, gl.UNSIGNED_SHORT, 0);
     gl.bindVertexArray(null);
@@ -350,10 +394,16 @@ class Canvas2DRenderer implements Renderer {
     if (shadow) {
       const half = (rig.footHalf * 1.25 + 0.08) * place.scale * (1 - 0.45 * Math.min(1, pose.air));
       ctx.save();
-      ctx.globalAlpha = 0.3 * (1 - 0.55 * Math.min(1, pose.air));
-      ctx.fillStyle = "rgb(30,40,76)";
+      ctx.translate(rootX, place.groundY);
+      ctx.scale(1, 0.2);
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, half);
+      const a = 0.32 * (1 - 0.55 * Math.min(1, pose.air));
+      g.addColorStop(0, `rgba(31,41,77,${a})`);
+      g.addColorStop(0.25, `rgba(31,41,77,${a})`);
+      g.addColorStop(1, "rgba(31,41,77,0)");
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.ellipse(rootX, place.groundY, half, Math.max(3, half * 0.2), 0, 0, Math.PI * 2);
+      ctx.arc(0, 0, half, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }

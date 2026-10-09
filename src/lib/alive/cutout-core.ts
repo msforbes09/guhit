@@ -27,6 +27,17 @@ export interface CoreOptions {
   closeFrac?: number;
   /** Return intermediate masks for the lab page. */
   debug?: boolean;
+  /** Also return the full paper-corrected frame and mask, for the touch-up brush. */
+  editable?: boolean;
+}
+
+export interface CoreEdit {
+  /** Full processed frame, paper-corrected, opaque RGBA. */
+  image: Uint8ClampedArray;
+  /** Hard mask (0/1) before feathering. */
+  mask: Uint8Array;
+  width: number;
+  height: number;
 }
 
 export interface CoreResult {
@@ -46,6 +57,7 @@ export interface CoreResult {
   fullAlpha?: Uint8ClampedArray;
   /** Full-frame ink score 0..255 (processed size), for debug views. */
   scoreMap?: Uint8ClampedArray;
+  edit?: CoreEdit;
 }
 
 type Now = () => number;
@@ -141,6 +153,9 @@ export function cutoutCore(
   const closeR = Math.max(2, Math.round(longSide * (options.closeFrac ?? 0.007)));
   const candidate = new Uint8Array(N);
   for (let i = 0; i < N; i++) candidate[i] = ink[i] | colourful[i];
+  stats.ruledRemoved = round3(removeRuledLines(candidate, score, W, H) / N);
+  // Ruled lines are paper, not stray marks, for the quality check below.
+  for (let i = 0; i < N; i++) if (!candidate[i]) ink[i] = 0;
   const closed = close(candidate, W, H, closeR);
   lap("morphology");
 
@@ -169,38 +184,7 @@ export function cutoutCore(
   lap("components");
 
   // 6. Main character plus nearby pieces (a detached antenna tip, a tail).
-  const pieces = labelComponents(filled, W, H, true);
-  let main = 0;
-  for (let c = 1; c <= pieces.count; c++) {
-    if (!main || pieces.area[c] > pieces.area[main]) main = c;
-  }
-  const selected = new Uint8Array(N);
-  let selectedArea = 0;
-  if (main) {
-    const keep = new Uint8Array(pieces.count + 1);
-    const mb = pieces.bbox[main];
-    const mainArea = pieces.area[main];
-    for (let c = 1; c <= pieces.count; c++) {
-      if (c === main) {
-        keep[c] = 1;
-        continue;
-      }
-      const gap = bboxGap(mb, pieces.bbox[c]);
-      const area = pieces.area[c];
-      if (
-        (gap <= longSide * 0.04 && area >= Math.max(12, mainArea * 0.002)) ||
-        (gap <= longSide * 0.12 && area >= mainArea * 0.2)
-      ) {
-        keep[c] = 1;
-      }
-    }
-    for (let i = 0; i < N; i++) {
-      if (keep[pieces.labels[i]]) {
-        selected[i] = 1;
-        selectedArea++;
-      }
-    }
-  }
+  const { selected, selectedArea } = selectMain(filled, W, H);
   stats.fgFrac = round3(selectedArea / N);
   lap("select");
 
@@ -215,6 +199,214 @@ export function cutoutCore(
   lap("colour");
 
   // 8. Soft 1-2 px edge, crop, and straight-alpha output.
+  const cut = finishCut(R, G, B, W, H, selected, shade2);
+  const { rgba, alpha, alphaFull, reasons } = cut;
+  lap("crop");
+
+  // Quality: the lab and the app offer the AI cut-out when this says poor.
+  if (stats.fgFrac > 0.65) reasons.push("most of the photo was kept; background not separated");
+  if (stats.fgFrac < 0.004 && !cut.empty) reasons.push("very little drawing found");
+  const strayInk = countStray(ink, selected, comps.labels, junk);
+  stats.strayFrac = round3(selectedArea ? strayInk / selectedArea : 0);
+  if (stats.strayFrac > 0.35) reasons.push("lots of marks outside the character (busy background?)");
+  const quality = reasons.some((r) => r !== "drawing touches the photo edge") ? "poor" : "good";
+
+  timings.total = Object.values(timings).reduce((s, v) => s + v, 0);
+  timings.total = Math.round(timings.total * 10) / 10;
+
+  const result: CoreResult = {
+    rgba,
+    alpha,
+    width: cut.crop.w,
+    height: cut.crop.h,
+    crop: cut.crop,
+    quality,
+    reasons,
+    timings,
+    stats,
+  };
+  if (options.editable) result.edit = correctedFrame(R, G, B, W, H, selected, shade2);
+  if (options.debug) {
+    result.fullAlpha = alphaFull;
+    const sm = new Uint8ClampedArray(N);
+    for (let i = 0; i < N; i++) sm[i] = score[i] * 255;
+    result.scoreMap = sm;
+  }
+  return result;
+}
+
+/**
+ * Cut-out from a mask made elsewhere (the on-device AI model). It gets the
+ * same finishing as the classical path: main piece, holes filled, paper
+ * colour fixed, soft edge, crop.
+ */
+export function cutoutFromMask(
+  src: Uint8ClampedArray,
+  width: number,
+  height: number,
+  maskIn: Uint8Array | Uint8ClampedArray,
+  options: CoreOptions = {},
+): CoreResult {
+  const timings: Record<string, number> = {};
+  const stats: Record<string, number> = {};
+  let t = now();
+  const lap = (name: string) => {
+    const n = now();
+    timings[name] = Math.round((n - t) * 10) / 10;
+    t = n;
+  };
+  const W = width,
+    H = height,
+    N = W * H;
+  const longSide = Math.max(W, H);
+  const R = new Float32Array(N),
+    G = new Float32Array(N),
+    B = new Float32Array(N);
+  const bin = new Uint8Array(N);
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    const a = src[j + 3] / 255;
+    const inv = 255 * (1 - a);
+    R[i] = src[j] * a + inv;
+    G[i] = src[j + 1] * a + inv;
+    B[i] = src[j + 2] * a + inv;
+    bin[i] = maskIn[i] > 127 ? 1 : 0;
+  }
+  const shade1 = shadingFromBlockMax(R, G, B, W, H, Math.max(6, Math.round(longSide / 64)));
+  lap("prepare");
+  const filled = fillHoles(close(bin, W, H, Math.max(1, Math.round(longSide * 0.003))), W, H);
+  const { selected, selectedArea } = selectMain(filled, W, H);
+  stats.fgFrac = round3(selectedArea / N);
+  lap("select");
+  const near = dilate(filled, W, H, Math.max(3, Math.round(longSide * 0.006)));
+  const paperOnly = new Uint8Array(N);
+  for (let i = 0; i < N; i++) paperOnly[i] = near[i] ? 0 : 1;
+  const shade2 = shadingFromPaper(R, G, B, paperOnly, W, H, Math.max(8, Math.round(longSide / 40)), shade1);
+  lap("colour");
+  const cut = finishCut(R, G, B, W, H, selected, shade2);
+  lap("crop");
+  const reasons = cut.reasons;
+  if (stats.fgFrac > 0.65) reasons.push("most of the photo was kept; background not separated");
+  if (stats.fgFrac < 0.004 && !cut.empty) reasons.push("very little drawing found");
+  const quality = reasons.some((r) => r !== "drawing touches the photo edge") ? "poor" : "good";
+  timings.total = Math.round(Object.values(timings).reduce((a, b) => a + b, 0) * 10) / 10;
+  const result: CoreResult = {
+    rgba: cut.rgba,
+    alpha: cut.alpha,
+    width: cut.crop.w,
+    height: cut.crop.h,
+    crop: cut.crop,
+    quality,
+    reasons,
+    timings,
+    stats,
+  };
+  if (options.editable) result.edit = correctedFrame(R, G, B, W, H, selected, shade2);
+  if (options.debug) result.fullAlpha = cut.alphaFull;
+  return result;
+}
+
+/**
+ * Re-finish after a touch-up: the edited hard mask over the corrected frame
+ * gets the same soft edge and crop as a fresh cut-out.
+ */
+export function finishFromEdit(edit: CoreEdit): CoreResult {
+  const { image, mask, width: W, height: H } = edit;
+  const N = W * H;
+  const R = new Float32Array(N),
+    G = new Float32Array(N),
+    B = new Float32Array(N);
+  const one = new Float32Array(N).fill(255);
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    R[i] = image[j];
+    G[i] = image[j + 1];
+    B[i] = image[j + 2];
+  }
+  const t0 = now();
+  const cut = finishCut(R, G, B, W, H, mask, { r: one, g: one, b: one });
+  let area = 0;
+  for (let i = 0; i < N; i++) area += mask[i];
+  return {
+    rgba: cut.rgba,
+    alpha: cut.alpha,
+    width: cut.crop.w,
+    height: cut.crop.h,
+    crop: cut.crop,
+    quality: cut.empty ? "poor" : "good",
+    reasons: cut.reasons,
+    timings: { finish: Math.round((now() - t0) * 10) / 10 },
+    stats: { fgFrac: round3(area / N) },
+    edit: { image, mask, width: W, height: H },
+  };
+}
+
+function correctedFrame(
+  R: Float32Array,
+  G: Float32Array,
+  B: Float32Array,
+  W: number,
+  H: number,
+  selected: Uint8Array,
+  shade: Shade,
+): CoreEdit {
+  const N = W * H;
+  const image = new Uint8ClampedArray(N * 4);
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    image[j] = (R[i] / shade.r[i]) * 255;
+    image[j + 1] = (G[i] / shade.g[i]) * 255;
+    image[j + 2] = (B[i] / shade.b[i]) * 255;
+    image[j + 3] = 255;
+  }
+  return { image, mask: selected.slice(), width: W, height: H };
+}
+
+/** Keep the biggest piece and the pieces close to it. */
+function selectMain(filled: Uint8Array, W: number, H: number): { selected: Uint8Array; selectedArea: number } {
+  const N = W * H;
+  const longSide = Math.max(W, H);
+  const pieces = labelComponents(filled, W, H, true);
+  let main = 0;
+  for (let c = 1; c <= pieces.count; c++) {
+    if (!main || pieces.area[c] > pieces.area[main]) main = c;
+  }
+  const selected = new Uint8Array(N);
+  let selectedArea = 0;
+  if (!main) return { selected, selectedArea };
+  const keep = new Uint8Array(pieces.count + 1);
+  const mb = pieces.bbox[main];
+  const mainArea = pieces.area[main];
+  for (let c = 1; c <= pieces.count; c++) {
+    if (c === main) {
+      keep[c] = 1;
+      continue;
+    }
+    const gap = bboxGap(mb, pieces.bbox[c]);
+    const area = pieces.area[c];
+    if (
+      (gap <= longSide * 0.04 && area >= Math.max(12, mainArea * 0.002)) ||
+      (gap <= longSide * 0.12 && area >= mainArea * 0.2)
+    ) {
+      keep[c] = 1;
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    if (keep[pieces.labels[i]]) {
+      selected[i] = 1;
+      selectedArea++;
+    }
+  }
+  return { selected, selectedArea };
+}
+
+/** Soft edge, crop with padding, and paper-corrected straight-alpha colour. */
+function finishCut(
+  R: Float32Array,
+  G: Float32Array,
+  B: Float32Array,
+  W: number,
+  H: number,
+  selected: Uint8Array,
+  shade: Shade,
+) {
   const alphaFull = feather(selected, W, H);
   let x0 = W,
     y0 = H,
@@ -232,12 +424,15 @@ export function cutoutCore(
     }
   }
   const reasons: string[] = [];
-  if (x1 < 0) {
+  const empty = x1 < 0;
+  if (empty) {
     x0 = 0;
     y0 = 0;
     x1 = W - 1;
     y1 = H - 1;
     reasons.push("no drawing found");
+  } else if (x0 <= 1 || y0 <= 1 || x1 >= W - 2 || y1 >= H - 2) {
+    reasons.push("drawing touches the photo edge");
   }
   const pad = Math.max(6, Math.round(Math.max(x1 - x0, y1 - y0) * 0.04));
   const cx = Math.max(0, x0 - pad);
@@ -254,44 +449,89 @@ export function cutoutCore(
       alpha[di] = a;
       if (a === 0) continue;
       const o = di * 4;
-      rgba[o] = (R[si] / shade2.r[si]) * 255;
-      rgba[o + 1] = (G[si] / shade2.g[si]) * 255;
-      rgba[o + 2] = (B[si] / shade2.b[si]) * 255;
+      rgba[o] = (R[si] / shade.r[si]) * 255;
+      rgba[o + 1] = (G[si] / shade.g[si]) * 255;
+      rgba[o + 2] = (B[si] / shade.b[si]) * 255;
       rgba[o + 3] = a;
     }
   }
-  lap("crop");
+  return { rgba, alpha, alphaFull, reasons, empty, crop: { x: cx, y: cy, w: cw, h: ch } };
+}
 
-  // Quality: the lab and the app offer the AI cut-out when this says poor.
-  if (stats.fgFrac > 0.65) reasons.push("most of the photo was kept; background not separated");
-  if (stats.fgFrac < 0.004 && x1 >= 0) reasons.push("very little drawing found");
-  if (x0 <= 1 || y0 <= 1 || x1 >= W - 2 || y1 >= H - 2) reasons.push("drawing touches the photo edge");
-  const strayInk = countStray(ink, selected, comps.labels, junk);
-  stats.strayFrac = round3(selectedArea ? strayInk / selectedArea : 0);
-  if (stats.strayFrac > 0.35) reasons.push("lots of marks outside the character (busy background?)");
-  const quality = reasons.some((r) => r !== "drawing touches the photo edge") ? "poor" : "good";
-
-  timings.total = Object.values(timings).reduce((s, v) => s + v, 0);
-  timings.total = Math.round(timings.total * 10) / 10;
-
-  const result: CoreResult = {
-    rgba,
-    alpha,
-    width: cw,
-    height: ch,
-    crop: { x: cx, y: cy, w: cw, h: ch },
-    quality,
-    reasons,
-    timings,
-    stats,
-  };
-  if (options.debug) {
-    result.fullAlpha = alphaFull;
-    const sm = new Uint8ClampedArray(N);
-    for (let i = 0; i < N; i++) sm[i] = score[i] * 255;
-    result.scoreMap = sm;
+/**
+ * School pad paper has thin ruled lines (and a margin line) running across
+ * the whole sheet. They join the drawing to the frame edge, so the drawing
+ * would be thrown away with the "background". When the page is clearly
+ * ruled, drop thin, long, light horizontal/vertical strokes before closing;
+ * the child's darker outlines and crayon fills are thicker and stay.
+ * Returns the number of pixels removed.
+ */
+function removeRuledLines(cand: Uint8Array, score: Float32Array, W: number, H: number): number {
+  const N = W * H;
+  const thin = Math.max(3, Math.round(Math.max(W, H) * 0.005));
+  const vrun = new Uint16Array(N);
+  const hrun = new Uint16Array(N);
+  for (let x = 0; x < W; x++) {
+    let y = 0;
+    while (y < H) {
+      if (!cand[y * W + x]) {
+        y++;
+        continue;
+      }
+      let e = y;
+      while (e < H && cand[e * W + x]) e++;
+      const len = Math.min(65535, e - y);
+      for (let k = y; k < e; k++) vrun[k * W + x] = len;
+      y = e;
+    }
   }
-  return result;
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    let x = 0;
+    while (x < W) {
+      if (!cand[row + x]) {
+        x++;
+        continue;
+      }
+      let e = x;
+      while (e < W && cand[row + e]) e++;
+      const len = Math.min(65535, e - x);
+      for (let k = x; k < e; k++) hrun[row + k] = len;
+      x = e;
+    }
+  }
+  const longH = Math.max(20, Math.round(W * 0.05));
+  const longV = Math.max(20, Math.round(H * 0.05));
+  // Ruled lines are light (blue/red ink on paper); the child's outline is darker.
+  const light = (i: number) => score[i] < 0.55;
+  const bin = 8;
+  const hBins = new Float32Array(Math.ceil(H / bin));
+  const vBins = new Float32Array(Math.ceil(W / bin));
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!cand[i] || !light(i)) continue;
+      if (vrun[i] <= thin && hrun[i] >= longH) hBins[(y / bin) | 0]++;
+      if (hrun[i] <= thin && vrun[i] >= longV) vBins[(x / bin) | 0]++;
+    }
+  }
+  let hLines = 0,
+    vLines = 0;
+  for (const v of hBins) if (v > W * 0.4) hLines++;
+  for (const v of vBins) if (v > H * 0.4) vLines++;
+  const ruledH = hLines >= 4;
+  // A margin line alone is a single full-height stroke; only trust it on ruled paper.
+  const ruledV = vLines >= 1 && (ruledH || vLines >= 3);
+  if (!ruledH && !ruledV) return 0;
+  let removed = 0;
+  for (let i = 0; i < N; i++) {
+    if (!cand[i] || !light(i)) continue;
+    if ((ruledH && vrun[i] <= thin && hrun[i] >= longH) || (ruledV && hrun[i] <= thin && vrun[i] >= longV)) {
+      cand[i] = 0;
+      removed++;
+    }
+  }
+  return removed;
 }
 
 /* ------------------------------------------------------------------ */

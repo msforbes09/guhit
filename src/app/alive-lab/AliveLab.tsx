@@ -3,12 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { AliveStage } from "@/components/alive/AliveStage";
 import type { AliveCharacterHandle, AliveStats } from "@/components/alive/AliveCharacter";
+import { CutoutTouchUp } from "@/components/alive/CutoutTouchUp";
+import { JointPicker } from "@/components/alive/JointPicker";
+import { meterStream } from "@/lib/alive/level";
+import type { Joints } from "@/lib/alive/skeleton";
 import { cutout, cutoutFromCanvas, maskToCanvas } from "@/lib/alive/cutout";
 import { ALIVE_MOTIONS, type AliveMotion, type CutoutWithDebug } from "@/lib/alive/types";
 import { filmstrip } from "./filmstrip";
 import { SAMPLES } from "./samples";
 
-type TalkMode = "off" | "auto" | "slider";
+type TalkMode = "off" | "auto" | "slider" | "mic";
 
 export function AliveLab() {
   const [original, setOriginal] = useState<string | null>(null);
@@ -22,19 +26,52 @@ export function AliveLab() {
   const [taps, setTaps] = useState(0);
   const [drawing, setDrawing] = useState(false);
   const [strip, setStrip] = useState<{ url: string; label: string } | null>(null);
+  const [touching, setTouching] = useState(false);
+  const [joints, setJoints] = useState<Joints | undefined>(undefined);
+  const [picking, setPicking] = useState(false);
+  const [micLevel, setMicLevel] = useState<(() => number) | null>(null);
+
+  // Microphone test: speak and the character "talks" with your loudness.
+  useEffect(() => {
+    if (talk !== "mic") return;
+    let stopped = false;
+    let ctx: AudioContext | null = null;
+    let stream: MediaStream | null = null;
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((s) => {
+        if (stopped) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream = s;
+        ctx = new AudioContext();
+        const meter = meterStream(ctx, s);
+        setMicLevel(() => meter.level);
+      })
+      .catch((e) => setError("Microphone: " + (e instanceof Error ? e.message : String(e))));
+    return () => {
+      stopped = true;
+      stream?.getTracks().forEach((t) => t.stop());
+      ctx?.close();
+      setMicLevel(null);
+    };
+  }, [talk]);
   const charRef = useRef<AliveCharacterHandle>(null);
-  const lastBlob = useRef<Blob | null>(null);
+  const [source, setSource] = useState<Blob | null>(null);
 
   async function run(blob: Blob, label: string) {
     setBusy(`Cutting out ${label}…`);
     setError(null);
-    lastBlob.current = blob;
+    setSource(blob);
     setOriginal((old) => {
       if (old) URL.revokeObjectURL(old);
       return URL.createObjectURL(blob);
     });
     try {
-      setResult(await cutout(blob, { debug: true }));
+      setResult(await cutout(blob, { debug: true, editable: true }));
+      setJoints(undefined);
+      setTouching(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -47,12 +84,14 @@ export function AliveLab() {
     setError(null);
     try {
       const blob = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("export failed"))), "image/png"));
-      lastBlob.current = blob;
+      setSource(blob);
       setOriginal((old) => {
         if (old) URL.revokeObjectURL(old);
         return URL.createObjectURL(blob);
       });
-      setResult(await cutoutFromCanvas(c, { debug: true }));
+      setResult(await cutoutFromCanvas(c, { debug: true, editable: true }));
+      setJoints(undefined);
+      setTouching(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -100,11 +139,50 @@ export function AliveLab() {
         >
           {drawing ? "Hide draw pad" : "Draw on screen"}
         </button>
+        <button
+          className="rounded-full bg-amber-100 px-4 py-2 text-sm font-medium text-amber-900 hover:bg-amber-200 disabled:opacity-50"
+          disabled={!!busy || !source}
+          title="On-device model (xrds/isnet-general-onnx-int8, MIT). Downloads ~44 MB on first use, then works offline."
+          onClick={async () => {
+            if (!source) return;
+            setBusy("Loading the AI model…");
+            setError(null);
+            try {
+              setResult(await cutout(source, { method: "ai", debug: true, editable: true, onProgress: setBusy }));
+              setJoints(undefined);
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            } finally {
+              setBusy(null);
+            }
+          }}
+        >
+          Try AI cut-out
+        </button>
+        <button
+          className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50"
+          disabled={!result?.edit}
+          onClick={() => setTouching((t) => !t)}
+        >
+          {touching ? "Close touch-up" : "Touch up"}
+        </button>
         {busy && <span className="text-sm text-violet-700">{busy}</span>}
         {error && <span className="text-sm text-red-600">Error: {error}</span>}
       </section>
 
       {drawing && <DrawPad onDone={runCanvas} disabled={!!busy} />}
+
+      {touching && result?.edit && (
+        <CutoutTouchUp
+          cutout={result}
+          onCancel={() => setTouching(false)}
+          onDone={(fixed) => {
+            setResult({ ...fixed, debug: result.debug && { ...result.debug, fullAlpha: maskToAlpha(fixed.edit!.mask) } });
+            setJoints(undefined);
+            setTouching(false);
+          }}
+        />
+      )}
 
       {result && (
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -177,8 +255,9 @@ export function AliveLab() {
               cutout={result}
               motion={motion}
               talking={talk !== "off"}
-              level={talk === "slider" ? level : undefined}
+              level={talk === "slider" ? level : talk === "mic" ? (micLevel ?? 0) : undefined}
               onTap={() => setTaps((t) => t + 1)}
+              joints={joints}
               onStats={setStats}
               characterRef={charRef}
             />
@@ -202,7 +281,7 @@ export function AliveLab() {
                   { motion: "idle" as const, talking: true },
                   { motion: "idle" as const, pokeAt: 0.2 },
                 ];
-                const f = await filmstrip(result, rows);
+                const f = await filmstrip(result, rows, { joints });
                 setStrip((old) => {
                   if (old) URL.revokeObjectURL(old.url);
                   return {
@@ -216,6 +295,12 @@ export function AliveLab() {
               Filmstrip (all motions)
             </button>
             <button
+              onClick={() => (joints ? setJoints(undefined) : setPicking((p) => !p))}
+              className="rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-200"
+            >
+              {joints ? "Simple mode" : "Make it move more"}
+            </button>
+            <button
               onClick={() => charRef.current?.poke()}
               className="rounded-full bg-pink-100 px-4 py-2 text-sm font-semibold text-pink-900 hover:bg-pink-200"
             >
@@ -224,7 +309,7 @@ export function AliveLab() {
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="font-semibold">Talking:</span>
-            {(["off", "auto", "slider"] as TalkMode[]).map((m) => (
+            {(["off", "auto", "slider", "mic"] as TalkMode[]).map((m) => (
               <label key={m} className="flex items-center gap-1">
                 <input type="radio" name="talk" checked={talk === m} onChange={() => setTalk(m)} />
                 {m}
@@ -244,6 +329,16 @@ export function AliveLab() {
               {stats ? `${stats.fps} fps · ${stats.renderer} · ${stats.triangles} triangles` : "…"} · taps {taps}
             </span>
           </div>
+          {picking && (
+            <JointPicker
+              cutout={result}
+              onCancel={() => setPicking(false)}
+              onDone={(j) => {
+                setJoints(j);
+                setPicking(false);
+              }}
+            />
+          )}
           {strip && (
             <figure className="flex flex-col gap-1">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -256,6 +351,12 @@ export function AliveLab() {
       </div>
     </main>
   );
+}
+
+function maskToAlpha(mask: Uint8Array): Uint8ClampedArray {
+  const a = new Uint8ClampedArray(mask.length);
+  for (let i = 0; i < mask.length; i++) a[i] = mask[i] ? 255 : 0;
+  return a;
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {

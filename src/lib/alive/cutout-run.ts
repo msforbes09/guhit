@@ -1,5 +1,5 @@
 import { cutoutCore } from "./cutout-core";
-import type { CutoutMeta } from "./types";
+import type { CutoutEdit, CutoutMeta } from "./types";
 
 /**
  * Decode → classical cut-out → PNG encode. Shared by the worker and the
@@ -16,6 +16,7 @@ export interface RunResult {
   fullAlpha?: Uint8ClampedArray;
   processedWidth: number;
   processedHeight: number;
+  edit?: CutoutEdit;
 }
 
 type AnyCanvas = OffscreenCanvas | HTMLCanvasElement;
@@ -99,11 +100,16 @@ export function alphaToMaskRgba(alpha: Uint8ClampedArray): Uint8ClampedArray<Arr
 
 const now = () => performance.now();
 
-export async function runClassical(blob: Blob, maxSide: number, debug: boolean): Promise<RunResult> {
+export async function runClassical(
+  blob: Blob,
+  maxSide: number,
+  debug: boolean,
+  editable = false,
+): Promise<RunResult> {
   const t0 = now();
   const px = await decodeToPixels(blob, maxSide);
   const t1 = now();
-  const core = cutoutCore(px.data, px.width, px.height, { debug });
+  const core = cutoutCore(px.data, px.width, px.height, { debug, editable });
   const t2 = now();
   const png = await encodeRgba(core.rgba, core.width, core.height);
   const t3 = now();
@@ -132,6 +138,7 @@ export async function runClassical(blob: Blob, maxSide: number, debug: boolean):
     fullAlpha: debug ? core.fullAlpha : undefined,
     processedWidth: px.width,
     processedHeight: px.height,
+    edit: core.edit,
   };
 }
 
