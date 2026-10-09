@@ -28,10 +28,10 @@ export class VisionClient {
    * `image` is a data URL: either the cut-out (put on white before captioning)
    * or, with `crop`, the original photo (only the cropped region is captioned).
    */
-  async describe(image: string, crop?: PixelRect): Promise<Caption> {
+  async describe(image: string, crop?: PixelRect, task?: string): Promise<Caption> {
     if (!this.worker) throw new Error("Drawing recognition is not loaded yet.");
     const blob = await (await fetch(image)).blob();
-    const result = await this.worker.call({ type: "describe", image: blob, crop });
+    const result = await this.worker.call({ type: "describe", image: blob, crop, task });
     return { caption: result.caption, ms: result.ms };
   }
 }

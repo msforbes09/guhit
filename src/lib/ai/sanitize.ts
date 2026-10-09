@@ -53,12 +53,25 @@ export const breaksCharacter = (text: string) => OUT_OF_CHARACTER.test(text);
 export function cleanQuestion(raw: string): string | null {
   const sentences = splitSentences(plainText(raw));
   const index = sentences.findIndex((s) => /\?["'”’)]*$/.test(s));
-  if (index === -1) return null;
+  if (index === -1 || isYesNo(sentences[index])) return null;
   let kept = sentences.slice(0, index + 1);
   while (kept.length > 1 && wordCount(kept.join(" ")) > 18) kept = kept.slice(1);
   const question = kept.join(" ");
   if (wordCount(question) > 25 || isUnsafe(question)) return null;
   return question;
+}
+
+/**
+ * "Is Tala scared of rain?" or "…, right?" ends a story with one word; the
+ * interviewer only asks open questions (who, what, where, what happens next).
+ */
+function isYesNo(question: string): boolean {
+  return (
+    /^(?:is|are|am|was|were|do|does|did|can|could|will|would|should|shall|has|have|had|may|might)\b/i.test(question) ||
+    /,\s*(?:right|okay|ok|yes|no|isn'?t (?:it|he|she|that)|aren'?t (?:they|you|we)|don'?t (?:you|they)|doesn'?t (?:it|he|she)|won'?t you)\s*\?["'”’)]*$/i.test(
+      question,
+    )
+  );
 }
 
 /** Two or three story sentences, always ending with an invitation to draw. */
@@ -86,6 +99,8 @@ export function cleanTitle(raw: string): string | null {
 const PICTURE_WORDS =
   "drawing|picture|photo|photograph|cartoon|illustration|sketch|image|painting|doodle|clip ?art|colou?ring page";
 const CAPTION_LEADS = [
+  /^in (?:the|this) (?:image|picture|photo|drawing),? (?:we|i|you) can see\s+/i,
+  /^(?:the|this|it) (?:drawing|picture|image)? ?(?:is|shows) (?:a (?:drawing|picture) )?of\s+/i,
   /^(?:in )?(?:the|this) (?:image|picture|photo|drawing)(?: shows| is| depicts| features| of)?\s+/i,
   /^(?:there is|this is|it is|here is)\s+/i,
   new RegExp(
@@ -114,6 +129,11 @@ export function cleanCaption(raw: string): string {
   const untagged = raw.replace(/<\/?[a-z_]+>/gi, " ");
   let text = plainText(untagged).split(/(?<=[.!?])\s/)[0] ?? "";
   text = text.replace(/[.!?]+$/, "").trim();
+  // "A purple cartoon drawing of a bird" → "a purple bird": keep the colour, drop the medium.
+  text = text.replace(
+    new RegExp(`^(an?) ((?:[a-z]+ ){1,2}?)(?:(?:cartoon|simple|cute|child'?s) )*(?:${PICTURE_WORDS}) of (?:an? |the )?`, "i"),
+    (_match, article: string, adjectives: string) => `${article} ${adjectives}`,
+  );
   let previous: string;
   do {
     previous = text;
@@ -125,7 +145,8 @@ export function cleanCaption(raw: string): string {
   if (words.length === 0 || isUnsafe(text)) return "";
   // Long captions read badly in "Is that …?": keep the first ten words, ending before a dangling "and"/"with".
   let kept = words.slice(0, 10);
-  while (kept.length > 2 && /^(?:and|with|of|in|on|the|a|an)$/i.test(kept[kept.length - 1])) kept = kept.slice(0, -1);
+  const dangling = /^(?:and|with|of|in|on|up|going|the|a|an|its|it'?s|his|her|their|my)$/i;
+  while (kept.length > 2 && dangling.test(kept[kept.length - 1])) kept = kept.slice(0, -1);
   const phrase = withArticle(kept.join(" ").replace(/,$/, ""));
   const label = phrase.charAt(0).toLowerCase() + phrase.slice(1);
   return isSensibleLabel(label) ? label : "";
