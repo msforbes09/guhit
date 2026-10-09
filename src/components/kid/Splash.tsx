@@ -229,13 +229,21 @@ export function Splash({ version }: { version: string }) {
       else setDone(true);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    // Animation frames stop in a hidden tab or a choked main thread; a timer
+    // still guarantees the app underneath is reachable.
+    const failsafe = setTimeout(() => setDone(true), (reduced ? REDUCED_HOLD : BUILT + HOLD) + FADE + 800);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(failsafe);
+    };
   }, []);
 
   if (done) return null;
 
   const skip = () => {
-    if (skipAt.current === null) skipAt.current = clock.current;
+    if (skipAt.current !== null) return;
+    skipAt.current = clock.current;
+    setTimeout(() => setDone(true), FADE + 100);
   };
 
   return (
