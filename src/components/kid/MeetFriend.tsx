@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { getAI } from "@/lib/ai";
+import { getAI, isTestMode } from "@/lib/ai";
+import { sfx } from "@/lib/sfx";
+import { hush, sayAsCharacter } from "@/lib/sfx/voice";
 import { deleteFriend, saveFriend, type Friend } from "@/lib/story/db";
 import { nameFrom, parseIntro, readYesNo, tidy } from "@/lib/story/intro";
 import { kindOf } from "@/lib/story/kind";
@@ -12,6 +14,7 @@ import { speechLevel, usePart, usePushToTalk, useSpeakingVoice } from "./hooks";
 import { ArrowsClockwise, Check, Keyboard, PaperPlaneRight, X } from "./icons";
 import { MicButton } from "./MicButton";
 import { ReadyCard } from "./ReadyCard";
+import { SoundToggle } from "./SoundToggle";
 import { Button, SpeechBubble, ThinkingDots, TopBar } from "./ui";
 
 /**
@@ -45,8 +48,10 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
   const talk = usePart("talk");
   const voiceSettled = voice !== "checking" && voice !== "waking";
   const speaking = useSpeakingVoice() === "character";
-  const [step, setStep] = useState<Step>("looking");
-  const stepRef = useRef<Step>("looking");
+  // Test mode goes straight to asking: no pretend guess to confuse the tester.
+  const [firstStep] = useState<Step>(() => (isTestMode() ? "ask" : "looking"));
+  const [step, setStep] = useState<Step>(firstStep);
+  const stepRef = useRef<Step>(firstStep);
   const [guess, setGuess] = useState("");
   const [hearing, setHearing] = useState(false);
   const [typed, setTyped] = useState("");
@@ -55,6 +60,12 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
   const [oops, setOops] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const mountedAt = useRef(0);
+  // What it is so far, for its voice; read when it speaks, so typing never restarts a line.
+  const kind = kindOf(about, guess || friend.seenAs);
+  const kindRef = useRef(kind);
+  useEffect(() => {
+    kindRef.current = kind;
+  });
 
   const go = useCallback((next: Step) => {
     stepRef.current = next;
@@ -89,7 +100,8 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
       }, wait);
     };
     if (known !== undefined) settle(known);
-    else if (eyes !== "ready") settle("");
+    // Test mode: no guess at all; the tester says or types who it is.
+    else if (eyes !== "ready" || isTestMode()) settle("");
     else {
       getAI()
         // The original photo cropped to the cut-out carries more detail than the cut-out.
@@ -118,14 +130,20 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
 
   // The character says its question out loud when it can.
   useEffect(() => {
-    // Waits for the storytelling voice only while it is starting; without it the device's voice speaks.
+    // Waits for the storytelling voice only while it is starting; without it the character babbles.
     if (!line || step === "confirm" || !voiceSettled) return;
-    getAI()
-      .speak(line, "character")
-      .catch(() => {});
+    sayAsCharacter(line, kindRef.current).catch(() => {});
   }, [line, step, voiceSettled]);
 
-  useEffect(() => () => getAI().stopSpeaking(), []);
+  useEffect(() => () => hush(), []);
+
+  // A gentle "uh-oh" when something goes wrong or the drawing can't be a friend.
+  useEffect(() => {
+    if (oops) sfx("oops");
+  }, [oops]);
+  useEffect(() => {
+    if (step === "flagged") sfx("oops");
+  }, [step]);
 
   /** What the child said or typed, read according to the current question. */
   const takeWords = useCallback(
@@ -189,7 +207,9 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     setSaving(true);
     try {
       const description = about.trim();
-      onMet(await saveFriend({ ...friend, name: name.trim(), description, kind: kindOf(description, guess || friend.seenAs) }));
+      const met = await saveFriend({ ...friend, name: name.trim(), description, kind: kindOf(description, guess || friend.seenAs) });
+      sfx("celebrate");
+      onMet(met);
     } catch {
       setOops("I couldn't remember that. Try once more?");
       setSaving(false);
@@ -206,7 +226,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
         busy={hearing || talk !== "ready"}
         busyLabel={hearing ? "Listening hard…" : "Waking up…"}
         onStart={() => {
-          getAI().stopSpeaking();
+          hush();
           setOops(null);
           mic.start();
         }}
@@ -341,7 +361,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
           <Button tone="paper" size="md" onClick={() => go(guess ? "name" : "ask")} icon={<ArrowsClockwise size={26} weight="bold" aria-hidden="true" />}>
             Say it again
           </Button>
-          <Button type="submit" tone="grass" size="md" disabled={!name.trim() || saving} icon={<Check size={28} weight="bold" aria-hidden="true" />}>
+          <Button type="submit" tone="grass" size="md" sound={false} disabled={!name.trim() || saving} icon={<Check size={28} weight="bold" aria-hidden="true" />}>
             {saving ? "Saving…" : "Yes! Let's talk"}
           </Button>
         </div>
@@ -368,7 +388,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col">
-      <TopBar title="Meet your new friend" />
+      <TopBar title="Meet your new friend" right={<SoundToggle />} />
       <div className="grid flex-1 gap-5 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 lg:grid-cols-[1.25fr_1fr] lg:items-start">
         <FriendStage
           cutout={friend.cutout ?? friend.drawing}

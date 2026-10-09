@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { sfx } from "@/lib/sfx";
 import { canvasToBlob } from "@/lib/story/image";
 import { CutError, CutoutPreview, CuttingView, NotThisOne, useBringToLife } from "./BringToLife";
 import { useFriends } from "./FriendsGrid";
@@ -94,6 +95,7 @@ export function SnapScreen() {
     canvas.width = Math.round(sw);
     canvas.height = Math.round(sh);
     canvas.getContext("2d")?.drawImage(v, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    sfx("shutter");
     setFlash(true);
     setTimeout(() => setFlash(false), 260);
     const blob = await canvasToBlob(canvas, "image/jpeg");
@@ -108,6 +110,7 @@ export function SnapScreen() {
   };
   useEffect(() => {
     if (count <= 0) return;
+    sfx("tick");
     const id = setTimeout(() => {
       if (count === 1) {
         setCount(0);

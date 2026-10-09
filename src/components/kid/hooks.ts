@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getAI, installedParts, isSetupInProgress, RealAI } from "@/lib/ai";
+import { getAI, installedParts, isSetupInProgress, isTestMode, RealAI } from "@/lib/ai";
 import type { AIStatus, Part, PartStatus } from "@/lib/ai";
+import { babbleLevel, onBabbleStart } from "@/lib/sfx/babble";
 
 /**
  * Models are on this device: /setup put at least one part here, or the canned
@@ -10,6 +11,13 @@ import type { AIStatus, Part, PartStatus } from "@/lib/ai";
  */
 function onThisDevice(): boolean {
   return installedParts().length > 0 || !(getAI() instanceof RealAI);
+}
+
+const noSubscribe = () => () => {};
+
+/** Testers' mode (/?mock=1): pretend answers, nothing to download. */
+export function useTestMode(): boolean {
+  return useSyncExternalStore(noSubscribe, isTestMode, () => false);
 }
 
 // getAI().status() is a plain getter, so watch it with a light poll.
@@ -236,8 +244,8 @@ export function usePushToTalk(onAudio: (audio: Blob) => void) {
   return { state, level, start, stop, cancel };
 }
 
-/** The engine's voice loudness, read by the character every animation frame. */
-export const speechLevel = () => getAI().speechLevel();
+/** The voice's loudness (the engine's, or the 8-bit babble's), read by the character every animation frame. */
+export const speechLevel = () => Math.max(getAI().speechLevel(), babbleLevel());
 
 /** How long the voice may stay silent before a speaker counts as finished. */
 const QUIET_MS = 1500;
@@ -255,13 +263,19 @@ export function useSpeakingVoice(): "narrator" | "character" | null {
       quietSince = 0;
       setVoice(v);
     });
+    // The babble is always the character talking.
+    const offBabble = onBabbleStart(() => {
+      quietSince = 0;
+      setVoice("character");
+    });
     const check = setInterval(() => {
-      if (ai.speechLevel() > 0.01) quietSince = 0;
+      if (speechLevel() > 0.01) quietSince = 0;
       else if (!quietSince) quietSince = performance.now();
       else if (performance.now() - quietSince > QUIET_MS) setVoice(null);
     }, 150);
     return () => {
       off();
+      offBabble();
       clearInterval(check);
     };
   }, []);

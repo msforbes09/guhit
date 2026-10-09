@@ -1,0 +1,17 @@
+{
+  "id": "/?mock=1",
+  "name": "Guhit (test)",
+  "short_name": "Guhit test",
+  "description": "Guhit in test mode: pretend answers, nothing to download.",
+  "start_url": "/?mock=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fff8ec",
+  "theme_color": "#ff8a3d",
+  "icons": [
+    { "src": "/icons/guhit-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/guhit-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/guhit-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

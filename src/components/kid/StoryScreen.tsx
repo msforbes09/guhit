@@ -3,8 +3,10 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { getAI } from "@/lib/ai";
+import { sfx } from "@/lib/sfx";
+import { hush, sayAsCharacter } from "@/lib/sfx/voice";
 import { getFriend, newId, saveStory, type Friend } from "@/lib/story/db";
-import { kindOf } from "@/lib/story/kind";
+import { settledKind } from "@/lib/story/kind";
 import type { Character, Story } from "@/lib/story/types";
 import { sceneFor } from "./Backdrop";
 import { FriendSkeleton } from "./FriendScreen";
@@ -13,6 +15,7 @@ import { speechLevel, usePart, usePushToTalk, useSpeakingVoice } from "./hooks";
 import { ArrowRight, ArrowsClockwise, BookOpen, PaperPlaneRight, SpeakerHigh } from "./icons";
 import { MicButton } from "./MicButton";
 import { ReadyCard } from "./ReadyCard";
+import { SoundToggle } from "./SoundToggle";
 import { StoryPage } from "./StoryPage";
 import { Button, LinkButton, SpeechBubble, ThinkingDots, TopBar } from "./ui";
 
@@ -29,7 +32,7 @@ const asCharacter = ({ id, name, description, drawing, cutout, kind, seenAs }: F
   description,
   drawing,
   cutout,
-  kind: kind ?? kindOf(description, seenAs),
+  kind: settledKind({ kind, description, seenAs }),
 });
 
 /** /story?id=<friend>: the character asks, the child answers, each answer becomes a page. */
@@ -108,18 +111,18 @@ function MakeStory({ friend }: { friend: Friend }) {
       const q = (current.pages.length === 0 ? await ai.firstQuestion(current.character) : await ai.nextQuestion(current)).trim();
       setQuestion(q);
       setPhase("answering");
-      ai.speak(q, "character").catch(() => {});
+      sayAsCharacter(q, settledKind(friend)).catch(() => {});
     } catch {
       fail(`${name} forgot the question! Let's try again.`, { step: "ask" });
     }
-  }, [fail, name]);
+  }, [fail, friend, name]);
 
   const write = useCallback(
     async (answer: string) => {
       const words = answer.trim();
       if (!words) return;
       const ai = getAI();
-      ai.stopSpeaking();
+      hush();
       setPhase("writing");
       setOops(null);
       try {
@@ -137,12 +140,13 @@ function MakeStory({ friend }: { friend: Friend }) {
 
   const finish = useCallback(async () => {
     const ai = getAI();
-    ai.stopSpeaking();
+    hush();
     setPhase("finishing");
     try {
       const current = storyRef.current;
       const title = (await ai.titleFor(current)).trim() || `A story with ${name}`;
       await keep({ ...current, title });
+      sfx("celebrate");
       router.push(`/book?id=${encodeURIComponent(current.id)}`);
     } catch {
       fail("The book cover got stuck. Let's try again.", { step: "finish" });
@@ -166,7 +170,12 @@ function MakeStory({ friend }: { friend: Friend }) {
     return () => clearTimeout(id);
   }, [ready, ask]);
 
-  useEffect(() => () => getAI().stopSpeaking(), []);
+  useEffect(() => () => hush(), []);
+
+  // A gentle "uh-oh" whenever something goes wrong.
+  useEffect(() => {
+    if (oops) sfx("oops");
+  }, [oops]);
 
   const onAudio = useCallback(
     async (audio: Blob) => {
@@ -204,7 +213,7 @@ function MakeStory({ friend }: { friend: Friend }) {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col">
-      <TopBar title={`A story with ${name}`} back={`/friend?id=${encodeURIComponent(friend.id)}`} backLabel={name} />
+      <TopBar title={`A story with ${name}`} back={`/friend?id=${encodeURIComponent(friend.id)}`} backLabel={name} right={<SoundToggle />} />
 
       <div className="flex flex-1 flex-col gap-5 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6">
         <ol className="flex items-center gap-2" aria-label={`Page ${pageNumber} of up to ${MAX_PAGES}`}>
@@ -310,7 +319,7 @@ function MakeStory({ friend }: { friend: Friend }) {
                     busy={busy || ready !== "ready"}
                     busyLabel={ready !== "ready" ? `Waking ${name} up…` : phase === "hearing" ? "Listening hard…" : `${name} is thinking…`}
                     onStart={() => {
-                      getAI().stopSpeaking();
+                      hush();
                       setOops(null);
                       mic.start();
                     }}
@@ -346,7 +355,8 @@ function MakeStory({ friend }: { friend: Friend }) {
                     <Button
                       tone="paper"
                       size="sm"
-                      onClick={() => getAI().speak(question, "character").catch(() => {})}
+                      sound={false}
+                      onClick={() => sayAsCharacter(question, settledKind(friend)).catch(() => {})}
                       icon={<SpeakerHigh size={24} weight="fill" aria-hidden="true" />}
                       className="self-center"
                     >

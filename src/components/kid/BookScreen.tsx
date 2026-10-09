@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAI } from "@/lib/ai";
 import { getStory } from "@/lib/story/db";
-import { kindOf } from "@/lib/story/kind";
+import { settledKind } from "@/lib/story/kind";
 import type { Story } from "@/lib/story/types";
 import { sceneFor } from "./Backdrop";
 import { greetingMotion } from "./moves";
@@ -57,7 +57,7 @@ export function BookScreen() {
 function Book({ story }: { story: Story }) {
   const name = story.character.name;
   const cutout = story.character.cutout ?? story.character.drawing;
-  const kind = story.character.kind ?? kindOf(story.character.description);
+  const kind = settledKind(story.character);
   // -1 is the cover, pages.length is "The End".
   const [at, setAt] = useState(-1);
   const [turn, setTurn] = useState<"next" | "back">("next");

@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { getAI } from "@/lib/ai";
 import type { ChatTurn } from "@/lib/ai";
+import { sfx } from "@/lib/sfx";
+import { hush, prepareReplyVoice, sayAsCharacter } from "@/lib/sfx/voice";
 import { saveFriend, type Friend } from "@/lib/story/db";
-import { kindOf } from "@/lib/story/kind";
+import { settledKind } from "@/lib/story/kind";
 import { JointPicker, loadCutout, type AliveCharacterHandle, type Cutout, type Joints, type Motion } from "./alive";
 import { FriendBooks } from "./FriendBooks";
 import { FriendStage } from "./FriendStage";
@@ -21,6 +23,7 @@ import {
 } from "./icons";
 import { MicButton } from "./MicButton";
 import { ReadyCard } from "./ReadyCard";
+import { SoundToggle } from "./SoundToggle";
 import { Button, Sheet, SpeechBubble, ThinkingDots, TopBar, type Tone } from "./ui";
 
 type Phase = "idle" | "hearing" | "thinking" | "speaking" | "oops";
@@ -57,7 +60,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   const [picking, setPicking] = useState<Cutout | null>(null);
   const name = friend.name;
   // Each kind moves its own way; only creatures have a head, hands and feet (and wave).
-  const kind = friend.kind ?? kindOf(friend.description, friend.seenAs);
+  const kind = settledKind(friend);
   const creature = kind === "creature";
   const moves = movesFor(kind);
 
@@ -76,6 +79,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
     friendRef.current = next;
     setFriend(next);
     // Show off the new arms and legs straight away.
+    sfx("success");
     setMotion("dance");
     if (moveTimer.current) clearTimeout(moveTimer.current);
     moveTimer.current = setTimeout(() => setMotion("idle"), 4000);
@@ -104,7 +108,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
     setPhase("speaking");
     setMotion((m) => (m === "sleep" ? "idle" : m));
     try {
-      await getAI().speak(text, "character");
+      await sayAsCharacter(text, settledKind(friendRef.current));
     } catch {
       // The words are on screen in the bubble even if the voice fails.
     }
@@ -118,7 +122,8 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
       setAwaitingWords(true);
       try {
         const me = friendRef.current;
-        const character = { ...me, kind: me.kind ?? kindOf(me.description, me.seenAs) };
+        const character = { ...me, kind: settledKind(me) };
+        prepareReplyVoice();
         const reply = (await getAI().reply(character, history.slice(-MEMORY_TURNS), childSays)).trim();
         setAwaitingWords(false);
         await remember([...friendRef.current.chat, { who: "character", text: reply }]);
@@ -170,11 +175,16 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
 
   useEffect(
     () => () => {
-      getAI().stopSpeaking();
+      hush();
       if (moveTimer.current) clearTimeout(moveTimer.current);
     },
     [],
   );
+
+  // A gentle "uh-oh" whenever something goes wrong.
+  useEffect(() => {
+    if (oops) sfx("oops");
+  }, [oops]);
 
   const onAudio = useCallback(
     async (audio: Blob) => {
@@ -199,7 +209,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
 
   const startTalking = () => {
     // Talking over the character is allowed: it stops and listens.
-    if (phase === "speaking") getAI().stopSpeaking();
+    if (phase === "speaking") hush();
     setOops(null);
     setPhase("idle");
     mic.start();
@@ -208,6 +218,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   const move = (next: Move) => {
     if (moveTimer.current) clearTimeout(moveTimer.current);
     const toggleOff = next.motion === "sleep" && motion === "sleep";
+    sfx(toggleOff ? "wake" : next.sound);
     setMotion(toggleOff ? "idle" : next.motion);
     if (next.lasts && !toggleOff) moveTimer.current = setTimeout(() => setMotion("idle"), next.lasts);
   };
@@ -217,7 +228,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
     if (!typed.trim() || busy) return;
     const words = typed;
     setTyped("");
-    if (phase === "speaking") getAI().stopSpeaking();
+    if (phase === "speaking") hush();
     childSays(words);
   };
 
@@ -262,13 +273,17 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
       <TopBar
         title={name}
         right={
-          <Link
-            href={`/story?id=${encodeURIComponent(friend.id)}`}
-            className="crayon-edge press inline-flex min-h-14 items-center gap-2 rounded-cut bg-sun px-4 font-display text-lg font-bold text-ink"
-          >
-            <BookOpen size={26} weight="fill" aria-hidden="true" />
-            <span className="max-sm:sr-only">Make a story</span>
-          </Link>
+          <>
+            <SoundToggle />
+            <Link
+              href={`/story?id=${encodeURIComponent(friend.id)}`}
+              onClick={() => sfx("tap")}
+              className="crayon-edge press inline-flex min-h-14 items-center gap-2 rounded-cut bg-sun px-4 font-display text-lg font-bold text-ink"
+            >
+              <BookOpen size={26} weight="fill" aria-hidden="true" />
+              <span className="max-sm:sr-only">Make a story</span>
+            </Link>
+          </>
         }
       />
 
@@ -289,6 +304,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
             level={speechLevel}
             thinking={phase === "thinking" || phase === "hearing"}
             characterRef={character}
+            onTap={() => sfx("giggle")}
             bubble={bubble}
             className="h-[50vh] min-h-80 lg:h-auto lg:min-h-[72vh]"
           />

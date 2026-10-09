@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { AIStatusPill } from "@/components/kid/AIStatusPill";
 import { FriendShelf } from "@/components/kid/FriendShelf";
 import { HeroDoodle } from "@/components/kid/HeroDoodle";
 import { InstallNudge } from "@/components/kid/InstallNudge";
+import { SetupLink } from "@/components/kid/SetupLink";
 import { Logo } from "@/components/kid/Logo";
-import { Camera, DownloadSimple, PaintBrush } from "@/components/kid/icons";
+import { Camera, PaintBrush } from "@/components/kid/icons";
 import { LinkButton, Scribble } from "@/components/kid/ui";
 
 export default function Home() {
@@ -60,13 +60,7 @@ export default function Home() {
 
       <footer className="mt-auto flex flex-wrap items-center justify-between gap-x-6 gap-y-2 pt-10 text-base text-ink-soft">
         <p>Everything stays on this device. No internet needed.</p>
-        <Link
-          href="/setup"
-          className="inline-flex min-h-14 items-center gap-2 font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
-        >
-          <DownloadSimple size={20} weight="bold" aria-hidden="true" />
-          Grown-ups: get ready (download)
-        </Link>
+        <SetupLink />
       </footer>
     </main>
   );

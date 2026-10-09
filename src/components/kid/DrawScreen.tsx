@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { sfx } from "@/lib/sfx";
 import { canvasToBlob } from "@/lib/story/image";
 import { CutError, CutoutPreview, CuttingView, NotThisOne, useBringToLife } from "./BringToLife";
 import { useFriends } from "./FriendsGrid";
@@ -247,6 +248,7 @@ export function DrawScreen() {
                     aria-label={c.name}
                     aria-pressed={active}
                     onClick={() => {
+                      sfx("tap");
                       setColor(c.value);
                       setEraser(false);
                     }}
@@ -267,7 +269,10 @@ export function DrawScreen() {
                   type="button"
                   aria-label={s.name}
                   aria-pressed={width === s.px}
-                  onClick={() => setWidth(s.px)}
+                  onClick={() => {
+                    sfx("tap");
+                    setWidth(s.px);
+                  }}
                   className={`crayon-edge press grid h-14 w-14 place-items-center rounded-[18px] ${width === s.px ? "bg-sun" : "bg-white"}`}
                 >
                   <span className="block rounded-full bg-ink" style={{ width: s.dot, height: s.dot }} />
@@ -277,7 +282,10 @@ export function DrawScreen() {
             <button
               type="button"
               aria-pressed={!eraser}
-              onClick={() => setEraser(false)}
+              onClick={() => {
+                sfx("tap");
+                setEraser(false);
+              }}
               className={`crayon-edge press flex h-14 items-center gap-2 rounded-[18px] px-3 font-display font-bold ${!eraser ? "bg-sun" : "bg-white"}`}
             >
               <PaintBrush size={26} weight="fill" aria-hidden="true" />
@@ -286,7 +294,10 @@ export function DrawScreen() {
             <button
               type="button"
               aria-pressed={eraser}
-              onClick={() => setEraser(true)}
+              onClick={() => {
+                sfx("tap");
+                setEraser(true);
+              }}
               className={`crayon-edge press flex h-14 items-center gap-2 rounded-[18px] px-3 font-display font-bold ${eraser ? "bg-pink" : "bg-white"}`}
             >
               <Eraser size={26} weight="fill" aria-hidden="true" />
@@ -294,7 +305,10 @@ export function DrawScreen() {
             </button>
             <button
               type="button"
-              onClick={undo}
+              onClick={() => {
+                sfx("tap");
+                undo();
+              }}
               disabled={!canUndo}
               className="crayon-edge press flex h-14 items-center gap-2 rounded-[18px] bg-white px-3 font-display font-bold"
             >
@@ -303,7 +317,10 @@ export function DrawScreen() {
             </button>
             <button
               type="button"
-              onClick={clear}
+              onClick={() => {
+                sfx("tap");
+                clear();
+              }}
               disabled={!inkCount}
               className="crayon-edge press flex h-14 items-center gap-2 rounded-[18px] bg-white px-3 font-display font-bold"
             >
