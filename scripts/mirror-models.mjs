@@ -14,7 +14,7 @@ import { promisify } from "node:util";
 import { prebuiltAppConfig } from "@mlc-ai/web-llm";
 
 const run = promisify(execFile);
-const PARALLEL = 4;
+const PARALLEL = 8;
 
 const root = join(process.cwd(), "public", "models");
 const llmIds = process.argv.slice(2).length ? process.argv.slice(2) : ["Qwen3-1.7B-q4f16_1-MLC"];
@@ -45,26 +45,34 @@ async function repoFiles(repo) {
   return (await response.json()).siblings.map((s) => ({ name: s.rfilename, size: s.size }));
 }
 
-async function mirrorRepo(repo, keep) {
-  const queue = (await repoFiles(repo)).filter((f) => keep(f.name));
-  const total = queue.length;
-  let done = 0;
-  const worker = async () => {
-    for (let file = queue.shift(); file; file = queue.shift()) {
-      const target = join(root, repo, "resolve", "main", file.name);
-      const result = await download(`https://huggingface.co/${repo}/resolve/main/${file.name}`, target, file.size);
-      console.log(`[${repo}] ${++done}/${total} ${result} ${file.name}`);
-    }
-  };
-  await Promise.all(Array.from({ length: PARALLEL }, worker));
-}
+const wanted = (name) => !name.startsWith(".") && name !== "README.md";
+const filesOf = async (repo, keep) =>
+  (await repoFiles(repo))
+    .filter((f) => keep(f.name))
+    .map((f) => ({
+      url: `https://huggingface.co/${repo}/resolve/main/${f.name}`,
+      target: join(root, repo, "resolve", "main", f.name),
+      size: f.size,
+    }));
 
+// One shared queue: the Hugging Face CDN caps each connection, so several
+// downloads side by side finish far sooner than one after another.
+const queue = [];
 for (const id of llmIds) {
   const record = prebuiltAppConfig.model_list.find((m) => m.model_id === id);
   if (!record) throw new Error(`Unknown WebLLM model ${id}`);
-  const lib = record.model_lib.split("/").pop();
-  console.log(`[lib] ${await download(record.model_lib, join(root, "libs", lib))} ${lib}`);
-  await mirrorRepo(`mlc-ai/${id}`, (name) => !name.startsWith(".") && name !== "README.md");
+  queue.push({ url: record.model_lib, target: join(root, "libs", record.model_lib.split("/").pop()) });
+  queue.push(...(await filesOf(`mlc-ai/${id}`, wanted)));
 }
-await mirrorRepo(whisper, (name) => (name.startsWith("onnx/") ? whisperOnnx.includes(name) : !name.startsWith(".") && name !== "README.md"));
+queue.push(...(await filesOf(whisper, (name) => (name.startsWith("onnx/") ? whisperOnnx.includes(name) : wanted(name)))));
+
+const total = queue.length;
+let done = 0;
+const worker = async () => {
+  for (let file = queue.shift(); file; file = queue.shift()) {
+    const result = await download(file.url, file.target, file.size);
+    console.log(`${++done}/${total} ${result} ${file.target.slice(root.length + 1)}`);
+  }
+};
+await Promise.all(Array.from({ length: PARALLEL }, worker));
 console.log(`Models mirrored into ${root}`);
