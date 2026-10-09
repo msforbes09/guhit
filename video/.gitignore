@@ -1,0 +1,18 @@
+# Secrets: the narrator voice key lives here, created by hand, never committed.
+.env
+.env.*
+!.env.example
+
+# Dependencies and tool output
+node_modules/
+.remotion/
+
+# Capture working files: browser profile (cached models), raw frames, fake camera/mic media
+.capture/
+
+# Renders and large footage (re-made by the capture scripts; see README.md)
+out/*.mp4
+out/frames/
+footage/*.mp4
+footage/*.webm
+footage/*.mov
