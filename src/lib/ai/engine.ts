@@ -172,20 +172,30 @@ export class RealAI implements LocalAI {
       // Downloads run side by side: the first visit is bound by network, not GPU.
       // Drawing recognition is not loaded here: it is loaded for each guess and
       // freed straight after, so it never holds GPU memory during the talk loop.
-      const [, , voices] = await Promise.all([
+      const loadVoice = () =>
+        this.speaker.load(support, choice.modelHost, (loaded, total, text) =>
+          this.emit({ stage: "tts", loaded, total, text }),
+        );
+      let [, , voices] = await Promise.all([
         this.loadLLM(new LLMClient(), choice),
         this.loadSTT(new STTClient(), choice),
         // Never fails the load: without the neural voice, the built-in one speaks.
-        this.speaker.load(support, choice.modelHost, (loaded, total, text) =>
-          this.emit({ stage: "tts", loaded, total, text }),
-        ),
+        loadVoice(),
       ]);
+      // A first, cold load can fail while the other models are filling the GPU;
+      // on its own it usually succeeds, so try once more before settling.
+      if (voices.engine === "builtin" && voices.reason?.startsWith("Kokoro failed to load")) {
+        voices = await loadVoice();
+      }
       this.voices = voices;
       this.timings.ttsMs = voices.loadMs;
 
       this.timings.totalMs = performance.now() - started;
       this.state = "ready";
       markReady(true);
+      // The voice's own warm-up ran while the other models were still loading;
+      // one more throwaway word now that they are all on the GPU.
+      this.speaker.rewarm();
       this.prefetchVision();
     } catch (error) {
       this.state = "error";
@@ -284,8 +294,10 @@ export class RealAI implements LocalAI {
       this.vision = null;
       // After the vision model has used the GPU, the next reply was cold
       // (7–8 s instead of ~1 s in /lab). Warming the LLM again now hides that
-      // while the child confirms the guess and names the character.
+      // while the child confirms the guess and names the character. The voice
+      // shares the GPU too.
       void this.warmLLM();
+      this.speaker.rewarm();
     }
   }
 
