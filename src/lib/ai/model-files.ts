@@ -144,8 +144,9 @@ export async function listModelFiles(
 export function partModelIds(part: Part, choice: Pick<ModelChoice, "llm" | "stt" | "vision">): string[] {
   if (part === "eyes") return [choice.vision, CUTOUT_MODEL_ID];
   if (part === "voice") return [KOKORO.id];
+  if (part === "ears") return [choice.stt];
   // WebLLM's library file is named after the model without "-MLC".
-  return [choice.stt, choice.llm, choice.llm.replace(/-MLC$/, "")];
+  return [choice.llm, choice.llm.replace(/-MLC$/, "")];
 }
 
 const MODEL_CACHES = ["transformers-cache", "webllm/model", "webllm/config", "webllm/wasm", VOICE_CACHE];

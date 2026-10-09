@@ -46,7 +46,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
   // line for the voice, the microphone for talking.
   const eyes = usePart("eyes");
   const voice = usePart("voice");
-  const talk = usePart("talk");
+  const ears = usePart("ears");
   const voiceSettled = voice !== "checking" && voice !== "waking";
   const speaking = useSpeakingVoice() === "character";
   // Test mode goes straight to asking: no pretend guess to confuse the tester.
@@ -229,14 +229,14 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     }
   };
 
-  const canHear = talk !== "not-installed" && talk !== "setting-up" && talk !== "error";
+  const canHear = ears !== "not-installed" && ears !== "setting-up" && ears !== "error";
   const micBlock = (label: string) =>
     canHear ? (
       <MicButton
         label={label}
         state={mic.state}
         level={mic.level}
-        busy={hearing || talk !== "ready"}
+        busy={hearing || ears !== "ready"}
         busyLabel={hearing ? "Listening hard…" : "Waking up…"}
         onStart={() => {
           hush();
@@ -248,8 +248,8 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     ) : (
       <ReadyCard
         name="your friend"
-        failed={talk === "error"}
-        reason={talk === "not-installed" ? "not-installed" : "setting-up"}
+        failed={ears === "error"}
+        reason={ears === "not-installed" ? "not-installed" : "setting-up"}
       />
     );
 
@@ -324,7 +324,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     const copy = {
       describe: { title: "What is it, then?", hint: "Like: “a cat who loves fish”", mic: "Tell me", type: "Or type what it is", placeholder: "A cat who loves fish…" },
       name: { title: "What's my name?", hint: about ? `${about}` : "Give your friend a name!", mic: "Say my name", type: "Or type a name", placeholder: "Tala" },
-      ask: { title: "Tell me who this is!", hint: "Like: “This is Tala, a purple dragon who is scared of rain.”", mic: "Tell me", type: "Or type it here", placeholder: "This is Tala, a purple dragon…" },
+      ask: { title: "Tell me who this is!", hint: "Like: “This is Pip, a brave little robot.”", mic: "Tell me", type: "Or type it here", placeholder: "This is Pip, a brave little robot…" },
     }[step];
     panel = (
       <div className="anim-float-in flex flex-col gap-5">
@@ -363,7 +363,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
           <textarea
             value={about}
             onChange={(e) => setAbout(e.target.value)}
-            placeholder="A purple dragon who is scared of rain."
+            placeholder="A brave little robot who loves to dance."
             rows={3}
             maxLength={300}
             className="crayon-edge rounded-[18px] bg-white px-4 py-3 text-xl text-ink"

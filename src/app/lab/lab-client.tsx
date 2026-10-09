@@ -117,7 +117,7 @@ export function LabClient() {
   async function loadModels() {
     if (!ai) return;
     // The lab measures every part, chosen at setup or not.
-    await ai.load((p: LoadProgress) => setProgress(`${p.stage}: ${p.text}`), ["eyes", "voice", "talk"]);
+    await ai.load((p: LoadProgress) => setProgress(`${p.stage}: ${p.text}`), ["eyes", "voice", "ears", "story"]);
     if (real) setTimings({ ...real.timings });
   }
 

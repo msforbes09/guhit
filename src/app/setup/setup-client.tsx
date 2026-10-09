@@ -70,18 +70,23 @@ function turnOffTestMode() {
 
 /** The parts a parent can have, in the order setup gets them. */
 const PART_INFO: Record<Part, { label: string; detail: string }> = {
-  eyes: { label: "Seeing eyes", detail: "Needed for Guhit to see the drawing: it guesses what your child drew." },
+  eyes: { label: "Seeing eyes", detail: "Needed for Guhit to see the drawing: the friend guesses what your child drew." },
   voice: {
-    label: "Storytelling voice",
-    detail: "A warm voice that reads everything aloud. Without it, your drawings talk in playful 8-bit sounds.",
+    label: "Voice",
+    detail: "The friend speaks in a warm voice. Without it, the friend talks in playful sounds.",
   },
-  talk: {
-    label: "Talking",
-    detail: "Listening ears and a story helper, so your child can talk with their drawings and make stories.",
+  ears: {
+    label: "Listening ears",
+    detail: "Your child can talk out loud to the friend, and say “jump!” or “dance!” to make it move.",
+  },
+  story: {
+    label: "Story helper",
+    detail:
+      "The friend answers anything and tells new stories; your child can chat by typing, even without Listening ears. Not needed to snap, cut out and play.",
   },
 };
 
-/** "Seeing eyes", "Seeing eyes and Talking", "Seeing eyes, Storytelling voice and Talking". */
+/** "Seeing eyes", "Seeing eyes and Voice", "Seeing eyes, Voice and Listening ears". */
 function namesOf(parts: Part[]): string {
   const names = parts.map((part) => PART_INFO[part].label);
   return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
@@ -101,7 +106,7 @@ const size = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB`
 
 function sourceLabel(source: ModelSource): string {
   if (source === "local") return "from this computer's model mirror";
-  if (source === "r2" && R2_BASE) return "from Guhit's model server (Hugging Face as backup)";
+  if (source === "r2" && R2_BASE) return "from Guhit's own server (with a backup)";
   return "from Hugging Face";
 }
 
@@ -350,7 +355,7 @@ export function SetupClient() {
       const onDevice = installedParts();
       setInstalled(onDevice);
       const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-      setRecommended(recommendParts({ ...found, deviceMemory: memory }).filter(offered));
+      setRecommended(recommendParts({ ...found, deviceMemory: memory, appleMobile: isAppleMobile() }).filter(offered));
       // Optional parts start unticked: downloading them is the parent's choice.
       const chosen = chosenParts();
       setSelected(chosen ?? (onDevice.length ? onDevice : [...REQUIRED_PARTS]));
@@ -396,6 +401,7 @@ export function SetupClient() {
   /** Ticked parts not on the device yet: what the button downloads. */
   const adding = selected.filter((part) => !installed.includes(part));
   const engine = getAI();
+  const voiceFellBack = engine instanceof RealAI && engine.voices?.engine === "builtin";
   const friendly = phase === "error" && error ? explainLoadError(error) : null;
   const awake = useScreenAwake(phase === "loading");
   const iPhone = typeof navigator !== "undefined" && isAppleMobile();
@@ -562,6 +568,12 @@ export function SetupClient() {
                           Not on this device: it is too slow here, so the friend talks in playful sounds.
                         </span>
                       )}
+                      {iPhone && (part === "ears" || part === "story") && !installed.includes(part) && !crashed.includes(part) && (
+                        <span className="text-xs font-semibold text-stone-500">
+                          May not fit on some phones. If the page closes while it gets ready, Guhit leaves it out and
+                          everything else keeps working.
+                        </span>
+                      )}
                       {crashed.includes(part) && !ticked && (
                         <span className="text-sm font-semibold text-amber-800">
                           {info.label} didn&rsquo;t fit on this {support?.mobile ? "phone" : "device"}: the page closed while
@@ -615,6 +627,13 @@ export function SetupClient() {
                               : "Waiting its turn"
                             : null;
                       const showBar = phase === "loading" || done || kept > 0;
+                      // Plain words only: a finished row says nothing more, except when the
+                      // voice is too slow on this device and the friend uses playful sounds.
+                      const rowText = done
+                        ? stage === "tts" && voiceFellBack
+                          ? "On this device the friend talks in playful sounds instead."
+                          : null
+                        : (liveText ?? keptText);
                       if (!state && !showBar && !keptText) return null;
                       return (
                         <div key={stage} className="mt-3 border-t border-stone-100 pt-3">
@@ -622,7 +641,7 @@ export function SetupClient() {
                             <span className="font-medium text-stone-700">{STAGE_LABEL[stage]}</span>
                             {state && <span className="text-stone-500">{state}</span>}
                           </div>
-                          {(liveText ?? keptText) && <p className="text-sm text-stone-500">{liveText ?? keptText}</p>}
+                          {rowText && <p className="text-sm text-stone-500">{rowText}</p>}
                           {showBar && (
                             <div
                               className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100"
@@ -723,7 +742,9 @@ export function SetupClient() {
               <p className="text-lg font-semibold">Guhit is ready. It now works without internet.</p>
               <p className="text-sm">
                 On this device: {installed.map((part) => PART_INFO[part].label).join(", ")}.
-                {!installed.includes("talk") && " Your child can still snap, cut out and move their drawings."}
+                {!installed.includes("ears") &&
+                  !installed.includes("story") &&
+                  " Your child can still snap, cut out and move their drawings."}
               </p>
               <p className="text-sm">
                 {alreadyLoaded || seconds === null

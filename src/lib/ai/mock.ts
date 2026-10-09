@@ -1,21 +1,10 @@
-import { settledKind } from "@/lib/story/kind";
-import { tagPage } from "@/lib/story/staging";
 import type { Character, Story } from "@/lib/story/types";
-import { plotFor, tell } from "./mock-stories";
 import type { AIStatus, ChatTurn, DrawingDescription, LoadProgress, LocalAI, PartStatus } from "./types";
+import { writtenFirstQuestion, writtenNextQuestion, writtenPage, writtenTitle } from "./written-story";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const pick = <T,>(items: T[], index: number): T => items[index % items.length];
-
-// The child guesses what happens next; the page then tells it.
-const FOLLOW_UPS = [
-  (name: string) => `Ooh! Where do you think ${name} goes next?`,
-  (name: string) => `Who do you think ${name} meets?`,
-  (name: string) => `What do you think ${name} does now?`,
-  (name: string) => `How do you think ${name} feels?`,
-  (name: string) => `What happens to ${name} at the very end?`,
-];
 
 const CHARACTER_QUESTIONS = [
   "Do you want to play with me?",
@@ -87,27 +76,23 @@ export class MockAI implements LocalAI {
 
   async firstQuestion(character: Character): Promise<string> {
     await wait(500);
-    return `Hello! Let’s make a story. What do you think ${character.name} does first?`;
+    return writtenFirstQuestion(character);
   }
 
   async nextQuestion(story: Story): Promise<string> {
     await wait(500);
-    return pick(FOLLOW_UPS, story.pages.length - 1)(story.character.name);
+    return writtenNextQuestion(story);
   }
 
   /** The next page of a ready-written story that suits the character, with its scene and move. */
   async writePage(story: Story): Promise<string> {
     await wait(700);
-    const kind = settledKind(story.character);
-    const plot = plotFor(story.id, kind);
-    const next = plot.pages[Math.min(story.pages.length, plot.pages.length - 1)];
-    return tagPage(tell(next.text, story.character.name, kind), next);
+    return writtenPage(story);
   }
 
   async titleFor(story: Story): Promise<string> {
     await wait(300);
-    const kind = settledKind(story.character);
-    return tell(plotFor(story.id, kind).title, story.character.name, kind);
+    return writtenTitle(story);
   }
 
   speak(text: string, voice: "narrator" | "character" = "narrator"): Promise<void> {

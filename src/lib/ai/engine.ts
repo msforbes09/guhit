@@ -1,3 +1,4 @@
+import { settledKind } from "@/lib/story/kind";
 import type { Character, Story } from "@/lib/story/types";
 import {
   chooseModels,
@@ -37,6 +38,8 @@ import { guessAllowed, guessFinished, guessStarted } from "./guess-guard";
 import { crashedParts, partSettled, partStarting } from "./part-guard";
 import { recordNote } from "@/lib/boot-log";
 import { sharedAttempt } from "./shared-attempt";
+import { simpleReply } from "./simple-talk";
+import { writtenFirstQuestion, writtenNextQuestion, writtenPage, writtenTitle } from "./written-story";
 import type { STTClient } from "./stt";
 import type { VisionClient } from "./vision";
 import { Speaker, type VoiceInfo } from "./tts";
@@ -149,7 +152,7 @@ export class RealAI implements LocalAI {
 
   private state: AIStatus = "idle";
   /** Each part's own state: a screen needs only the parts it uses. */
-  private partState: Record<Part, AIStatus> = { eyes: "idle", voice: "idle", talk: "idle" };
+  private partState: Record<Part, AIStatus> = { eyes: "idle", voice: "idle", ears: "idle", story: "idle" };
   private listeners = new Set<(p: LoadProgress) => void>();
   private lastText: Partial<Record<LoadProgress["stage"], string>> = {};
   /** When each part last reported progress, for the stall watch. */
@@ -213,7 +216,8 @@ export class RealAI implements LocalAI {
   private partRuns: Record<Part, () => Promise<void>> = {
     eyes: sharedAttempt(() => this.loadEyes()),
     voice: sharedAttempt(() => this.loadVoicePart()),
-    talk: sharedAttempt(() => this.loadTalk()),
+    ears: sharedAttempt(() => this.sttLoad()),
+    story: sharedAttempt(() => this.loadStoryHelper()),
   };
 
   private sttAttempt() {
@@ -389,14 +393,9 @@ export class RealAI implements LocalAI {
     });
   }
 
-  /** Talking: the listening ears, then the story helper (its slow first start last). */
-  private async loadTalk() {
-    if (this.support!.mobile) {
-      await this.sttLoad();
-      await this.llmLoad();
-    } else {
-      await Promise.all([this.sttLoad(), this.llmLoad()]);
-    }
+  /** The story helper, last in line: its first start (warm-up) is the slowest step. */
+  private async loadStoryHelper() {
+    await this.llmLoad();
     await this.llmWarm();
   }
 
@@ -683,7 +682,7 @@ export class RealAI implements LocalAI {
   }
 
   private async storyHelper(): Promise<TextGenerator> {
-    await this.needPart("talk");
+    await this.needPart("story");
     // Back from the cache if a guess sent it away (iPhone).
     if (!this.llm) {
       await this.llmLoad();
@@ -694,7 +693,7 @@ export class RealAI implements LocalAI {
 
   /** The listening ears, back from the cache if a guess sent them away (phones). */
   private async ears(): Promise<STTClient> {
-    await this.needPart("talk");
+    await this.needPart("ears");
     await this.sttLoad();
     return this.stt!;
   }
@@ -774,7 +773,28 @@ export class RealAI implements LocalAI {
     return result.text;
   }
 
+  /** No story helper on this device: replies and stories come from written words instead. */
+  private writtenOnly(): boolean {
+    return this.partStatus("story") === "not-installed";
+  }
+
+  /** Without the story helper: a short written line that shows the friend heard (simple-talk.ts). */
+  private writtenReply(character: Character, history: ChatTurn[], childSays: string): string {
+    const text =
+      history.length === 0 && !childSays.trim()
+        ? `Hi! I'm ${character.name}! Tell me to jump or dance, and watch me!`
+        : simpleReply(childSays, { name: character.name, kind: settledKind(character) }, null, history.length);
+    if (this.autoSpeakReplies) {
+      const playback = this.speaker.stream("character");
+      playback.add(text);
+      playback.end(text);
+    }
+    this.record({ kind: "reply", text, detail: "written (no story helper)", ms: 0, fallback: true });
+    return text;
+  }
+
   async reply(character: Character, history: ChatTurn[], childSays: string): Promise<string> {
+    if (this.writtenOnly()) return this.writtenReply(character, history, childSays);
     const llm = await this.storyHelper();
     const started = performance.now();
     const playback = this.autoSpeakReplies ? this.speaker.stream("character") : null;
@@ -895,6 +915,7 @@ export class RealAI implements LocalAI {
   }
 
   firstQuestion(character: Character): Promise<string> {
+    if (this.writtenOnly()) return Promise.resolve(writtenFirstQuestion(character));
     const safe = safeCharacter(character);
     return this.complete("firstQuestion", firstQuestionMessages(safe), 40, cleanQuestion, () =>
       FALLBACK_QUESTIONS[0](safe.name),
@@ -902,6 +923,7 @@ export class RealAI implements LocalAI {
   }
 
   nextQuestion(unscreened: Story): Promise<string> {
+    if (this.writtenOnly()) return Promise.resolve(writtenNextQuestion(unscreened));
     const story = safeStory(unscreened);
     const name = story.character.name;
     // Small models happily ask the same question again despite being told not to.
@@ -917,6 +939,8 @@ export class RealAI implements LocalAI {
   }
 
   async writePage(unscreened: Story, question: string, answer: string): Promise<string> {
+    // Without the story helper the book follows a ready-written plot that suits the character.
+    if (this.writtenOnly()) return writtenPage(unscreened);
     const story = safeStory(unscreened);
     const name = story.character.name;
     const heard = screen(answer, "child");
@@ -934,6 +958,7 @@ export class RealAI implements LocalAI {
   }
 
   titleFor(unscreened: Story): Promise<string> {
+    if (this.writtenOnly()) return Promise.resolve(writtenTitle(unscreened));
     const story = safeStory(unscreened);
     return this.complete("title", titleMessages(story), 20, cleanTitle, () => `The Story of ${story.character.name}`);
   }

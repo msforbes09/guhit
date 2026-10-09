@@ -52,8 +52,8 @@ export interface DrawingPhoto {
   crop: PixelRect;
 }
 
-/** The parts a parent sets up: "eyes" (always), "voice" and "talk" (ears + story helper). */
-export type Part = "eyes" | "voice" | "talk";
+/** The parts a parent sets up: "eyes" (always), then "voice", "ears" and "story" (the story helper). */
+export type Part = "eyes" | "voice" | "ears" | "story";
 /** A part's state; "not-installed" when it was not chosen at setup (or was removed). */
 export type PartStatus = AIStatus | "not-installed";
 
@@ -62,7 +62,7 @@ export interface LocalAI {
   status(): AIStatus;
   /** Loads parts: by default those already on this device (never a download from a kid screen). */
   load(onProgress: (p: LoadProgress) => void, parts?: Part[]): Promise<void>;
-  /** Each feature waits only for its own part: guesses for "eyes", the neural voice for "voice", talking for "talk". */
+  /** Each feature waits only for its own part: guesses for "eyes", the neural voice for "voice", hearing for "ears", replies and stories for "story". */
   partStatus(part: Part): PartStatus;
   transcribe(audio: Blob): Promise<string>;
   /**

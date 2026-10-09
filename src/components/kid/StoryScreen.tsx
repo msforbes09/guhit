@@ -11,7 +11,7 @@ import { stagingFor, untagPage } from "@/lib/story/staging";
 import type { Character, Story } from "@/lib/story/types";
 import { FriendSkeleton } from "./FriendScreen";
 import { FriendStage } from "./FriendStage";
-import { speechLevel, usePart, usePushToTalk, useSpeakingVoice } from "./hooks";
+import { speechLevel, usePart, usePushToTalk, useSpeakingVoice, type PartReadiness } from "./hooks";
 import { ArrowRight, ArrowsClockwise, BookOpen, PaperPlaneRight, SpeakerHigh } from "./icons";
 import { MicButton } from "./MicButton";
 import { ReadyCard } from "./ReadyCard";
@@ -70,8 +70,21 @@ export function StoryScreen() {
 
 function MakeStory({ friend }: { friend: Friend }) {
   const router = useRouter();
-  // Talking needs only its own part (ears and story helper), not the eyes or the voice.
-  const ready = usePart("talk");
+  // Without the story helper the engine tells a ready-written story that suits
+  // the friend, so a story always works: answered out loud with the ears, or typed.
+  const ears = usePart("ears");
+  const helper = usePart("story");
+  const canHear = ears === "ready";
+  const ready: PartReadiness =
+    canHear || helper === "ready" || (ears === "not-installed" && helper === "not-installed")
+      ? "ready"
+      : [ears, helper].some((p) => p === "waking" || p === "checking")
+        ? "waking"
+        : [ears, helper].includes("setting-up")
+          ? "setting-up"
+          : [ears, helper].includes("error")
+            ? "error"
+            : "not-installed";
   const voice = useSpeakingVoice();
   const name = friend.name;
   const [phase, setPhase] = useState<Phase>("asking");
@@ -313,19 +326,21 @@ function MakeStory({ friend }: { friend: Friend }) {
                 </div>
               ) : (
                 <>
-                  <MicButton
-                    label={`Answer ${name}`}
-                    state={mic.state}
-                    level={mic.level}
-                    busy={busy || ready !== "ready"}
-                    busyLabel={ready !== "ready" ? `Waking ${name} up…` : phase === "hearing" ? "Listening hard…" : `${name} is thinking…`}
-                    onStart={() => {
-                      hush();
-                      setOops(null);
-                      mic.start();
-                    }}
-                    onStop={mic.stop}
-                  />
+                  {ears !== "not-installed" && (
+                    <MicButton
+                      label={`Answer ${name}`}
+                      state={mic.state}
+                      level={mic.level}
+                      busy={busy || !canHear}
+                      busyLabel={!canHear ? `Waking ${name} up…` : phase === "hearing" ? "Listening hard…" : `${name} is thinking…`}
+                      onStart={() => {
+                        hush();
+                        setOops(null);
+                        mic.start();
+                      }}
+                      onStop={mic.stop}
+                    />
+                  )}
                   {oops && (
                     <p role="alert" className="rounded-2xl bg-sun/40 px-4 py-3 text-center text-lg font-bold text-ink">
                       {oops}
@@ -339,7 +354,7 @@ function MakeStory({ friend }: { friend: Friend }) {
                       id="story-typed"
                       value={typed}
                       onChange={(e) => setTyped(e.target.value)}
-                      placeholder="Or type your answer…"
+                      placeholder={ears !== "not-installed" ? "Or type your answer…" : "Type your answer…"}
                       autoComplete="off"
                       className="crayon-edge min-h-14 min-w-0 flex-1 rounded-[18px] bg-white px-4 text-lg text-ink"
                     />

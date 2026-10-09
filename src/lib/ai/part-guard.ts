@@ -7,7 +7,7 @@
  * they did not fit. A hidden or closed page clears the mark, so only a crash
  * in view counts. Ticking the part again on /setup tries it again.
  */
-import { chosenParts, installedParts, markInstalled, REQUIRED_PARTS, setChosenParts, type Part } from "./parts";
+import { chosenParts, installedParts, markInstalled, partsFrom, REQUIRED_PARTS, setChosenParts, type Part } from "./parts";
 
 const STARTING_KEY = "guhit:part-starting";
 const CRASHED_KEY = "guhit:parts-crashed";
@@ -34,9 +34,8 @@ function write(key: string, value: string | null) {
   }
 }
 
-function parseParts(value: unknown): Part[] {
-  return Array.isArray(value) ? value.filter((p): p is Part => typeof p === "string") : [];
-}
+/** Older notes may name "talk", which became the ears and the story helper. */
+const parseParts = partsFrom;
 
 function saveMark() {
   write(STARTING_KEY, starting.size ? JSON.stringify({ page: PAGE, parts: [...starting] }) : null);

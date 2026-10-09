@@ -66,8 +66,8 @@ export function useAIReady(): Readiness {
 
 /**
  * One part of the AI, as a screen needs it: "eyes" (guessing the drawing),
- * "voice" (the storytelling voice; without it the device's own voice speaks)
- * or "talk" (listening ears and story helper).
+ * "voice" (the storytelling voice; without it the character babbles), "ears"
+ * (hearing the child) or "story" (the story helper: free conversation, typing, new stories).
  * - "ready": use it; "waking": it is on the device and starting;
  * - "not-installed": the parent did not choose it, so the screen simply does without;
  * - "setting-up": a setup is still running or was interrupted; /setup finishes it;
