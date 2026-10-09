@@ -98,3 +98,18 @@ narration uses voices that ship with the operating system (for example
 | Tailwind CSS | 4.3.3 | MIT | Styling |
 | TypeScript | 5.9.3 | Apache-2.0 | Language (build time only) |
 | Grandstander and Andika fonts (via next/font, self-hosted) | – | SIL Open Font License 1.1 | Typefaces |
+
+## Tools used to build Guhit
+
+These are the tools used to make Guhit and its promo video. They are separate
+from the models above, which are what the app itself runs on the device.
+
+| Tool | What it was used for |
+| --- | --- |
+| Claude Code (Anthropic) | AI coding tool. It wrote and changed the app's code, the build and test scripts and these docs, under the team's direction and review. |
+| ElevenLabs | AI voice for the promo video's narration (voice "Jeni", model `eleven_multilingual_v2`). |
+| Higgsfield | AI image generation for three background stills in the promo video: hands with crayons, a phone snapping a drawing, and a wide table shot. The child's drawing in them is composited in by code, not generated. |
+| Remotion (code) | The promo video's edit, motion graphics, music and sound effects. The music and effects are synthesized from oscillators in code; no AI music model was used. |
+
+The app footage in the promo video is a real screen capture of Guhit running
+its own on-device models.

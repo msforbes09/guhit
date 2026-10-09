@@ -142,3 +142,10 @@ It stands on open models and libraries: Qwen3 (Alibaba Qwen), Florence-2
 (Microsoft), Whisper (OpenAI), Kokoro-82M (hexgrad), IS-Net, WebLLM / MLC,
 Transformers.js and ONNX Runtime. Every model and library, its licence and
 where it comes from is listed in [docs/disclosures.md](docs/disclosures.md).
+
+## How it was built
+
+Guhit's code was written with Claude Code, an AI coding tool, under the team's
+direction and review, and the promo video used ElevenLabs for the narration
+and Higgsfield for three background images. Details are in
+[Tools used to build Guhit](docs/disclosures.md#tools-used-to-build-guhit).
