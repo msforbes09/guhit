@@ -41,3 +41,5 @@ export { Waves } from "@phosphor-icons/react/dist/ssr/Waves";
 export { Export } from "@phosphor-icons/react/dist/ssr/Export";
 export { PlusSquare } from "@phosphor-icons/react/dist/ssr/PlusSquare";
 export { WifiSlash } from "@phosphor-icons/react/dist/ssr/WifiSlash";
+export { Flask } from "@phosphor-icons/react/dist/ssr/Flask";
+export { CaretDown } from "@phosphor-icons/react/dist/ssr/CaretDown";

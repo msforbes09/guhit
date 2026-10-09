@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getAI, isMarkedReady, RealAI } from "@/lib/ai";
+import { getAI, isMarkedReady, isTestMode, RealAI } from "@/lib/ai";
 import type { AIStatus } from "@/lib/ai";
 
 /**
@@ -10,6 +10,13 @@ import type { AIStatus } from "@/lib/ai";
  */
 function onThisDevice(): boolean {
   return isMarkedReady() || !(getAI() instanceof RealAI);
+}
+
+const noSubscribe = () => () => {};
+
+/** Testers' mode (/?mock=1): pretend answers, nothing to download. */
+export function useTestMode(): boolean {
+  return useSyncExternalStore(noSubscribe, isTestMode, () => false);
 }
 
 // getAI().status() is a plain getter, so watch it with a light poll.

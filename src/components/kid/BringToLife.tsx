@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getAI, photoCropFromCutout } from "@/lib/ai";
+import { getAI, isTestMode, photoCropFromCutout } from "@/lib/ai";
 import type { DrawingDescription, PixelRect } from "@/lib/ai";
 import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { kindOf } from "@/lib/story/kind";
@@ -71,6 +71,8 @@ export function useBringToLife() {
 
   /** Asks the engine what the drawing is, once it is awake; null when it can't say in time. */
   const look = useCallback(async (png: string, picture?: { image: string; crop: PixelRect }): Promise<Seen | null> => {
+    // Test mode's pretend reader always says the same thing, which only confuses testers.
+    if (isTestMode()) return null;
     const deadline = performance.now() + LOOK_TIMEOUT_MS;
     while (readyRef.current === "checking" || readyRef.current === "waking") {
       if (performance.now() > deadline) return null;
@@ -95,7 +97,8 @@ export function useBringToLife() {
         // Editable keeps the full frame so "Fix the edges" can brush parts in or out.
         const [first, picture] = await Promise.all([cutout(image, { editable: true }), shrinkPhoto(image), wait(1100)]);
         let cut = first;
-        if (first.meta?.quality === "poor") {
+        // (Not in test mode: the AI cut-out downloads its model on first use.)
+        if (first.meta?.quality === "poor" && !isTestMode()) {
           // A messy cut-out gets one closer look with the on-device AI model
           // before the child is asked to take the photo again.
           setWorking("closer");

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Andika, Grandstander } from "next/font/google";
 import { EarlyWake } from "@/components/kid/EarlyWake";
+import { TestModePill } from "@/components/kid/TestModePill";
 import { Splash } from "@/components/kid/Splash";
 import pkg from "../../package.json";
 import "./globals.css";
@@ -86,6 +87,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {children}
         <Splash version={pkg.version} />
         <EarlyWake />
+        <TestModePill />
         <ServiceWorkerRegister />
       </body>
     </html>

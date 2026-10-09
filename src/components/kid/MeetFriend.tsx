@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { getAI } from "@/lib/ai";
+import { getAI, isTestMode } from "@/lib/ai";
 import { deleteFriend, saveFriend, type Friend } from "@/lib/story/db";
 import { nameFrom, parseIntro, readYesNo, tidy } from "@/lib/story/intro";
 import { kindOf } from "@/lib/story/kind";
@@ -40,8 +40,10 @@ const LINES: Record<Exclude<Step, "looking" | "guess" | "confirm" | "flagged">, 
 export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: Friend) => void }) {
   const ready = useAIReady();
   const speaking = useSpeakingVoice() === "character";
-  const [step, setStep] = useState<Step>("looking");
-  const stepRef = useRef<Step>("looking");
+  // Test mode goes straight to asking: no pretend guess to confuse the tester.
+  const [firstStep] = useState<Step>(() => (isTestMode() ? "ask" : "looking"));
+  const [step, setStep] = useState<Step>(firstStep);
+  const stepRef = useRef<Step>(firstStep);
   const [guess, setGuess] = useState("");
   const [hearing, setHearing] = useState(false);
   const [typed, setTyped] = useState("");
@@ -84,7 +86,8 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
       }, wait);
     };
     if (known !== undefined) settle(known);
-    else if (ready !== "ready") settle("");
+    // Test mode: no guess at all; the tester says or types who it is.
+    else if (ready !== "ready" || isTestMode()) settle("");
     else {
       getAI()
         // The original photo cropped to the cut-out carries more detail than the cut-out.
