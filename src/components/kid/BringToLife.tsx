@@ -15,11 +15,11 @@ import { Button, LinkButton } from "./ui";
 type Phase = "idle" | "cutting" | "preview" | "saving" | "full" | "flagged" | "error";
 type Working = "cutting" | "closer" | "looking";
 /**
- * What the drawing reader saw. A truthy `flagged` (the engine's category)
+ * What the drawing reader saw. `flagged` (the engine's safety category)
  * marks a drawing it judged not right for a child's friend; the category is
  * never shown.
  */
-type Seen = DrawingDescription & { flagged?: unknown };
+type Seen = DrawingDescription;
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -106,7 +106,7 @@ export function useBringToLife() {
         setWorking("looking");
         const seen = await look(cut.png, photoCrop ? { image: picture.dataUrl, crop: photoCrop } : undefined);
         setResult({ drawing: picture.dataUrl, scale: picture.scale, cut, photoCrop, seen });
-        setPhase(seen && seen.flagged ? "flagged" : "preview");
+        setPhase(seen?.flagged ? "flagged" : "preview");
       } catch {
         setPhase("error");
       }
@@ -301,7 +301,7 @@ export function NotThisOne({ png, actions }: { png: string; actions: [NotThisOne
       <p className="max-w-lg font-display text-3xl font-extrabold leading-snug text-ink sm:text-4xl">
         Hmm, that one looks a bit scary for me. Can you draw me a friend instead?
       </p>
-      <div className="flex w-full max-w-xl flex-col gap-4 sm:flex-row">
+      <div className="flex w-full max-w-2xl flex-col gap-4 sm:flex-row">
         {actions.map((action, i) => {
           const icon =
             action.icon === "draw" ? <PaintBrush size={30} weight="fill" aria-hidden="true" /> : <Camera size={30} weight="fill" aria-hidden="true" />;

@@ -89,7 +89,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
           friend.cutout ?? friend.drawing,
           friend.cutout && friend.photoCrop ? { image: friend.drawing, crop: friend.photoCrop } : undefined,
         )
-        .then((r: { label?: string; flagged?: unknown }) => {
+        .then((r) => {
           if (r.flagged && alive) {
             // Saved before the engine could look: it must not stay on the device.
             deleteFriend(friend.id).catch(() => {});
