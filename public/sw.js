@@ -164,6 +164,8 @@ self.addEventListener("fetch", (event) => {
   // Next.js falls back to a full page load, which the page cache answers.
   if (url.searchParams.has("_rsc") || request.headers.get("RSC")) return;
   if (url.pathname.startsWith("/_next/webpack-hmr") || url.pathname === BUILD_MANIFEST) return;
+  // A local model mirror: the model libraries cache these files themselves.
+  if (url.pathname.startsWith("/models/")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(handlePage(request));

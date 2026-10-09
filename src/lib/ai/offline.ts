@@ -70,10 +70,10 @@ export async function storageUsage(): Promise<{ usage: number; quota: number } |
   return { usage, quota };
 }
 
-export async function isLLMCached(modelId: string): Promise<boolean> {
+export async function isLLMCached(modelId: string, modelHost: string | null): Promise<boolean> {
   try {
-    const { hasModelInCache } = await import("@mlc-ai/web-llm");
-    return await hasModelInCache(modelId);
+    const [{ hasModelInCache }, { appConfigFor }] = await Promise.all([import("@mlc-ai/web-llm"), import("./llm")]);
+    return await hasModelInCache(modelId, appConfigFor(modelId, modelHost));
   } catch {
     return false;
   }

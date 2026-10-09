@@ -117,7 +117,7 @@ export class RealAI implements LocalAI {
 
       const [{ LLMClient }, { STTClient }] = await Promise.all([import("./llm"), import("./stt")]);
       // Downloads run side by side: the first visit is bound by network, not GPU.
-      await Promise.all([this.loadLLM(new LLMClient(), choice.llm), this.loadSTT(new STTClient(), choice)]);
+      await Promise.all([this.loadLLM(new LLMClient(), choice), this.loadSTT(new STTClient(), choice)]);
 
       const ttsStarted = performance.now();
       this.voices = await this.speaker.init();
@@ -141,11 +141,11 @@ export class RealAI implements LocalAI {
     }
   }
 
-  private async loadLLM(llm: LLMClient, modelId: string) {
+  private async loadLLM(llm: LLMClient, choice: ModelChoice) {
     const started = performance.now();
-    const total = (findLLM(modelId)?.downloadMB ?? 1000) * 1e6;
+    const total = (findLLM(choice.llm)?.downloadMB ?? 1000) * 1e6;
     this.emit({ stage: "llm", loaded: 0, total, text: "Getting the story helper ready…" });
-    await llm.load(modelId, (report) => {
+    await llm.load(choice.llm, choice.modelHost, (report) => {
       const percent = Math.round(report.progress * 100);
       const text = /fetching/i.test(report.text)
         ? `Downloading the story helper… ${percent}%`
@@ -165,15 +165,21 @@ export class RealAI implements LocalAI {
     const started = performance.now();
     const expected = (findSTT(choice.stt)?.downloadMB[choice.sttDevice] ?? 100) * 1e6;
     this.emit({ stage: "stt", loaded: 0, total: expected, text: "Getting the listening ears ready…" });
-    const { warmupMs } = await stt.load(choice.stt, choice.sttDevice, STT_DTYPES[choice.sttDevice], (loaded, total) => {
-      const size = Math.max(total, expected);
-      this.emit({
-        stage: "stt",
-        loaded,
-        total: size,
-        text: `Downloading the listening ears… ${Math.round((loaded / size) * 100)}%`,
-      });
-    });
+    const { warmupMs } = await stt.load(
+      choice.stt,
+      choice.sttDevice,
+      STT_DTYPES[choice.sttDevice],
+      choice.modelHost,
+      (loaded, total) => {
+        const size = Math.max(total, expected);
+        this.emit({
+          stage: "stt",
+          loaded,
+          total: size,
+          text: `Downloading the listening ears… ${Math.round((loaded / size) * 100)}%`,
+        });
+      },
+    );
     this.stt = stt;
     this.timings.sttMs = performance.now() - started;
     this.timings.sttWarmupMs = warmupMs;

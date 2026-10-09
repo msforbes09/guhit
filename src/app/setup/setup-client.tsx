@@ -53,7 +53,10 @@ export function SetupClient() {
       }
       const picked = chooseModels(found, window.location.search);
       setChoice(picked);
-      const [llm, stt] = await Promise.all([isLLMCached(picked.llm), isSTTCached(picked.stt, picked.sttDevice)]);
+      const [llm, stt] = await Promise.all([
+        isLLMCached(picked.llm, picked.modelHost),
+        isSTTCached(picked.stt, picked.sttDevice),
+      ]);
       if (!alive) return;
       setCached({ llm, stt });
       setPhase(getAI().status() === "ready" ? "ready" : "idle");
@@ -92,6 +95,7 @@ export function SetupClient() {
   }
 
   return (
+    <div className="flex flex-1 flex-col bg-[#fff8ec]">
     <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-5 py-10 text-stone-800">
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold">Get Guhit ready</h1>
@@ -115,6 +119,7 @@ export function SetupClient() {
           <p className="text-sm text-stone-500">
             {support?.mobile ? "Phone" : "Laptop"} setup · {totalBytes ? `${size(totalBytes)} in total` : ""}
             {cached && toDownload < totalBytes && toDownload > 0 ? ` · ${size(toDownload)} left to download` : ""}
+            {choice.modelHost ? " · from this computer's model mirror" : ""}
           </p>
 
           <ul className="flex flex-col gap-3">
@@ -204,5 +209,6 @@ export function SetupClient() {
         </section>
       )}
     </main>
+    </div>
   );
 }

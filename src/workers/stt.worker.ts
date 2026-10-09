@@ -19,7 +19,14 @@ type Transcriber = (
 let transcriber: Transcriber | null = null;
 
 export type STTRequest =
-  | { type: "load"; model: string; device: "webgpu" | "wasm"; dtype: Record<string, string> }
+  | {
+      type: "load";
+      model: string;
+      device: "webgpu" | "wasm";
+      dtype: Record<string, string>;
+      /** A mirror with Hugging Face's layout, or null for Hugging Face itself. */
+      modelHost: string | null;
+    }
   | { type: "transcribe"; id: number; audio: Float32Array };
 
 export type STTResponse =
@@ -34,6 +41,7 @@ self.onmessage = async (event: MessageEvent<STTRequest>) => {
   const request = event.data;
   try {
     if (request.type === "load") {
+      if (request.modelHost) env.remoteHost = `${request.modelHost}/`;
       const asr = await pipeline("automatic-speech-recognition", request.model, {
         device: request.device,
         dtype: request.dtype as never,

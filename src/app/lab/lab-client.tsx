@@ -208,6 +208,7 @@ export function LabClient() {
   }
 
   return (
+    <div className="flex flex-1 flex-col bg-white">
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-5 py-8 font-mono text-sm text-stone-800">
       <header>
         <h1 className="text-2xl font-bold">Guhit lab</h1>
@@ -365,5 +366,6 @@ export function LabClient() {
         </tbody>
       </table>
     </main>
+    </div>
   );
 }

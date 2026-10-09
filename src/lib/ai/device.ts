@@ -12,6 +12,26 @@ export interface ModelChoice {
   llm: string;
   stt: string;
   sttDevice: STTDevice;
+  /** Where model files come from: null for Hugging Face, or this site's own /models mirror. */
+  modelHost: string | null;
+}
+
+const MIRROR_KEY = "guhit:models";
+
+/**
+ * "?models=local" makes this browser fetch models from the site's own /models
+ * mirror (see scripts/mirror-models.mjs) and remembers it, because cached
+ * models are keyed by URL; "?models=hub" switches back to Hugging Face.
+ */
+function wantsLocalMirror(params: URLSearchParams): boolean {
+  try {
+    const value = params.get("models");
+    if (value === "local") localStorage.setItem(MIRROR_KEY, "local");
+    if (value === "hub") localStorage.removeItem(MIRROR_KEY);
+    return localStorage.getItem(MIRROR_KEY) === "local";
+  } catch {
+    return false;
+  }
 }
 
 interface GPUAdapterLike {
@@ -81,5 +101,6 @@ export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
   const deviceOverride = params.get("sttDevice");
   if (deviceOverride === "wasm" || deviceOverride === "webgpu") sttDevice = deviceOverride;
 
-  return { llm, stt, sttDevice };
+  const modelHost = wantsLocalMirror(params) ? `${window.location.origin}/models` : null;
+  return { llm, stt, sttDevice, modelHost };
 }

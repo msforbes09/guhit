@@ -51,6 +51,7 @@ export class STTClient {
     model: string,
     device: STTDevice,
     dtype: Record<string, string>,
+    modelHost: string | null,
     onProgress: (loaded: number, total: number) => void,
   ): Promise<{ warmupMs: number }> {
     const worker = new Worker(new URL("../../workers/stt.worker.ts", import.meta.url), { type: "module" });
@@ -76,7 +77,7 @@ export class STTClient {
         }
       };
       worker.onerror = (event) => reject(new Error(event.message || "Speech recognition failed to start."));
-      worker.postMessage({ type: "load", model, device, dtype } satisfies STTRequest);
+      worker.postMessage({ type: "load", model, device, dtype, modelHost } satisfies STTRequest);
     });
   }
 

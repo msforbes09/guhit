@@ -1,11 +1,25 @@
 import {
   CreateWebWorkerMLCEngine,
+  prebuiltAppConfig,
+  type AppConfig,
   type CompletionUsage,
   type InitProgressReport,
   type WebWorkerMLCEngine,
 } from "@mlc-ai/web-llm";
 import { findLLM } from "./models";
 import type { Message } from "./prompts";
+
+/** Points WebLLM at a mirror with Hugging Face's layout; undefined keeps the defaults. */
+export function appConfigFor(modelId: string, modelHost: string | null): AppConfig | undefined {
+  if (!modelHost) return undefined;
+  const record = prebuiltAppConfig.model_list.find((m) => m.model_id === modelId);
+  if (!record) return undefined;
+  const lib = record.model_lib.split("/").pop();
+  return {
+    ...prebuiltAppConfig,
+    model_list: [{ ...record, model: `${modelHost}/mlc-ai/${modelId}`, model_lib: `${modelHost}/libs/${lib}` }],
+  };
+}
 
 export interface GenStats {
   ms: number;
@@ -30,9 +44,16 @@ export class LLMClient {
   modelId = "";
   lastStats: GenStats | null = null;
 
-  async load(modelId: string, onProgress: (report: InitProgressReport) => void): Promise<void> {
+  async load(
+    modelId: string,
+    modelHost: string | null,
+    onProgress: (report: InitProgressReport) => void,
+  ): Promise<void> {
     const worker = new Worker(new URL("../../workers/llm.worker.ts", import.meta.url), { type: "module" });
-    this.engine = await CreateWebWorkerMLCEngine(worker, modelId, { initProgressCallback: onProgress });
+    this.engine = await CreateWebWorkerMLCEngine(worker, modelId, {
+      initProgressCallback: onProgress,
+      appConfig: appConfigFor(modelId, modelHost),
+    });
     this.modelId = modelId;
   }
 

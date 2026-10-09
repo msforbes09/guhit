@@ -47,3 +47,4 @@ next-env.d.ts
 /public/ort/
 /public/precache-manifest.json
 /public/samples/
+/public/models/
