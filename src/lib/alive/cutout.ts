@@ -17,12 +17,24 @@ export async function cutout(image: Blob | string, options: CutoutOptions = {}):
   let run: RunResult;
   const worker = getWorker();
   if (worker) {
-    run = await callWorker(worker, { type: "cutout", blob, maxSide, method, debug }, options.onProgress);
+    run = (await callWorker(worker, { type: "cutout", blob, maxSide, method, debug }, options.onProgress))!;
+  } else if (method === "ai") {
+    throw new Error("AI cut-out needs Web Worker and OffscreenCanvas support");
   } else {
     run = await runClassical(blob, maxSide, debug);
   }
   run.meta.timings.total = round1(performance.now() - t0);
   return toCutout(run);
+}
+
+/**
+ * Download and warm up the AI cut-out model while online (e.g. on the setup
+ * screen) so "Try AI cut-out" also works later with the network off.
+ */
+export async function preloadAiCutout(onProgress?: (text: string) => void): Promise<void> {
+  const worker = getWorker();
+  if (!worker) throw new Error("AI cut-out needs Web Worker and OffscreenCanvas support");
+  await callWorker(worker, { type: "preload" }, onProgress);
 }
 
 /** On-screen drawing: same pipeline, the canvas is read as a PNG. */
@@ -68,9 +80,11 @@ function toCutout(run: RunResult): CutoutWithDebug {
 
 let worker: Worker | null | undefined;
 let nextId = 1;
+type WorkerJob = WorkerRequest extends infer R ? (R extends { id: number } ? Omit<R, "id"> : never) : never;
+
 const pending = new Map<
   number,
-  { resolve: (r: RunResult) => void; reject: (e: Error) => void; onProgress?: (t: string) => void }
+  { resolve: (r: RunResult | null) => void; reject: (e: Error) => void; onProgress?: (t: string) => void }
 >();
 
 function getWorker(): Worker | null {
@@ -107,17 +121,14 @@ function getWorker(): Worker | null {
   return worker;
 }
 
-function callWorker(
-  w: Worker,
-  req: Omit<WorkerRequest, "id">,
-  onProgress?: (t: string) => void,
-): Promise<RunResult> {
+function callWorker(w: Worker, req: WorkerJob, onProgress?: (t: string) => void): Promise<RunResult | null> {
   const id = nextId++;
-  return new Promise<RunResult>((resolve, reject) => {
+  return new Promise<RunResult | null>((resolve, reject) => {
     pending.set(id, { resolve, reject, onProgress });
-    w.postMessage({ ...req, id } satisfies WorkerRequest);
+    w.postMessage({ ...req, id } as WorkerRequest);
   }).catch(async (err) => {
-    if (req.method === "classical") return runClassical(req.blob, req.maxSide, req.debug);
+    // The classical pipeline can always run on the main thread instead.
+    if (req.type === "cutout" && req.method === "classical") return runClassical(req.blob, req.maxSide, req.debug);
     throw err;
   });
 }

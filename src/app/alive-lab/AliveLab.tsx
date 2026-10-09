@@ -23,12 +23,12 @@ export function AliveLab() {
   const [drawing, setDrawing] = useState(false);
   const [strip, setStrip] = useState<{ url: string; label: string } | null>(null);
   const charRef = useRef<AliveCharacterHandle>(null);
-  const lastBlob = useRef<Blob | null>(null);
+  const [source, setSource] = useState<Blob | null>(null);
 
   async function run(blob: Blob, label: string) {
     setBusy(`Cutting out ${label}…`);
     setError(null);
-    lastBlob.current = blob;
+    setSource(blob);
     setOriginal((old) => {
       if (old) URL.revokeObjectURL(old);
       return URL.createObjectURL(blob);
@@ -47,7 +47,7 @@ export function AliveLab() {
     setError(null);
     try {
       const blob = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("export failed"))), "image/png"));
-      lastBlob.current = blob;
+      setSource(blob);
       setOriginal((old) => {
         if (old) URL.revokeObjectURL(old);
         return URL.createObjectURL(blob);
@@ -99,6 +99,25 @@ export function AliveLab() {
           onClick={() => setDrawing((d) => !d)}
         >
           {drawing ? "Hide draw pad" : "Draw on screen"}
+        </button>
+        <button
+          className="rounded-full bg-amber-100 px-4 py-2 text-sm font-medium text-amber-900 hover:bg-amber-200 disabled:opacity-50"
+          disabled={!!busy || !source}
+          title="On-device model (xrds/isnet-general-onnx-int8, MIT). Downloads ~44 MB on first use, then works offline."
+          onClick={async () => {
+            if (!source) return;
+            setBusy("Loading the AI model…");
+            setError(null);
+            try {
+              setResult(await cutout(source, { method: "ai", debug: true, onProgress: setBusy }));
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            } finally {
+              setBusy(null);
+            }
+          }}
+        >
+          Try AI cut-out
         </button>
         {busy && <span className="text-sm text-violet-700">{busy}</span>}
         {error && <span className="text-sm text-red-600">Error: {error}</span>}

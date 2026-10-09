@@ -169,38 +169,7 @@ export function cutoutCore(
   lap("components");
 
   // 6. Main character plus nearby pieces (a detached antenna tip, a tail).
-  const pieces = labelComponents(filled, W, H, true);
-  let main = 0;
-  for (let c = 1; c <= pieces.count; c++) {
-    if (!main || pieces.area[c] > pieces.area[main]) main = c;
-  }
-  const selected = new Uint8Array(N);
-  let selectedArea = 0;
-  if (main) {
-    const keep = new Uint8Array(pieces.count + 1);
-    const mb = pieces.bbox[main];
-    const mainArea = pieces.area[main];
-    for (let c = 1; c <= pieces.count; c++) {
-      if (c === main) {
-        keep[c] = 1;
-        continue;
-      }
-      const gap = bboxGap(mb, pieces.bbox[c]);
-      const area = pieces.area[c];
-      if (
-        (gap <= longSide * 0.04 && area >= Math.max(12, mainArea * 0.002)) ||
-        (gap <= longSide * 0.12 && area >= mainArea * 0.2)
-      ) {
-        keep[c] = 1;
-      }
-    }
-    for (let i = 0; i < N; i++) {
-      if (keep[pieces.labels[i]]) {
-        selected[i] = 1;
-        selectedArea++;
-      }
-    }
-  }
+  const { selected, selectedArea } = selectMain(filled, W, H);
   stats.fgFrac = round3(selectedArea / N);
   lap("select");
 
@@ -215,6 +184,158 @@ export function cutoutCore(
   lap("colour");
 
   // 8. Soft 1-2 px edge, crop, and straight-alpha output.
+  const cut = finishCut(R, G, B, W, H, selected, shade2);
+  const { rgba, alpha, alphaFull, reasons } = cut;
+  lap("crop");
+
+  // Quality: the lab and the app offer the AI cut-out when this says poor.
+  if (stats.fgFrac > 0.65) reasons.push("most of the photo was kept; background not separated");
+  if (stats.fgFrac < 0.004 && !cut.empty) reasons.push("very little drawing found");
+  const strayInk = countStray(ink, selected, comps.labels, junk);
+  stats.strayFrac = round3(selectedArea ? strayInk / selectedArea : 0);
+  if (stats.strayFrac > 0.35) reasons.push("lots of marks outside the character (busy background?)");
+  const quality = reasons.some((r) => r !== "drawing touches the photo edge") ? "poor" : "good";
+
+  timings.total = Object.values(timings).reduce((s, v) => s + v, 0);
+  timings.total = Math.round(timings.total * 10) / 10;
+
+  const result: CoreResult = {
+    rgba,
+    alpha,
+    width: cut.crop.w,
+    height: cut.crop.h,
+    crop: cut.crop,
+    quality,
+    reasons,
+    timings,
+    stats,
+  };
+  if (options.debug) {
+    result.fullAlpha = alphaFull;
+    const sm = new Uint8ClampedArray(N);
+    for (let i = 0; i < N; i++) sm[i] = score[i] * 255;
+    result.scoreMap = sm;
+  }
+  return result;
+}
+
+/**
+ * Cut-out from a mask made elsewhere (the on-device AI model). It gets the
+ * same finishing as the classical path: main piece, holes filled, paper
+ * colour fixed, soft edge, crop.
+ */
+export function cutoutFromMask(
+  src: Uint8ClampedArray,
+  width: number,
+  height: number,
+  maskIn: Uint8Array | Uint8ClampedArray,
+  options: CoreOptions = {},
+): CoreResult {
+  const timings: Record<string, number> = {};
+  const stats: Record<string, number> = {};
+  let t = now();
+  const lap = (name: string) => {
+    const n = now();
+    timings[name] = Math.round((n - t) * 10) / 10;
+    t = n;
+  };
+  const W = width,
+    H = height,
+    N = W * H;
+  const longSide = Math.max(W, H);
+  const R = new Float32Array(N),
+    G = new Float32Array(N),
+    B = new Float32Array(N);
+  const bin = new Uint8Array(N);
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    const a = src[j + 3] / 255;
+    const inv = 255 * (1 - a);
+    R[i] = src[j] * a + inv;
+    G[i] = src[j + 1] * a + inv;
+    B[i] = src[j + 2] * a + inv;
+    bin[i] = maskIn[i] > 127 ? 1 : 0;
+  }
+  const shade1 = shadingFromBlockMax(R, G, B, W, H, Math.max(6, Math.round(longSide / 64)));
+  lap("prepare");
+  const filled = fillHoles(close(bin, W, H, Math.max(1, Math.round(longSide * 0.003))), W, H);
+  const { selected, selectedArea } = selectMain(filled, W, H);
+  stats.fgFrac = round3(selectedArea / N);
+  lap("select");
+  const near = dilate(filled, W, H, Math.max(3, Math.round(longSide * 0.006)));
+  const paperOnly = new Uint8Array(N);
+  for (let i = 0; i < N; i++) paperOnly[i] = near[i] ? 0 : 1;
+  const shade2 = shadingFromPaper(R, G, B, paperOnly, W, H, Math.max(8, Math.round(longSide / 40)), shade1);
+  lap("colour");
+  const cut = finishCut(R, G, B, W, H, selected, shade2);
+  lap("crop");
+  const reasons = cut.reasons;
+  if (stats.fgFrac > 0.65) reasons.push("most of the photo was kept; background not separated");
+  if (stats.fgFrac < 0.004 && !cut.empty) reasons.push("very little drawing found");
+  const quality = reasons.some((r) => r !== "drawing touches the photo edge") ? "poor" : "good";
+  timings.total = Math.round(Object.values(timings).reduce((a, b) => a + b, 0) * 10) / 10;
+  const result: CoreResult = {
+    rgba: cut.rgba,
+    alpha: cut.alpha,
+    width: cut.crop.w,
+    height: cut.crop.h,
+    crop: cut.crop,
+    quality,
+    reasons,
+    timings,
+    stats,
+  };
+  if (options.debug) result.fullAlpha = cut.alphaFull;
+  return result;
+}
+
+/** Keep the biggest piece and the pieces close to it. */
+function selectMain(filled: Uint8Array, W: number, H: number): { selected: Uint8Array; selectedArea: number } {
+  const N = W * H;
+  const longSide = Math.max(W, H);
+  const pieces = labelComponents(filled, W, H, true);
+  let main = 0;
+  for (let c = 1; c <= pieces.count; c++) {
+    if (!main || pieces.area[c] > pieces.area[main]) main = c;
+  }
+  const selected = new Uint8Array(N);
+  let selectedArea = 0;
+  if (!main) return { selected, selectedArea };
+  const keep = new Uint8Array(pieces.count + 1);
+  const mb = pieces.bbox[main];
+  const mainArea = pieces.area[main];
+  for (let c = 1; c <= pieces.count; c++) {
+    if (c === main) {
+      keep[c] = 1;
+      continue;
+    }
+    const gap = bboxGap(mb, pieces.bbox[c]);
+    const area = pieces.area[c];
+    if (
+      (gap <= longSide * 0.04 && area >= Math.max(12, mainArea * 0.002)) ||
+      (gap <= longSide * 0.12 && area >= mainArea * 0.2)
+    ) {
+      keep[c] = 1;
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    if (keep[pieces.labels[i]]) {
+      selected[i] = 1;
+      selectedArea++;
+    }
+  }
+  return { selected, selectedArea };
+}
+
+/** Soft edge, crop with padding, and paper-corrected straight-alpha colour. */
+function finishCut(
+  R: Float32Array,
+  G: Float32Array,
+  B: Float32Array,
+  W: number,
+  H: number,
+  selected: Uint8Array,
+  shade: Shade,
+) {
   const alphaFull = feather(selected, W, H);
   let x0 = W,
     y0 = H,
@@ -232,12 +353,15 @@ export function cutoutCore(
     }
   }
   const reasons: string[] = [];
-  if (x1 < 0) {
+  const empty = x1 < 0;
+  if (empty) {
     x0 = 0;
     y0 = 0;
     x1 = W - 1;
     y1 = H - 1;
     reasons.push("no drawing found");
+  } else if (x0 <= 1 || y0 <= 1 || x1 >= W - 2 || y1 >= H - 2) {
+    reasons.push("drawing touches the photo edge");
   }
   const pad = Math.max(6, Math.round(Math.max(x1 - x0, y1 - y0) * 0.04));
   const cx = Math.max(0, x0 - pad);
@@ -254,44 +378,13 @@ export function cutoutCore(
       alpha[di] = a;
       if (a === 0) continue;
       const o = di * 4;
-      rgba[o] = (R[si] / shade2.r[si]) * 255;
-      rgba[o + 1] = (G[si] / shade2.g[si]) * 255;
-      rgba[o + 2] = (B[si] / shade2.b[si]) * 255;
+      rgba[o] = (R[si] / shade.r[si]) * 255;
+      rgba[o + 1] = (G[si] / shade.g[si]) * 255;
+      rgba[o + 2] = (B[si] / shade.b[si]) * 255;
       rgba[o + 3] = a;
     }
   }
-  lap("crop");
-
-  // Quality: the lab and the app offer the AI cut-out when this says poor.
-  if (stats.fgFrac > 0.65) reasons.push("most of the photo was kept; background not separated");
-  if (stats.fgFrac < 0.004 && x1 >= 0) reasons.push("very little drawing found");
-  if (x0 <= 1 || y0 <= 1 || x1 >= W - 2 || y1 >= H - 2) reasons.push("drawing touches the photo edge");
-  const strayInk = countStray(ink, selected, comps.labels, junk);
-  stats.strayFrac = round3(selectedArea ? strayInk / selectedArea : 0);
-  if (stats.strayFrac > 0.35) reasons.push("lots of marks outside the character (busy background?)");
-  const quality = reasons.some((r) => r !== "drawing touches the photo edge") ? "poor" : "good";
-
-  timings.total = Object.values(timings).reduce((s, v) => s + v, 0);
-  timings.total = Math.round(timings.total * 10) / 10;
-
-  const result: CoreResult = {
-    rgba,
-    alpha,
-    width: cw,
-    height: ch,
-    crop: { x: cx, y: cy, w: cw, h: ch },
-    quality,
-    reasons,
-    timings,
-    stats,
-  };
-  if (options.debug) {
-    result.fullAlpha = alphaFull;
-    const sm = new Uint8ClampedArray(N);
-    for (let i = 0; i < N; i++) sm[i] = score[i] * 255;
-    result.scoreMap = sm;
-  }
-  return result;
+  return { rgba, alpha, alphaFull, reasons, empty, crop: { x: cx, y: cy, w: cw, h: ch } };
 }
 
 /* ------------------------------------------------------------------ */
