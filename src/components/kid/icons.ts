@@ -1,0 +1,33 @@
+// Per-icon imports keep the bundle to the handful of icons used; the ssr
+// builds need no React context, so they render in server and client components.
+export { ArrowCounterClockwise } from "@phosphor-icons/react/dist/ssr/ArrowCounterClockwise";
+export { ArrowFatLineUp } from "@phosphor-icons/react/dist/ssr/ArrowFatLineUp";
+export { ArrowLeft } from "@phosphor-icons/react/dist/ssr/ArrowLeft";
+export { ArrowRight } from "@phosphor-icons/react/dist/ssr/ArrowRight";
+export { ArrowsClockwise } from "@phosphor-icons/react/dist/ssr/ArrowsClockwise";
+export { BookOpen } from "@phosphor-icons/react/dist/ssr/BookOpen";
+export { Camera } from "@phosphor-icons/react/dist/ssr/Camera";
+export { CaretLeft } from "@phosphor-icons/react/dist/ssr/CaretLeft";
+export { CaretRight } from "@phosphor-icons/react/dist/ssr/CaretRight";
+export { ChatCircleDots } from "@phosphor-icons/react/dist/ssr/ChatCircleDots";
+export { Check } from "@phosphor-icons/react/dist/ssr/Check";
+export { DownloadSimple } from "@phosphor-icons/react/dist/ssr/DownloadSimple";
+export { Eraser } from "@phosphor-icons/react/dist/ssr/Eraser";
+export { Footprints } from "@phosphor-icons/react/dist/ssr/Footprints";
+export { HandWaving } from "@phosphor-icons/react/dist/ssr/HandWaving";
+export { House } from "@phosphor-icons/react/dist/ssr/House";
+export { Image as ImageIcon } from "@phosphor-icons/react/dist/ssr/Image";
+export { Keyboard } from "@phosphor-icons/react/dist/ssr/Keyboard";
+export { Microphone } from "@phosphor-icons/react/dist/ssr/Microphone";
+export { MoonStars } from "@phosphor-icons/react/dist/ssr/MoonStars";
+export { MusicNotes } from "@phosphor-icons/react/dist/ssr/MusicNotes";
+export { PaintBrush } from "@phosphor-icons/react/dist/ssr/PaintBrush";
+export { PaperPlaneRight } from "@phosphor-icons/react/dist/ssr/PaperPlaneRight";
+export { Play } from "@phosphor-icons/react/dist/ssr/Play";
+export { Scissors } from "@phosphor-icons/react/dist/ssr/Scissors";
+export { Sparkle } from "@phosphor-icons/react/dist/ssr/Sparkle";
+export { SpeakerHigh } from "@phosphor-icons/react/dist/ssr/SpeakerHigh";
+export { Stop } from "@phosphor-icons/react/dist/ssr/Stop";
+export { Trash } from "@phosphor-icons/react/dist/ssr/Trash";
+export { Users } from "@phosphor-icons/react/dist/ssr/Users";
+export { X } from "@phosphor-icons/react/dist/ssr/X";
