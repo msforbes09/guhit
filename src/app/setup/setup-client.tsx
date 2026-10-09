@@ -458,7 +458,12 @@ export function SetupClient() {
           {(phase === "idle" || phase === "error") && (
             <button
               type="button"
-              onClick={() => void getReady(allCached || getAI().status() === "ready", !!cached?.vision)}
+              onClick={() =>
+                // The graphics chip failed: start over in the CPU tier (a fresh page re-checks the device).
+                friendly?.kind === "gpu"
+                  ? window.location.replace("/setup?gpu=off")
+                  : void getReady(allCached || getAI().status() === "ready", !!cached?.vision)
+              }
               className="rounded-full bg-orange-500 px-6 py-4 text-lg font-bold text-white shadow-sm hover:bg-orange-600 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-orange-600"
             >
               {friendly ? friendly.button : allCached ? "Start Guhit" : "Get Guhit ready"}
