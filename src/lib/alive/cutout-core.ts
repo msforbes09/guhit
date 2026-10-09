@@ -141,6 +141,9 @@ export function cutoutCore(
   const closeR = Math.max(2, Math.round(longSide * (options.closeFrac ?? 0.007)));
   const candidate = new Uint8Array(N);
   for (let i = 0; i < N; i++) candidate[i] = ink[i] | colourful[i];
+  stats.ruledRemoved = round3(removeRuledLines(candidate, score, W, H) / N);
+  // Ruled lines are paper, not stray marks, for the quality check below.
+  for (let i = 0; i < N; i++) if (!candidate[i]) ink[i] = 0;
   const closed = close(candidate, W, H, closeR);
   lap("morphology");
 
@@ -385,6 +388,82 @@ function finishCut(
     }
   }
   return { rgba, alpha, alphaFull, reasons, empty, crop: { x: cx, y: cy, w: cw, h: ch } };
+}
+
+/**
+ * School pad paper has thin ruled lines (and a margin line) running across
+ * the whole sheet. They join the drawing to the frame edge, so the drawing
+ * would be thrown away with the "background". When the page is clearly
+ * ruled, drop thin, long, light horizontal/vertical strokes before closing;
+ * the child's darker outlines and crayon fills are thicker and stay.
+ * Returns the number of pixels removed.
+ */
+function removeRuledLines(cand: Uint8Array, score: Float32Array, W: number, H: number): number {
+  const N = W * H;
+  const thin = Math.max(3, Math.round(Math.max(W, H) * 0.005));
+  const vrun = new Uint16Array(N);
+  const hrun = new Uint16Array(N);
+  for (let x = 0; x < W; x++) {
+    let y = 0;
+    while (y < H) {
+      if (!cand[y * W + x]) {
+        y++;
+        continue;
+      }
+      let e = y;
+      while (e < H && cand[e * W + x]) e++;
+      const len = Math.min(65535, e - y);
+      for (let k = y; k < e; k++) vrun[k * W + x] = len;
+      y = e;
+    }
+  }
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    let x = 0;
+    while (x < W) {
+      if (!cand[row + x]) {
+        x++;
+        continue;
+      }
+      let e = x;
+      while (e < W && cand[row + e]) e++;
+      const len = Math.min(65535, e - x);
+      for (let k = x; k < e; k++) hrun[row + k] = len;
+      x = e;
+    }
+  }
+  const longH = Math.max(20, Math.round(W * 0.05));
+  const longV = Math.max(20, Math.round(H * 0.05));
+  // Ruled lines are light (blue/red ink on paper); the child's outline is darker.
+  const light = (i: number) => score[i] < 0.55;
+  const bin = 8;
+  const hBins = new Float32Array(Math.ceil(H / bin));
+  const vBins = new Float32Array(Math.ceil(W / bin));
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!cand[i] || !light(i)) continue;
+      if (vrun[i] <= thin && hrun[i] >= longH) hBins[(y / bin) | 0]++;
+      if (hrun[i] <= thin && vrun[i] >= longV) vBins[(x / bin) | 0]++;
+    }
+  }
+  let hLines = 0,
+    vLines = 0;
+  for (const v of hBins) if (v > W * 0.4) hLines++;
+  for (const v of vBins) if (v > H * 0.4) vLines++;
+  const ruledH = hLines >= 4;
+  // A margin line alone is a single full-height stroke; only trust it on ruled paper.
+  const ruledV = vLines >= 1 && (ruledH || vLines >= 3);
+  if (!ruledH && !ruledV) return 0;
+  let removed = 0;
+  for (let i = 0; i < N; i++) {
+    if (!cand[i] || !light(i)) continue;
+    if ((ruledH && vrun[i] <= thin && hrun[i] >= longH) || (ruledV && hrun[i] <= thin && vrun[i] >= longV)) {
+      cand[i] = 0;
+      removed++;
+    }
+  }
+  return removed;
 }
 
 /* ------------------------------------------------------------------ */

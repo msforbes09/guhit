@@ -243,6 +243,43 @@ async function star(): Promise<Blob> {
   return toBlob(c, "image/jpeg", 0.85);
 }
 
+/** School "pad paper": ruled blue lines and a red margin, very common for kids' drawings. */
+async function padPaper(): Promise<Blob> {
+  const W = 1000,
+    H = 1300;
+  const [c, ctx] = canvas(W, H);
+  const r = rng(31);
+  paper(ctx, W, H, "#f7f3e3");
+  ctx.strokeStyle = "rgba(90,140,220,0.75)";
+  ctx.lineWidth = 2.5;
+  for (let y = 120; y < H; y += 42) {
+    ctx.beginPath();
+    ctx.moveTo(0, y + (r() - 0.5) * 2);
+    ctx.lineTo(W, y + (r() - 0.5) * 2);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(220,70,80,0.75)";
+  ctx.beginPath();
+  ctx.moveTo(110, 0);
+  ctx.lineTo(110, H);
+  ctx.stroke();
+  // A turtle: shell, head, legs.
+  const shell = ellipsePts(520, 700, 230, 150);
+  const head = ellipsePts(800, 640, 70, 60);
+  const legs = [ellipsePts(380, 850, 45, 35), ellipsePts(660, 850, 45, 35)];
+  for (const l of legs) crayonFill(ctx, l, "#7bc96f", r);
+  crayonFill(ctx, head, "#7bc96f", r);
+  crayonFill(ctx, shell, "#3f9b4c", r);
+  for (const sh of [shell, head, ...legs]) outline(ctx, sh, r, 8, "#2b3b2b");
+  outline(ctx, ellipsePts(520, 690, 120, 80, 24), r, 6, "#24502b");
+  ctx.fillStyle = "#1c1c1c";
+  ctx.beginPath();
+  ctx.arc(820, 625, 9, 0, Math.PI * 2);
+  ctx.fill();
+  photoLook(ctx, W, H, r, { falloff: 0.2 });
+  return toBlob(c, "image/jpeg", 0.85);
+}
+
 async function fish(): Promise<Blob> {
   const W = 1200,
     H = 900;
@@ -339,5 +376,6 @@ export const SAMPLES: Sample[] = [
   { id: "tala", label: "Tala the dragon", make: tala },
   { id: "star", label: "Star (phone shadow)", make: star },
   { id: "fish", label: "Fish (dark corners)", make: fish },
+  { id: "pad", label: "Turtle on pad paper", make: padPaper },
   { id: "stick", label: "Screen drawing", make: stickKid },
 ];
