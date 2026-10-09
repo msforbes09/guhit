@@ -1,3 +1,4 @@
+import type { ModelSource } from "./model-fetch";
 import { LLM_MODELS, STT_MODELS, VISION_MODELS, type STTDevice } from "./models";
 
 export interface DeviceSupport {
@@ -16,25 +17,29 @@ export interface ModelChoice {
   visionDevice: STTDevice;
   /** Florence-2 caption task; "?visionTask=detailed|more" lets /lab compare the longer ones. */
   visionTask: string;
-  /** Where model files come from: null for Hugging Face, or this site's own /models mirror. */
+  /** This site's own /models mirror when chosen, else null (the libraries use Hugging Face URLs). */
   modelHost: string | null;
+  /** Where downloads come from (see model-fetch.ts). */
+  source: ModelSource;
 }
 
-const MIRROR_KEY = "guhit:models";
+const SOURCE_KEY = "guhit:models";
 
 /**
- * "?models=local" makes this browser fetch models from the site's own /models
- * mirror (see scripts/mirror-models.mjs) and remembers it, because cached
- * models are keyed by URL; "?models=hub" switches back to Hugging Face.
+ * Default: Guhit's R2 copy with Hugging Face as the per-file fallback.
+ * "?models=local" uses the site's own /models mirror (scripts/mirror-models.mjs),
+ * "?models=hf" only Hugging Face; "?models=r2" goes back to the default. The
+ * choice is remembered because the local mirror's cached files have other keys.
  */
-function wantsLocalMirror(params: URLSearchParams): boolean {
+function chooseSource(params: URLSearchParams): ModelSource {
   try {
     const value = params.get("models");
-    if (value === "local") localStorage.setItem(MIRROR_KEY, "local");
-    if (value === "hub") localStorage.removeItem(MIRROR_KEY);
-    return localStorage.getItem(MIRROR_KEY) === "local";
+    if (value === "local" || value === "hf") localStorage.setItem(SOURCE_KEY, value);
+    if (value === "r2" || value === "hub") localStorage.removeItem(SOURCE_KEY);
+    const saved = localStorage.getItem(SOURCE_KEY);
+    return saved === "local" || saved === "hf" ? saved : "r2";
   } catch {
-    return false;
+    return "r2";
   }
 }
 
@@ -119,6 +124,7 @@ export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
   };
   const visionTask = tasks[params.get("visionTask") ?? ""] ?? tasks.caption;
 
-  const modelHost = wantsLocalMirror(params) ? `${window.location.origin}/models` : null;
-  return { llm, stt, sttDevice, vision, visionDevice, visionTask, modelHost };
+  const source = chooseSource(params);
+  const modelHost = source === "local" ? `${window.location.origin}/models` : null;
+  return { llm, stt, sttDevice, vision, visionDevice, visionTask, modelHost, source };
 }

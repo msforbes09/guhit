@@ -5,6 +5,7 @@ import {
   Florence2ForConditionalGeneration,
   RawImage,
 } from "@huggingface/transformers";
+import type { ModelSource } from "@/lib/ai/model-fetch";
 import { configureTransformers, type FileProgress } from "./ort-env";
 
 /** Florence-2's short caption task: one sentence naming the main subject. */
@@ -27,6 +28,8 @@ export type VisionRequest =
       device: "webgpu" | "wasm";
       dtype: Record<string, string>;
       modelHost: string | null;
+      /** Where downloads come from (see model-fetch.ts). */
+      source: ModelSource;
     }
   | {
       type: "describe";
@@ -161,7 +164,7 @@ self.onmessage = async (event: MessageEvent<VisionRequest>) => {
   const request = event.data;
   try {
     if (request.type === "load") {
-      await configureTransformers(request.modelHost);
+      await configureTransformers(request.modelHost, request.source);
       const progress_callback = (p: FileProgress) => {
         if (p.status === "progress" && p.file) {
           post({ type: "progress", file: p.file, loaded: p.loaded ?? 0, total: p.total ?? 0 });

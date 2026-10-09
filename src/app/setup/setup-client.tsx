@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { getAI, isMarkedReady, RealAI } from "@/lib/ai";
 import { Speaker, type SentenceMetric } from "@/lib/ai/tts";
 import { chooseModels, detectSupport, type DeviceSupport, type ModelChoice } from "@/lib/ai/device";
+import { explainLoadError } from "@/lib/ai/friendly-errors";
+import { R2_BASE, type ModelSource } from "@/lib/ai/model-fetch";
 import { findLLM, findSTT, findVision } from "@/lib/ai/models";
 import {
   isLLMCached,
@@ -30,6 +32,40 @@ const STAGES: { stage: Stage; label: string; detail: string }[] = [
 ];
 
 const size = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
+
+function sourceLabel(source: ModelSource): string {
+  if (source === "local") return "from this computer's model mirror";
+  if (source === "r2" && R2_BASE) return "from Guhit's model server (Hugging Face as backup)";
+  return "from Hugging Face";
+}
+
+/** Phones dim and lock mid-download, which cuts it off: keep the screen on while setting up. */
+function useScreenAwake(active: boolean) {
+  useEffect(() => {
+    if (!active || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let stopped = false;
+    const request = async () => {
+      try {
+        lock = await navigator.wakeLock.request("screen");
+        if (stopped) void lock.release();
+      } catch {
+        // Not allowed here (low battery mode, no gesture yet): the download still runs.
+      }
+    };
+    // The browser drops the lock whenever the page is hidden; take it again on return.
+    const visible = () => {
+      if (document.visibilityState === "visible") void request();
+    };
+    void request();
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      stopped = true;
+      document.removeEventListener("visibilitychange", visible);
+      void lock?.release();
+    };
+  }, [active]);
+}
 
 /** Which voice was really heard in the voice test (a sentence counts once its sound started). */
 function describeVoices(spoken: SentenceMetric[], speaker: Speaker | null): string {
@@ -154,6 +190,8 @@ export function SetupClient() {
   const totalBytes = STAGES.reduce((sum, { stage }) => sum + bytes[stage], 0);
   const toDownload = STAGES.reduce((sum, { stage }) => sum + (cached?.[stage] ? 0 : bytes[stage]), 0);
   const allCached = !!cached && STAGES.every(({ stage }) => cached[stage]);
+  const friendly = phase === "error" && error ? explainLoadError(error) : null;
+  useScreenAwake(phase === "loading");
 
   /** `onDevice`: everything was downloaded before, so this only wakes the models up. */
   /** Says a narrator line, then a character line, and reports which voice actually spoke. */
@@ -214,7 +252,7 @@ export function SetupClient() {
           <p className="text-sm text-stone-500">
             {support?.mobile ? "Phone" : "Laptop"} setup · {totalBytes ? `${size(totalBytes)} in total` : ""}
             {cached && toDownload < totalBytes && toDownload > 0 ? ` · ${size(toDownload)} left to download` : ""}
-            {choice.modelHost ? " · from this computer's model mirror" : ""}
+            {` · ${sourceLabel(choice.source)}`}
           </p>
 
           <ul className="flex flex-col gap-3">
@@ -252,23 +290,29 @@ export function SetupClient() {
             })}
           </ul>
 
+          {friendly && (
+            <div role="alert" className="flex flex-col gap-1 rounded-2xl bg-red-50 p-4 text-red-900">
+              <p className="font-semibold">{friendly.title}</p>
+              <p>{friendly.action}</p>
+              <details className="text-sm text-red-800/80">
+                <summary className="cursor-pointer">Details for a grown-up helping</summary>
+                <code className="break-words">{error}</code>
+              </details>
+            </div>
+          )}
           {(phase === "idle" || phase === "error") && (
             <button
               type="button"
               onClick={() => void getReady(allCached || getAI().status() === "ready", !!cached?.vision)}
               className="rounded-full bg-orange-500 px-6 py-4 text-lg font-bold text-white shadow-sm hover:bg-orange-600 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-orange-600"
             >
-              {allCached ? "Start Guhit" : "Get Guhit ready"}
+              {friendly ? friendly.button : allCached ? "Start Guhit" : "Get Guhit ready"}
             </button>
           )}
           {phase === "loading" && (
             <p className="text-center text-stone-500">
-              Keep this page open. The first download can take a few minutes on slow Wi-Fi.
-            </p>
-          )}
-          {phase === "error" && error && (
-            <p role="alert" className="rounded-2xl bg-red-50 p-4 text-red-800">
-              Something went wrong: {error}
+              Keep this screen open and awake. The first download can take a few minutes on slow Wi-Fi; if it stops,
+              what&apos;s already downloaded is kept.
             </p>
           )}
 

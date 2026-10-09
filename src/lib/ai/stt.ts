@@ -1,4 +1,5 @@
 import type { STTRequest, STTResponse } from "@/workers/stt.worker";
+import type { ModelSource } from "./model-fetch";
 import { ModelWorker } from "./model-worker";
 import type { STTDevice } from "./models";
 
@@ -51,12 +52,13 @@ export class STTClient {
     device: STTDevice,
     dtype: Record<string, string>,
     modelHost: string | null,
+    source: ModelSource,
     onProgress: (loaded: number, total: number) => void,
   ): Promise<{ warmupMs: number }> {
     this.worker = new ModelWorker(
       new Worker(new URL("../../workers/stt.worker.ts", import.meta.url), { type: "module" }),
     );
-    return this.worker.load({ type: "load", model, device, dtype, modelHost } satisfies STTRequest, onProgress);
+    return this.worker.load({ type: "load", model, device, dtype, modelHost, source } satisfies STTRequest, onProgress);
   }
 
   async transcribe(blob: Blob): Promise<Transcription> {

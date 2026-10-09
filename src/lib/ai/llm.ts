@@ -6,6 +6,8 @@ import {
   type InitProgressReport,
   type WebWorkerMLCEngine,
 } from "@mlc-ai/web-llm";
+import type { LLMWorkerSetup } from "@/workers/llm.worker";
+import { LLM_DOWNLOAD_CHANNEL, type ModelSource } from "./model-fetch";
 import { findLLM } from "./models";
 import type { Message } from "./prompts";
 
@@ -46,14 +48,29 @@ export class LLMClient {
 
   async load(
     modelId: string,
-    modelHost: string | null,
+    origin: { modelHost: string | null; source: ModelSource; maxDownloads: number | null },
     onProgress: (report: InitProgressReport) => void,
+    /** Total bytes downloaded so far, as they arrive (WebLLM reports only whole files). */
+    onBytes?: (downloaded: number) => void,
   ): Promise<void> {
     const worker = new Worker(new URL("../../workers/llm.worker.ts", import.meta.url), { type: "module" });
-    this.engine = await CreateWebWorkerMLCEngine(worker, modelId, {
-      initProgressCallback: onProgress,
-      appConfig: appConfigFor(modelId, modelHost),
-    });
+    const { modelHost, source, maxDownloads } = origin;
+    // Must reach the worker before WebLLM's first message: it sets up how files are downloaded.
+    worker.postMessage({ type: "guhit-setup", source, maxDownloads } satisfies LLMWorkerSetup);
+    const progress = new BroadcastChannel(LLM_DOWNLOAD_CHANNEL);
+    let downloaded = 0;
+    progress.onmessage = (event: MessageEvent<number>) => {
+      downloaded += event.data;
+      onBytes?.(downloaded);
+    };
+    try {
+      this.engine = await CreateWebWorkerMLCEngine(worker, modelId, {
+        initProgressCallback: onProgress,
+        appConfig: appConfigFor(modelId, modelHost),
+      });
+    } finally {
+      progress.close();
+    }
     this.modelId = modelId;
   }
 

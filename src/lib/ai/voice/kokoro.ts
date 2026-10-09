@@ -1,4 +1,5 @@
 import type { TTSRequest, TTSResponse } from "@/workers/tts.worker";
+import type { ModelSource } from "../model-fetch";
 import { ModelWorker } from "../model-worker";
 import { isTransformersModelCached } from "../offline";
 import { KOKORO, styleFor, VOICE_CACHE, type KokoroDtype, type TTSDevice } from "./voices";
@@ -41,6 +42,7 @@ export class KokoroClient {
     device: TTSDevice,
     dtype: KokoroDtype,
     modelHost: string | null,
+    source: ModelSource,
     voices: string[],
     onProgress: (loaded: number, total: number) => void,
   ): Promise<{ warmupMs: number; rtf: number }> {
@@ -55,7 +57,7 @@ export class KokoroClient {
     this.worker.addEventListener("message", capture);
     try {
       const { warmupMs } = await this.model.load(
-        { type: "load", device, dtype, modelHost, voices } satisfies TTSRequest,
+        { type: "load", device, dtype, modelHost, source, voices } satisfies TTSRequest,
         onProgress,
       );
       this.loadRtf = rtf;

@@ -100,8 +100,8 @@ export function VoiceLab() {
   async function loadVoice() {
     const s = speaker();
     if (!s || !support) throw new Error("no engine (mock mode?)");
-    const { modelHost } = chooseModels(support, window.location.search);
-    const result = await s.load(support, modelHost, (loaded, total, text) =>
+    const { modelHost, source } = chooseModels(support, window.location.search);
+    const result = await s.load(support, modelHost, source, (loaded, total, text) =>
       setStatus(`${text} ${total ? `(${Math.round(loaded / 1e6)} / ${Math.round(total / 1e6)} MB)` : ""}`),
     );
     setInfo(result);

@@ -1,4 +1,5 @@
 import type { VisionRequest, VisionResponse } from "@/workers/vision.worker";
+import type { ModelSource } from "./model-fetch";
 import { ModelWorker } from "./model-worker";
 import type { STTDevice } from "./models";
 import type { PixelRect } from "./types";
@@ -16,12 +17,16 @@ export class VisionClient {
     device: STTDevice,
     dtype: Record<string, string>,
     modelHost: string | null,
+    source: ModelSource,
     onProgress: (loaded: number, total: number) => void,
   ): Promise<{ warmupMs: number }> {
     this.worker = new ModelWorker(
       new Worker(new URL("../../workers/vision.worker.ts", import.meta.url), { type: "module" }),
     );
-    return this.worker.load({ type: "load", model, device, dtype, modelHost } satisfies VisionRequest, onProgress);
+    return this.worker.load(
+      { type: "load", model, device, dtype, modelHost, source } satisfies VisionRequest,
+      onProgress,
+    );
   }
 
   /**

@@ -1,3 +1,4 @@
+import type { ModelSource } from "./model-fetch";
 import { isMarkedReady } from "./offline";
 import { splitSentences } from "./sanitize";
 import { AudioOut } from "./voice/audio-out";
@@ -346,11 +347,12 @@ export class Speaker {
   load(
     support: { webgpu: boolean; mobile: boolean },
     modelHost: string | null,
+    source: ModelSource,
     onProgress: (loaded: number, total: number, text: string) => void,
   ): Promise<VoiceInfo> {
     // /lab may load the voice on its own before the engine loads everything.
     if (!this.loading) {
-      this.loading = this.loadVoice(support, modelHost, onProgress).finally(() => (this.loading = null));
+      this.loading = this.loadVoice(support, modelHost, source, onProgress).finally(() => (this.loading = null));
     }
     return this.loading;
   }
@@ -358,6 +360,7 @@ export class Speaker {
   private async loadVoice(
     support: { webgpu: boolean; mobile: boolean },
     modelHost: string | null,
+    source: ModelSource,
     onProgress: (loaded: number, total: number, text: string) => void,
   ): Promise<VoiceInfo> {
     const started = performance.now();
@@ -386,7 +389,7 @@ export class Speaker {
       try {
         const first = [styleFor("narrator").voice, styleFor("character").voice];
         const voices = [...new Set([...first, ...PRELOADED_VOICES])];
-        const { warmupMs, rtf } = await kokoro.load(device, dtype, modelHost, voices, (loaded, size) => {
+        const { warmupMs, rtf } = await kokoro.load(device, dtype, modelHost, source, voices, (loaded, size) => {
           const expected = Math.max(size, total);
           onProgress(loaded, expected, `Downloading the storytelling voice… ${Math.round((loaded / expected) * 100)}%`);
         });

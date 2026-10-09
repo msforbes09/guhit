@@ -173,15 +173,24 @@ export class RealAI implements LocalAI {
       // Drawing recognition is not loaded here: it is loaded for each guess and
       // freed straight after, so it never holds GPU memory during the talk loop.
       const loadVoice = () =>
-        this.speaker.load(support, choice.modelHost, (loaded, total, text) =>
+        this.speaker.load(support, choice.modelHost, choice.source, (loaded, total, text) =>
           this.emit({ stage: "tts", loaded, total, text }),
         );
-      let [, , voices] = await Promise.all([
-        this.loadLLM(new LLMClient(), choice),
-        this.loadSTT(new STTClient(), choice),
-        // Never fails the load: without the neural voice, the built-in one speaks.
-        loadVoice(),
-      ]);
+      let voices: VoiceInfo;
+      if (support.mobile) {
+        // One at a time on phones: WebKit closes a tab past ~1–1.5 GB, and the
+        // downloads share a weaker connection. The voice last, as the optional one.
+        await this.loadLLM(new LLMClient(), choice);
+        await this.loadSTT(new STTClient(), choice);
+        voices = await loadVoice();
+      } else {
+        [, , voices] = await Promise.all([
+          this.loadLLM(new LLMClient(), choice),
+          this.loadSTT(new STTClient(), choice),
+          // Never fails the load: without the neural voice, the built-in one speaks.
+          loadVoice(),
+        ]);
+      }
       // A first, cold load can fail while the other models are filling the GPU;
       // on its own it usually succeeds, so try once more before settling.
       if (voices.engine === "builtin" && voices.reason?.startsWith("Kokoro failed to load")) {
@@ -210,15 +219,46 @@ export class RealAI implements LocalAI {
     const started = performance.now();
     const total = (findLLM(choice.llm)?.downloadMB ?? 1000) * 1e6;
     this.emit({ stage: "llm", loaded: 0, total, text: "Getting the story helper ready…" });
-    await llm.load(choice.llm, choice.modelHost, (report) => {
-      const percent = Math.round(report.progress * 100);
-      const text = /fetching/i.test(report.text)
-        ? `Downloading the story helper… ${percent}%`
-        : /cache/i.test(report.text)
-          ? `Waking up the story helper… ${percent}%`
-          : `Getting the story helper ready… ${percent}%`;
-      this.emit({ stage: "llm", loaded: Math.round(report.progress * total), total, text });
-    });
+    // WebLLM counts whole files (~30 MB each), so on a phone the bar sat at 0%
+    // for minutes; the bytes that have arrived move it in between.
+    let fileFraction = 0;
+    let downloaded = 0;
+    let phase = "Getting the story helper ready…";
+    let waking = false;
+    const show = () => {
+      const fraction = waking ? fileFraction : Math.max(fileFraction, Math.min(0.99, downloaded / total));
+      this.emit({
+        stage: "llm",
+        loaded: Math.round(fraction * total),
+        total,
+        text: `${phase} ${Math.round(fraction * 100)}%`,
+      });
+    };
+    const origin = {
+      modelHost: choice.modelHost,
+      source: choice.source,
+      // Phones: two files at a time instead of four, gentler on memory and on a weak connection.
+      maxDownloads: this.support?.mobile ? 2 : null,
+    };
+    await llm.load(
+      choice.llm,
+      origin,
+      (report) => {
+        fileFraction = report.progress;
+        waking = /cache/i.test(report.text) && !/fetching/i.test(report.text);
+        phase = waking
+          ? "Waking up the story helper…"
+          : downloaded > 0 || /fetching/i.test(report.text)
+            ? "Downloading the story helper…"
+            : "Getting the story helper ready…";
+        show();
+      },
+      (bytes) => {
+        downloaded = bytes;
+        if (!waking) phase = "Downloading the story helper…";
+        show();
+      },
+    );
     // A short run on a reply-sized prompt compiles the GPU kernels for prompts of
     // that length now, so the character's first real answer is not the slow one.
     await llm.generate(replyMessages(WARMUP_CHARACTER, [], ""), { maxTokens: 4 });
@@ -236,6 +276,7 @@ export class RealAI implements LocalAI {
       choice.sttDevice,
       STT_DTYPES[choice.sttDevice],
       choice.modelHost,
+      choice.source,
       (loaded, total) => {
         const size = Math.max(total, expected);
         this.emit({
@@ -318,7 +359,8 @@ export class RealAI implements LocalAI {
     const { VisionClient } = await import("./vision");
     const vision = new VisionClient();
     try {
-      await vision.load(choice.vision, choice.visionDevice, model?.dtype ?? {}, choice.modelHost, (loaded, total) => {
+      const dtype = model?.dtype ?? {};
+      await vision.load(choice.vision, choice.visionDevice, dtype, choice.modelHost, choice.source, (loaded, total) => {
         const size = Math.max(total, expected);
         onProgress?.({
           stage: "vision",

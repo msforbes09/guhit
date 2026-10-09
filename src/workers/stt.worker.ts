@@ -1,4 +1,5 @@
 import { pipeline } from "@huggingface/transformers";
+import type { ModelSource } from "@/lib/ai/model-fetch";
 import { configureTransformers, type FileProgress } from "./ort-env";
 
 type Transcriber = (
@@ -16,6 +17,8 @@ export type STTRequest =
       dtype: Record<string, string>;
       /** A mirror with Hugging Face's layout, or null for Hugging Face itself. */
       modelHost: string | null;
+      /** Where downloads come from (see model-fetch.ts). */
+      source: ModelSource;
     }
   | { type: "transcribe"; id: number; audio: Float32Array };
 
@@ -31,7 +34,7 @@ self.onmessage = async (event: MessageEvent<STTRequest>) => {
   const request = event.data;
   try {
     if (request.type === "load") {
-      await configureTransformers(request.modelHost);
+      await configureTransformers(request.modelHost, request.source);
       const asr = await pipeline("automatic-speech-recognition", request.model, {
         device: request.device,
         dtype: request.dtype as never,

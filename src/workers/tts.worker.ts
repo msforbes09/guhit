@@ -1,6 +1,7 @@
 import { AutoTokenizer, env, StyleTextToSpeech2Model, Tensor } from "@huggingface/transformers";
 import { phonemize } from "@/lib/ai/voice/phonemize";
 import { findVoice, KOKORO, VOICE_CACHE, type KokoroDtype, type TTSDevice } from "@/lib/ai/voice/voices";
+import type { ModelSource } from "@/lib/ai/model-fetch";
 import { configureTransformers, type FileProgress } from "./ort-env";
 
 type Tokenizer = (text: string, options: { truncation: boolean }) => { input_ids: Tensor };
@@ -13,6 +14,8 @@ export type TTSRequest =
       dtype: KokoroDtype;
       /** A mirror with Hugging Face's layout, or null for Hugging Face itself. */
       modelHost: string | null;
+      /** Where downloads come from (see model-fetch.ts). */
+      source: ModelSource;
       /** Voices to fetch now so they work offline later; the first one is used for the warm-up. */
       voices: string[];
     }
@@ -60,7 +63,8 @@ async function loadVoice(id: string): Promise<Float32Array> {
   }
   let response = await cache?.match(url);
   if (!response) {
-    response = await fetch(url);
+    // The same resilient path as the model files (R2 first, retries, resume).
+    response = (await env.fetch(url)) as Response;
     if (!response.ok) throw new Error(`Voice ${id} download failed (${response.status}).`);
     await cache?.put(url, response.clone()).catch(() => {});
   }
@@ -110,7 +114,7 @@ const WARMUPS: Record<TTSDevice, string[]> = {
 };
 
 async function load(request: Extract<TTSRequest, { type: "load" }>) {
-  await configureTransformers(request.modelHost);
+  await configureTransformers(request.modelHost, request.source);
   const progress_callback = (p: FileProgress) => {
     if (p.status === "progress" && p.file) {
       post({ type: "progress", file: p.file, loaded: p.loaded ?? 0, total: p.total ?? 0 });
