@@ -56,6 +56,17 @@ export function deviceNotes(): { at: number; text: string }[] {
   }
 }
 
+/** What the guess running now is doing, for a screen that stops waiting for it. */
+let guessStep = "";
+export const setGuessStep = (step: string) => void (guessStep = step);
+export const currentGuessStep = () => guessStep || "none running";
+
+/** ", page memory N MB" where the browser tells it (Chrome); WebKit does not. */
+export function heapNote(): string {
+  const used = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize;
+  return used ? `, page memory ${Math.round(used / 1e6)} MB` : "";
+}
+
 export function recordNote(text: string, at = Date.now()) {
   try {
     localStorage.setItem(NOTES_KEY, JSON.stringify([...deviceNotes(), { at, text }].slice(-BOOT_LOG_SIZE)));

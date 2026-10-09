@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAI, isTestMode, photoCropFromCutout } from "@/lib/ai";
 import type { DrawingDescription, PixelRect } from "@/lib/ai";
+import { currentGuessStep, recordNote } from "@/lib/boot-log";
 import { sfx } from "@/lib/sfx";
 import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { kindOf } from "@/lib/story/kind";
@@ -77,15 +78,19 @@ export function useBringToLife() {
     // Test mode's pretend reader always says the same thing, which only confuses testers.
     if (isTestMode()) return null;
     const deadline = performance.now() + LOOK_TIMEOUT_MS;
+    const late = () => {
+      recordNote(`No guess in time: the snap screen stopped waiting after ${LOOK_TIMEOUT_MS / 1000} s (eyes: ${readyRef.current}; guess: ${currentGuessStep()})`);
+      return null;
+    };
     while (readyRef.current === "checking" || readyRef.current === "waking") {
-      if (performance.now() > deadline) return null;
+      if (performance.now() > deadline) return late();
       await wait(200);
     }
     if (readyRef.current !== "ready") return null;
     const answer = getAI()
       .describeDrawing(png, picture)
       .catch(() => null);
-    return Promise.race([answer, wait(Math.max(0, deadline - performance.now())).then(() => null)]);
+    return Promise.race([answer, wait(Math.max(0, deadline - performance.now())).then(late)]);
   }, []);
 
   const start = useCallback(

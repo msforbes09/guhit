@@ -35,7 +35,7 @@ import {
 import { screen, topicChange } from "./safety";
 import { guessAllowed, guessFinished, guessStarted } from "./guess-guard";
 import { crashedParts, partSettled, partStarting } from "./part-guard";
-import { recordNote } from "@/lib/boot-log";
+import { heapNote, recordNote, setGuessStep } from "@/lib/boot-log";
 import { sharedAttempt } from "./shared-attempt";
 import type { STTClient } from "./stt";
 import type { VisionClient } from "./vision";
@@ -727,15 +727,35 @@ export class RealAI implements LocalAI {
     if (this.partStatus("eyes") === "not-installed") return { label: "" };
     // iPhone and iPad: a guess that killed this tab before is not tried again (no guess beats a crash).
     const guarded = isAppleMobile();
-    if (guarded && !guessAllowed()) return { label: "" };
-    await this.needPart("eyes");
+    if (guarded && !guessAllowed()) {
+      recordNote("No guess: guessing is off on this device since a guess was cut short. Get the parts again in setup.");
+      return { label: "" };
+    }
+    const begun = performance.now();
+    // Each guess's outcome goes in the grown-up details on setup, so a phone's miss says why.
+    const took = (from: number) => `${((performance.now() - from) / 1000).toFixed(1)} s`;
+    try {
+      setGuessStep("waking the eyes");
+      await this.needPart("eyes");
+    } catch (error) {
+      setGuessStep("");
+      recordNote(`No guess: the eyes could not wake after ${took(begun)}: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
     if (guarded) guessStarted();
     const started = performance.now();
+    setGuessStep(`loading the eyes' model (since ${new Date().toLocaleTimeString()})`);
     const vision = await this.acquireVision();
     this.takeOverPrefetch();
     const loadMs = performance.now() - started;
+    const threads = self.crossOriginIsolated ? `${navigator.hardwareConcurrency ?? "?"} threads` : "1 thread, not isolated";
+    const how = `eyes on ${this.choice?.visionDevice ?? "?"} (${threads}), started in ${(loadMs / 1000).toFixed(1)} s${heapNote()}`;
+    setGuessStep(`looking (eyes started in ${(loadMs / 1000).toFixed(1)} s)`);
     try {
-      if (!vision) return { label: "" };
+      if (!vision) {
+        recordNote(`No guess: the eyes did not start (${how}): ${this.visionError ?? "no reason given"}`);
+        return { label: "" };
+      }
       // The original photo reads better than the cut-out on white (tested in /lab).
       const task = this.choice?.visionTask;
       const { caption } = photo
@@ -746,16 +766,24 @@ export class RealAI implements LocalAI {
       if (!verdict.ok) {
         const detail = `${caption} [flagged: ${verdict.category}]`;
         this.record({ kind: "describe", text: "", detail, ms, loadMs, fallback: true });
+        recordNote(`Guess set aside (${verdict.category}) after ${took(begun)} (${how})`);
         return { label: "", flagged: verdict.category };
       }
       const label = cleanCaption(caption);
       this.record({ kind: "describe", text: label, detail: caption, ms, loadMs, fallback: !label });
+      recordNote(
+        label
+          ? `Guessed "${label}" in ${took(begun)} (${how})`
+          : `No guess: the eyes said "${caption}", no name in it, after ${took(begun)} (${how})`,
+      );
       return { label };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.record({ kind: "describe", text: "", detail, ms: performance.now() - started, loadMs, fallback: true });
+      recordNote(`No guess: looking failed after ${took(begun)} (${how}): ${detail}`);
       return { label: "" };
     } finally {
+      setGuessStep("");
       this.releaseVision();
       if (guarded) guessFinished();
     }

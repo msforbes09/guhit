@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getAI, installedParts, isSetupInProgress, isTestMode, RealAI } from "@/lib/ai";
 import type { AIStatus, Part, PartStatus } from "@/lib/ai";
+import { recordNote } from "@/lib/boot-log";
 import { babbleLevel, onBabbleStart } from "@/lib/sfx/babble";
 
 /**
@@ -87,8 +88,9 @@ export function usePart(part: Part): PartReadiness {
     if (status === "idle") {
       getAI()
         .load(() => {}, [part])
-        .catch(() => {
-          // partStatus() turns to "error".
+        .catch((error) => {
+          // partStatus() turns to "error"; the reason goes in setup's grown-up details.
+          recordNote(`The ${part} could not wake: ${error instanceof Error ? error.message : String(error)}`);
         });
     }
   }, [status, part]);

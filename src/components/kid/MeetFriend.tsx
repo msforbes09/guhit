@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { getAI, isTestMode } from "@/lib/ai";
+import { currentGuessStep, deviceNotes, recordNote } from "@/lib/boot-log";
 import { sfx } from "@/lib/sfx";
 import { hush, sayAsCharacter } from "@/lib/sfx/voice";
 import { deleteFriend, saveFriend, type Friend } from "@/lib/story/db";
@@ -64,8 +65,10 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
   // What it is so far, for its voice; read when it speaks, so typing never restarts a line.
   const kind = kindOf(about, guess || friend.seenAs);
   const kindRef = useRef(kind);
+  const eyesRef = useRef(eyes);
   useEffect(() => {
     kindRef.current = kind;
+    eyesRef.current = eyes;
   });
 
   const go = useCallback((next: Step) => {
@@ -79,7 +82,11 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
   useEffect(() => {
     mountedAt.current = performance.now();
     const giveUp = setTimeout(() => {
-      if (stepRef.current === "looking") go("ask");
+      if (stepRef.current !== "looking") return;
+      recordNote(
+        `No guess in time: the meet screen stopped waiting after ${LOOK_TIMEOUT_MS / 1000} s (eyes: ${eyesRef.current}; guess: ${currentGuessStep()})`,
+      );
+      go("ask");
     }, LOOK_TIMEOUT_MS);
     return () => clearTimeout(giveUp);
   }, [go]);
@@ -102,7 +109,11 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     };
     if (known !== undefined) settle(known);
     // Test mode: no guess at all; the tester says or types who it is.
-    else if (eyes !== "ready" || isTestMode()) settle("");
+    else if (isTestMode()) settle("");
+    else if (eyes !== "ready") {
+      recordNote(`No guess: the eyes were "${eyes}" on the meet screen`);
+      settle("");
+    }
     else {
       getAI()
         // The original photo cropped to the cut-out carries more detail than the cut-out.
@@ -337,6 +348,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
         {micBlock(copy.mic)}
         {oopsNote}
         {typeBlock(copy.type, copy.placeholder)}
+        {missedGuess && <GuessDetails />}
       </div>
     );
   } else {
@@ -433,5 +445,23 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
         </section>
       </div>
     </main>
+  );
+}
+
+/** Why the guess missed, from setup's grown-up details, so a helper sees it right here. */
+function GuessDetails() {
+  const [notes] = useState(() => deviceNotes().slice(-5).reverse());
+  if (notes.length === 0) return null;
+  return (
+    <details className="text-sm text-ink-soft">
+      <summary className="cursor-pointer font-bold">Why no guess? (for a grown-up)</summary>
+      <ol className="mt-2 flex flex-col gap-1 font-mono text-xs">
+        {notes.map((n) => (
+          <li key={`${n.at}-${n.text}`} className="break-words">
+            {new Date(n.at).toLocaleTimeString()} {n.text}
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
