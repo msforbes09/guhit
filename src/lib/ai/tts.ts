@@ -201,7 +201,8 @@ export class Playback implements SpeechPlayback {
     };
     utterance.onerror = (event) => {
       this.meter.stop();
-      if (!this.cancelled) {
+      // "interrupted"/"canceled" are this app stopping the voice, not failures.
+      if (!this.cancelled && event.error !== "interrupted" && event.error !== "canceled") {
         const voice = this.voice?.name ?? "default";
         const fallback = `${this.reason ? `${this.reason}; ` : ""}built-in voice error: ${event.error}`;
         this.metric?.({ engine: "builtin", role: this.role, voice, text: sentence, index, fallback });

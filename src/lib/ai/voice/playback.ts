@@ -66,7 +66,9 @@ const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 /**
  * Splits a long first sentence after its opening clause ("I'm Tala, | and
  * I'm so happy you drew me!"): the short clause is voiced sooner, and the
- * rest is ready before it has finished playing.
+ * rest is ready before it has finished playing. Without a comma, a long
+ * sentence splits before a joining word, and the clause gets a comma so it
+ * keeps a mid-sentence tune ("I live in a castle, | and I eat pancakes").
  */
 export function splitOpening(sentence: string): [string, string] | null {
   if (words(sentence) < 7) return null;
@@ -74,6 +76,12 @@ export function splitOpening(sentence: string): [string, string] | null {
     const end = (match.index ?? 0) + 1;
     const [clause, rest] = [sentence.slice(0, end), sentence.slice(end).trim()];
     if (words(clause) >= 2 && words(rest) >= 3) return [clause, rest];
+  }
+  if (words(sentence) < 11) return null;
+  for (const match of sentence.matchAll(/\s(?=(?:and|but|so|because|when|while|with|who|where|then)\s)/gi)) {
+    const index = match.index ?? 0;
+    const [clause, rest] = [sentence.slice(0, index), sentence.slice(index + 1)];
+    if (words(clause) >= 4 && words(rest) >= 4) return [`${clause},`, rest];
   }
   return null;
 }
@@ -200,6 +208,22 @@ export class NeuralPlayback implements SpeechPlayback {
     } catch (error) {
       if (this.cancelled) return;
       const reason = error instanceof Error ? error.message : String(error);
+      // For /lab: how late the sentence really was.
+      void job.then((late) =>
+        host.metric({
+          engine: "kokoro",
+          role: this.role,
+          voice,
+          device: host.device,
+          text: sentence,
+          index,
+          synthMs: performance.now() - Math.max(turn, addedAt),
+          g2pMs: late.g2pMs,
+          modelMs: late.modelMs,
+          audioSeconds: late.audio.length / KOKORO.sampleRate,
+          fallback: "arrived too late, not played",
+        }),
+      );
       this.fail(`Kokoro ${reason}`);
       return this.handOver(sentence, `Kokoro ${reason}`);
     }

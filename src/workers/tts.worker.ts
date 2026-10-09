@@ -95,14 +95,19 @@ const synthesize = async (text: string, voice: string, speed: number) =>
   voiceIt(await toPhonemes(text, voice), voice, speed);
 
 /**
- * WebGPU compiles kernels per input size, so the warm-up says a short, a
- * medium and a long line; the medium one is then timed again for the speed.
+ * WebGPU compiles kernels for each new input size, so its warm-up says a
+ * short, a medium and a long line, and the last run gives the speed. The CPU
+ * has nothing to compile: one short line, then a timed one decides whether
+ * this device is fast enough at all.
  */
-const WARMUPS = [
-  "Hi!",
-  "Hello there! Let's make a story together.",
-  "Once upon a time, a little dragon lived in a castle on a cloud, and she loved pancakes.",
-];
+const WARMUPS: Record<TTSDevice, string[]> = {
+  webgpu: [
+    "Hi!",
+    "Hello there! Let's make a story together.",
+    "Once upon a time, a little dragon lived in a castle on a cloud, and she loved pancakes.",
+  ],
+  wasm: ["Hi!", "Hello there! Let's make a story together."],
+};
 
 async function load(request: Extract<TTSRequest, { type: "load" }>) {
   await configureTransformers(request.modelHost);
@@ -123,12 +128,13 @@ async function load(request: Extract<TTSRequest, { type: "load" }>) {
   model = loadedModel as unknown as Synthesizer;
   tokenizer = loadedTokenizer as unknown as Tokenizer;
   const started = performance.now();
-  for (const line of WARMUPS) await synthesize(line, request.voices[0], 1);
-  const warmupMs = performance.now() - started;
-  const timed = performance.now();
-  const audio = await synthesize(WARMUPS[1], request.voices[0], 1);
-  const rtf = (performance.now() - timed) / 1000 / (audio.length / KOKORO.sampleRate);
-  post({ type: "ready", warmupMs, rtf });
+  let rtf = Number.NaN;
+  for (const line of WARMUPS[request.device]) {
+    const timed = performance.now();
+    const audio = await synthesize(line, request.voices[0], 1);
+    rtf = (performance.now() - timed) / 1000 / (audio.length / KOKORO.sampleRate);
+  }
+  post({ type: "ready", warmupMs: performance.now() - started, rtf });
 }
 
 function speak(request: Extract<TTSRequest, { type: "speak" }>) {
