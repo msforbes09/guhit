@@ -80,6 +80,8 @@ export interface LoadTimings {
 }
 
 const MAX_REPLY_SENTENCES = 2;
+/** The story helper's first start on the GPU; "?llmStartTimeout=<ms>" overrides it for /lab. */
+const LLM_START_TIMEOUT_MS = 180_000;
 
 const FALLBACK_QUESTIONS = [
   (name: string) => `Where does ${name} live?`,
@@ -138,7 +140,9 @@ export class RealAI implements LocalAI {
   private state: AIStatus = "idle";
   private loading: Promise<void> | null = null;
   private listeners = new Set<(p: LoadProgress) => void>();
+  private lastText: Partial<Record<LoadProgress["stage"], string>> = {};
   private llm: TextGenerator | null = null;
+  private gpuLLM: LLMClient | null = null;
   private stt: STTClient | null = null;
   private vision: VisionClient | null = null;
   private visionUsers = 0;
@@ -153,8 +157,10 @@ export class RealAI implements LocalAI {
     const choice = this.choice!;
     if (findLLM(choice.llm)?.cpu) return this.loadCpuLLM(choice);
     const { LLMClient } = await import("./llm");
+    // One client for every attempt: a retry reloads in the same WebLLM worker.
+    this.gpuLLM ??= new LLMClient();
     try {
-      await this.loadLLM(new LLMClient(), choice);
+      await this.loadLLM(this.gpuLLM, choice);
     } catch (error) {
       if (!isGpuError(error instanceof Error ? error.message : String(error))) throw error;
       // The page saw a GPU but WebLLM cannot use it: the CPU story helper
@@ -164,6 +170,7 @@ export class RealAI implements LocalAI {
       await this.loadCpuLLM(this.choice);
     }
   });
+  private llmWarm = sharedAttempt(() => this.warmUpLLM());
   private sttLoad = sharedAttempt(async () => {
     const { STTClient } = await import("./stt");
     await this.loadSTT(new STTClient(), this.choice!);
@@ -186,6 +193,7 @@ export class RealAI implements LocalAI {
   }
 
   private emit(progress: LoadProgress) {
+    this.lastText[progress.stage] = progress.text;
     for (const listener of this.listeners) listener(progress);
   }
 
@@ -209,14 +217,19 @@ export class RealAI implements LocalAI {
         );
       let voices: VoiceInfo;
       if (support.mobile) {
-        // One at a time on phones: WebKit closes a tab past ~1–1.5 GB, and the
-        // downloads share a weaker connection. The voice last, as the optional one.
+        // One download at a time on phones: WebKit closes a tab past ~1–1.5 GB,
+        // and the downloads share a weaker connection. The voice last, as the
+        // optional one. The story helper's first start (GPU) runs meanwhile, so a
+        // slow one does not hold up the listening ears and the voice (CPU).
         await this.llmLoad();
+        const warming = this.llmWarm();
+        warming.catch(() => undefined);
         await this.sttLoad();
         voices = await loadVoice();
+        await warming;
       } else {
         [, , voices] = await Promise.all([
-          this.llmLoad(),
+          this.llmLoad().then(() => this.llmWarm()),
           this.sttLoad(),
           // Never fails the load: without the neural voice, the built-in one speaks.
           loadVoice(),
@@ -228,6 +241,7 @@ export class RealAI implements LocalAI {
         voices = await loadVoice();
       }
       this.voices = voices;
+      this.emit({ stage: "tts", loaded: 1, total: 1, text: this.lastText.tts ?? "Voice ready", done: true });
       this.timings.ttsMs = voices.loadMs;
 
       this.timings.totalMs = performance.now() - started;
@@ -257,7 +271,8 @@ export class RealAI implements LocalAI {
     let phase = "Getting the story helper ready…";
     let waking = false;
     const show = () => {
-      const fraction = waking ? fileFraction : Math.max(fileFraction, Math.min(0.99, downloaded / total));
+      // Never 100% here: the story helper still has to start (warmUpLLM) before it is ready.
+      const fraction = Math.min(0.99, waking ? fileFraction : Math.max(fileFraction, downloaded / total));
       this.emit({
         stage: "llm",
         loaded: Math.round(fraction * total),
@@ -290,12 +305,61 @@ export class RealAI implements LocalAI {
         show();
       },
     );
-    // A short run on a reply-sized prompt compiles the GPU kernels for prompts of
-    // that length now, so the character's first real answer is not the slow one.
-    await llm.generate(replyMessages(WARMUP_CHARACTER, [], ""), { maxTokens: 4 });
     this.llm = llm;
     this.timings.llmMs = performance.now() - started;
-    this.emit({ stage: "llm", loaded: total, total, text: "Story helper ready" });
+  }
+
+  /**
+   * A short run on a reply-sized prompt compiles the GPU kernels for prompts of
+   * that length now, so the character's first real answer is not the slow one.
+   * On some phones this first start takes minutes, so the line counts the
+   * seconds; past the limit it fails with a GPU error, whose button offers to
+   * carry on without the graphics chip.
+   */
+  private async warmUpLLM() {
+    const llm = this.llm!;
+    const total = (findLLM(llm.modelId)?.downloadMB ?? 1000) * 1e6;
+    if (!findLLM(llm.modelId)?.cpu) {
+      const started = performance.now();
+      const override = Number(new URLSearchParams(window.location.search).get("llmStartTimeout"));
+      const limitMs = Number.isFinite(override) && override > 0 ? override : LLM_START_TIMEOUT_MS;
+      const tick = () => {
+        const seconds = Math.round((performance.now() - started) / 1000);
+        this.emit({
+          stage: "llm",
+          loaded: Math.round(total * 0.99),
+          total,
+          text:
+            seconds < 10
+              ? "Starting the story helper…"
+              : `Starting the story helper… ${seconds} s (the first start can take a minute or two on a phone)`,
+        });
+      };
+      tick();
+      const ticker = setInterval(tick, 5000);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          llm.generate(replyMessages(WARMUP_CHARACTER, [], ""), { maxTokens: 4 }),
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `The story helper did not start on this device's graphics chip: its WebGPU warm-up took over ${Math.round(limitMs / 1000)} s.`,
+                  ),
+                ),
+              limitMs,
+            );
+          }),
+        ]);
+      } finally {
+        clearInterval(ticker);
+        clearTimeout(timer);
+      }
+      this.timings.llmWarmupMs = performance.now() - started;
+    }
+    this.emit({ stage: "llm", loaded: total, total, text: "Story helper ready", done: true });
   }
 
   /** The story helper on the CPU (no usable WebGPU): one ONNX file, downloaded and loaded by Transformers.js. */
@@ -319,7 +383,6 @@ export class RealAI implements LocalAI {
     this.llm = llm;
     this.timings.llmMs = performance.now() - started;
     this.timings.llmWarmupMs = warmupMs;
-    this.emit({ stage: "llm", loaded: expected, total: expected, text: "Story helper ready" });
   }
 
   private async loadSTT(stt: STTClient, choice: ModelChoice) {
@@ -345,7 +408,7 @@ export class RealAI implements LocalAI {
     this.stt = stt;
     this.timings.sttMs = performance.now() - started;
     this.timings.sttWarmupMs = warmupMs;
-    this.emit({ stage: "stt", loaded: expected, total: expected, text: "Listening ears ready" });
+    this.emit({ stage: "stt", loaded: expected, total: expected, text: "Listening ears ready", done: true });
   }
 
   /**
@@ -427,12 +490,18 @@ export class RealAI implements LocalAI {
       this.vision = vision;
       this.visionError = null;
       this.timings.visionMs = performance.now() - started;
-      onProgress?.({ stage: "vision", loaded: expected, total: expected, text: "Seeing eyes ready" });
+      onProgress?.({ stage: "vision", loaded: expected, total: expected, text: "Seeing eyes ready", done: true });
       return vision;
     } catch (error) {
       vision.dispose();
       this.visionError = error instanceof Error ? error.message : String(error);
-      onProgress?.({ stage: "vision", loaded: expected, total: expected, text: "Drawing recognition is not available here" });
+      onProgress?.({
+        stage: "vision",
+        loaded: expected,
+        total: expected,
+        text: "Drawing recognition is not available here",
+        done: true,
+      });
       return null;
     }
   }

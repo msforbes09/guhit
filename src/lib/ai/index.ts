@@ -15,6 +15,8 @@ export type {
 export { detectSupport } from "./device";
 export { photoCropFromCutout } from "./photo";
 export { isMarkedReady, READY_FLAG } from "./offline";
+/** True while a started setup has not finished (it carries on when /setup is opened again). */
+export { isSetupInProgress } from "./setup-resume";
 export { RealAI };
 
 const MOCK_KEY = "guhit:mock";
