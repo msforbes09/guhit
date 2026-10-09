@@ -85,6 +85,6 @@ const PAGE_ENTER_CSS = `
 @keyframes page-enter-fade{from{opacity:0}to{opacity:1}}
 .page-enter-walk{animation:page-enter-walk 1.1s cubic-bezier(.22,1,.36,1) .25s both}
 .page-enter-drop{animation:page-enter-drop .9s cubic-bezier(.3,.7,.4,1) .25s both}
-.page-enter-pop{animation:page-enter-pop .7s cubic-bezier(.34,1.56,.64,1) .25s both}
+.page-enter-pop{animation:page-enter-pop .7s var(--ease-spring) .25s both}
 .page-enter-fade{animation:page-enter-fade .9s ease-out .25s both}
 `;
