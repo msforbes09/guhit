@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { InstallNudge } from "@/components/kid/InstallNudge";
+import { runningInstalled } from "@/components/kid/install";
 import { getAI, RealAI } from "@/lib/ai";
+import { bootLog, deviceNotes, type BootEntry } from "@/lib/boot-log";
 import { Speaker, type SentenceMetric } from "@/lib/ai/tts";
 import {
   canDownloadInBackground,
@@ -232,6 +234,21 @@ export function SetupClient() {
   const [recommended, setRecommended] = useState<Part[]>([]);
   /** Parts that stopped the page while starting (part-guard.ts): left out until ticked again. */
   const [crashed, setCrashed] = useState<Part[]>([]);
+  /** Running as the Home Screen app (on iPhone it keeps its own copy, apart from the browsers). */
+  const [standalone, setStandalone] = useState(false);
+  /** The app's last starts (boot-log.ts), for a grown-up helping. */
+  const [starts, setStarts] = useState<BootEntry[]>([]);
+  const [notes, setNotes] = useState<{ at: number; text: string }[]>([]);
+
+  useEffect(() => {
+    // After this page's own start is noted (BootLog's effect runs after the page's).
+    const id = setTimeout(() => {
+      setStandalone(runningInstalled());
+      setStarts(bootLog());
+      setNotes(deviceNotes());
+    }, 0);
+    return () => clearTimeout(id);
+  }, []);
 
   // A parent who follows the install tip gets the storage protection asked for again.
   useEffect(() => {
@@ -496,6 +513,19 @@ export function SetupClient() {
             {cached && toDownload < totalBytes && toDownload > 0 ? ` · ${size(toDownload)} left to download` : ""}
             {` · ${sourceLabel(choice.source)}`}
           </p>
+          {phase === "idle" && !installed.includes("eyes") && (
+            <div className="flex flex-col gap-1 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sky-950">
+              <p className="font-semibold">Not set up in this {standalone ? "app" : "browser"} yet</p>
+              <p className="text-sm">
+                Guhit&apos;s AI isn&apos;t here yet, so the friend can&apos;t guess drawings in this{" "}
+                {standalone ? "app" : "browser"}.
+                {iPhone &&
+                  (standalone
+                    ? " On iPhone and iPad, the Home Screen app keeps its own copy, apart from Safari and Chrome: get it ready here."
+                    : " On iPhone and iPad, the Home Screen app keeps its own copy: if you set Guhit up there, open it from the Home Screen, or get it ready here too.")}
+              </p>
+            </div>
+          )}
 
           <ul className="flex flex-col gap-3">
             {PARTS.map((part) => {
@@ -740,6 +770,31 @@ export function SetupClient() {
           )}
           {phase === "ready" && <InstallNudge className="mt-6" />}
         </section>
+      )}
+
+      {starts.length > 0 && (
+        <details className="text-sm text-stone-500">
+          <summary className="cursor-pointer">Start log (for a grown-up helping)</summary>
+          <ol className="mt-2 flex flex-col gap-1 font-mono text-xs">
+            {starts.map((s) => (
+              <li key={s.at}>
+                {new Date(s.at).toLocaleString()} {s.url} · {s.how || "?"} · {s.online ? "online" : "offline"}
+                {s.standalone ? " · Home Screen app" : ""}
+                {s.missedTraversal ? " · restored entry" : ""} ·{" "}
+                {s.ended === "left" ? "closed normally" : s.ended === "died" ? "stopped without closing" : "open now"}
+              </li>
+            ))}
+          </ol>
+          {notes.length > 0 && (
+            <ol className="mt-2 flex flex-col gap-1 font-mono text-xs">
+              {notes.map((n) => (
+                <li key={`${n.at}-${n.text}`} className="break-words">
+                  {new Date(n.at).toLocaleString()} {n.text}
+                </li>
+              ))}
+            </ol>
+          )}
+        </details>
       )}
     </main>
     </div>

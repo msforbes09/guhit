@@ -35,6 +35,7 @@ import {
 import { screen, topicChange } from "./safety";
 import { guessAllowed, guessFinished, guessStarted } from "./guess-guard";
 import { crashedParts, partSettled, partStarting } from "./part-guard";
+import { recordNote } from "@/lib/boot-log";
 import { sharedAttempt } from "./shared-attempt";
 import type { STTClient } from "./stt";
 import type { VisionClient } from "./vision";
@@ -650,6 +651,7 @@ export class RealAI implements LocalAI {
     } catch (error) {
       vision.dispose();
       this.visionError = error instanceof Error ? error.message : String(error);
+      recordNote(`Seeing eyes could not start${navigator.onLine === false ? " (offline)" : ""}: ${this.visionError}`);
       onProgress?.({
         stage: "vision",
         loaded: expected,

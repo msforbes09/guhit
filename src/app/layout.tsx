@@ -1,10 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { Andika, Grandstander } from "next/font/google";
+import Script from "next/script";
 import { EarlyWake } from "@/components/kid/EarlyWake";
 import { SoundUnlock } from "@/components/kid/SoundToggle";
 import { TestModePill } from "@/components/kid/TestModePill";
 import { Splash } from "@/components/kid/Splash";
+import { historyGuard } from "@/lib/history-guard";
 import pkg from "../../package.json";
+import { BootLog } from "./boot-log";
 import "./globals.css";
 import { ServiceWorkerRegister } from "./sw-register";
 
@@ -78,6 +81,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${grandstander.variable} ${andika.variable} h-full antialiased`}>
       <body className="min-h-dvh flex flex-col">
+        {/* Before Next starts: an offline restore of another history entry must not loop (history-guard.ts). */}
+        <Script id="guhit-history-guard" strategy="beforeInteractive">
+          {`window.__guhitBoot=(${historyGuard.toString()})(window);`}
+        </Script>
         {/* Shared filter for .crayon-edge outlines; defined once, used everywhere. */}
         <svg aria-hidden="true" width="0" height="0" className="absolute">
           <filter id="crayon-edge" x="-5%" y="-5%" width="110%" height="110%">
@@ -87,6 +94,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </svg>
         {children}
         <Splash version={pkg.version} />
+        <BootLog />
         <EarlyWake />
         <SoundUnlock />
         <TestModePill />
