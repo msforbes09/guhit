@@ -18,10 +18,10 @@ export function loadImage(source: Blob | string): Promise<HTMLImageElement> {
 
 /**
  * Shrinks a photo to a size that keeps IndexedDB small and the phone fast,
- * returning a JPEG data URL. Phone cameras produce 12 MP images that would
- * otherwise cost several megabytes per friend.
+ * returning a JPEG data URL and how much it was scaled. Phone cameras
+ * produce 12 MP images that would otherwise cost megabytes per friend.
  */
-export async function shrinkPhoto(source: Blob | string, maxSide = 1280): Promise<string> {
+export async function shrinkPhoto(source: Blob | string, maxSide = 1280): Promise<{ dataUrl: string; scale: number }> {
   const img = await loadImage(source);
   const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
   const canvas = document.createElement("canvas");
@@ -32,7 +32,7 @@ export async function shrinkPhoto(source: Blob | string, maxSide = 1280): Promis
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.86);
+  return { dataUrl: canvas.toDataURL("image/jpeg", 0.86), scale };
 }
 
 export function canvasToBlob(canvas: HTMLCanvasElement, type = "image/png"): Promise<Blob> {

@@ -1,15 +1,5 @@
-import { env, pipeline } from "@huggingface/transformers";
-
-// ONNX Runtime's wasm is served from our own origin (copied into /public/ort at
-// build time) so speech recognition never reaches a CDN once the app is cached.
-const ortBase = new URL("/ort/", self.location.origin).href;
-env.allowLocalModels = false;
-if (env.backends.onnx.wasm) {
-  env.backends.onnx.wasm.wasmPaths = {
-    mjs: `${ortBase}ort-wasm-simd-threaded.asyncify.mjs`,
-    wasm: `${ortBase}ort-wasm-simd-threaded.asyncify.wasm`,
-  };
-}
+import { pipeline } from "@huggingface/transformers";
+import { configureTransformers, type FileProgress } from "./ort-env";
 
 type Transcriber = (
   audio: Float32Array,
@@ -41,11 +31,11 @@ self.onmessage = async (event: MessageEvent<STTRequest>) => {
   const request = event.data;
   try {
     if (request.type === "load") {
-      if (request.modelHost) env.remoteHost = `${request.modelHost}/`;
+      configureTransformers(request.modelHost);
       const asr = await pipeline("automatic-speech-recognition", request.model, {
         device: request.device,
         dtype: request.dtype as never,
-        progress_callback: (p: { status: string; file?: string; loaded?: number; total?: number }) => {
+        progress_callback: (p: FileProgress) => {
           if (p.status === "progress" && p.file) {
             post({ type: "progress", file: p.file, loaded: p.loaded ?? 0, total: p.total ?? 0 });
           }

@@ -79,7 +79,11 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     if (ready !== "ready") settle("");
     else {
       getAI()
-        .describeDrawing(friend.cutout ?? friend.drawing)
+        // The original photo cropped to the cut-out carries more detail than the cut-out.
+        .describeDrawing(
+          friend.cutout ?? friend.drawing,
+          friend.cutout && friend.photoCrop ? { image: friend.drawing, crop: friend.photoCrop } : undefined,
+        )
         .then((r) => settle(r.label?.trim() ?? ""))
         .catch(() => settle(""));
     }

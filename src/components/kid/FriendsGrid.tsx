@@ -65,7 +65,7 @@ function FriendCard({
         {/* eslint-disable-next-line @next/next/no-img-element -- local data URL */}
         <img src={friend.cutout ?? friend.drawing} alt="" className="sticker max-h-full max-w-full object-contain" />
       </span>
-      <span className="w-full truncate text-center font-display text-2xl font-extrabold text-ink">
+      <span className="line-clamp-2 w-full text-center font-display text-xl leading-tight font-extrabold break-words text-ink sm:text-2xl">
         {friend.name || "New friend"}
       </span>
     </>

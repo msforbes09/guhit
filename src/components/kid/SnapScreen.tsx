@@ -225,7 +225,7 @@ export function SnapScreen() {
                 <Camera size={72} weight="duotone" className="text-sky-deep" aria-hidden="true" />
               </div>
               <p className="text-xl font-bold text-ink-soft">Put your drawing on a table and fill the picture with it.</p>
-              <Button tone="sun" size="xl" onClick={pickPhoto} icon={<Camera size={40} weight="fill" aria-hidden="true" />}>
+              <Button tone="sun" size="lg" onClick={pickPhoto} icon={<Camera size={36} weight="fill" aria-hidden="true" />} className="w-full">
                 Take a photo
               </Button>
             </Sheet>

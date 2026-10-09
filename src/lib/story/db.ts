@@ -1,9 +1,11 @@
-import type { ChatTurn } from "@/lib/ai/types";
+import type { ChatTurn, PixelRect } from "@/lib/ai/types";
 import type { Character, Story } from "./types";
 
 /** A character the child made, plus everything they have said to each other. */
 export interface Friend extends Character {
   chat: ChatTurn[];
+  /** Where the cut-out sits in `drawing`, so recognition can read the original pixels. */
+  photoCrop?: PixelRect;
   createdAt: number;
   updatedAt: number;
 }

@@ -1,7 +1,7 @@
 import type { Character, Story } from "@/lib/story/types";
 import { chooseModels, detectSupport, type DeviceSupport, type ModelChoice } from "./device";
 import type { LLMClient } from "./llm";
-import { findLLM, findSTT, STT_DTYPES } from "./models";
+import { findLLM, findSTT, findVision, STT_DTYPES } from "./models";
 import { isMarkedReady, markReady, requestPersistence } from "./offline";
 import {
   firstQuestionMessages,
@@ -16,15 +16,24 @@ import {
   cleanLine,
   cleanPage,
   cleanQuestion,
+  cleanCaption,
   cleanTitle,
   isUnsafe,
   SentenceStream,
 } from "./sanitize";
 import type { STTClient } from "./stt";
+import type { VisionClient } from "./vision";
 import { Speaker, type VoiceInfo } from "./tts";
 import type { AIStatus, ChatTurn, DrawingDescription, LoadProgress, LocalAI } from "./types";
 
-export type CallKind = "reply" | "firstQuestion" | "nextQuestion" | "writePage" | "title" | "transcribe";
+export type CallKind =
+  | "reply"
+  | "firstQuestion"
+  | "nextQuestion"
+  | "writePage"
+  | "title"
+  | "transcribe"
+  | "describe";
 
 export interface CallMetric {
   kind: CallKind;
@@ -41,6 +50,8 @@ export interface CallMetric {
   decodeTps?: number;
   prefillTps?: number;
   audioSeconds?: number;
+  /** For drawing descriptions: the model's caption before clean-up. */
+  detail?: string;
   fallback?: boolean;
 }
 
@@ -49,6 +60,8 @@ export interface LoadTimings {
   llmMs?: number;
   sttMs?: number;
   sttWarmupMs?: number;
+  visionMs?: number;
+  visionWarmupMs?: number;
   ttsMs?: number;
 }
 
@@ -69,6 +82,8 @@ export class RealAI implements LocalAI {
   /** Speak each reply sentence as soon as it is written, so the character starts talking sooner. */
   autoSpeakReplies = true;
   error: string | null = null;
+  /** Set when drawing recognition failed to load; everything else still works without it. */
+  visionError: string | null = null;
   support: DeviceSupport | null = null;
   choice: ModelChoice | null = null;
   voices: VoiceInfo | null = null;
@@ -81,6 +96,7 @@ export class RealAI implements LocalAI {
   private listeners = new Set<(p: LoadProgress) => void>();
   private llm: LLMClient | null = null;
   private stt: STTClient | null = null;
+  private vision: VisionClient | null = null;
   private speaker = new Speaker();
 
   status(): AIStatus {
@@ -115,9 +131,17 @@ export class RealAI implements LocalAI {
       this.choice = choice;
       void requestPersistence();
 
-      const [{ LLMClient }, { STTClient }] = await Promise.all([import("./llm"), import("./stt")]);
+      const [{ LLMClient }, { STTClient }, { VisionClient }] = await Promise.all([
+        import("./llm"),
+        import("./stt"),
+        import("./vision"),
+      ]);
       // Downloads run side by side: the first visit is bound by network, not GPU.
-      await Promise.all([this.loadLLM(new LLMClient(), choice), this.loadSTT(new STTClient(), choice)]);
+      await Promise.all([
+        this.loadLLM(new LLMClient(), choice),
+        this.loadSTT(new STTClient(), choice),
+        this.loadVision(new VisionClient(), choice),
+      ]);
 
       const ttsStarted = performance.now();
       this.voices = await this.speaker.init();
@@ -186,6 +210,38 @@ export class RealAI implements LocalAI {
     this.emit({ stage: "stt", loaded: expected, total: expected, text: "Listening ears ready" });
   }
 
+  /** Optional: if it fails, describeDrawing() answers "no guess" and the talk loop is unaffected. */
+  private async loadVision(vision: VisionClient, choice: ModelChoice) {
+    const started = performance.now();
+    const model = findVision(choice.vision);
+    const expected = (model?.downloadMB ?? 200) * 1e6;
+    this.emit({ stage: "vision", loaded: 0, total: expected, text: "Getting the seeing eyes ready…" });
+    try {
+      const { warmupMs } = await vision.load(
+        choice.vision,
+        choice.visionDevice,
+        model?.dtype ?? {},
+        choice.modelHost,
+        (loaded, total) => {
+          const size = Math.max(total, expected);
+          this.emit({
+            stage: "vision",
+            loaded,
+            total: size,
+            text: `Downloading the seeing eyes… ${Math.round((loaded / size) * 100)}%`,
+          });
+        },
+      );
+      this.vision = vision;
+      this.timings.visionMs = performance.now() - started;
+      this.timings.visionWarmupMs = warmupMs;
+      this.emit({ stage: "vision", loaded: expected, total: expected, text: "Seeing eyes ready" });
+    } catch (error) {
+      this.visionError = error instanceof Error ? error.message : String(error);
+      this.emit({ stage: "vision", loaded: expected, total: expected, text: "Drawing recognition is not available here" });
+    }
+  }
+
   /**
    * Methods load the models on demand, but only once a parent has run setup:
    * a 1 GB download must never start from a kid screen by surprise.
@@ -221,9 +277,22 @@ export class RealAI implements LocalAI {
     });
   }
 
-  /** The vision model is not wired in yet: an empty label means "no guess", so screens ask the child. */
-  async describeDrawing(): Promise<DrawingDescription> {
-    return { label: "" };
+  /** An empty label means "no guess": the screen asks the child instead of "Is that …?". */
+  async describeDrawing(png: string): Promise<DrawingDescription> {
+    await this.ready();
+    const vision = this.vision;
+    if (!vision || !png) return { label: "" };
+    const started = performance.now();
+    try {
+      const { caption } = await vision.describe(png);
+      const label = cleanCaption(caption);
+      this.record({ kind: "describe", text: label, detail: caption, ms: performance.now() - started, fallback: !label });
+      return { label };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.record({ kind: "describe", text: "", detail, ms: performance.now() - started, fallback: true });
+      return { label: "" };
+    }
   }
 
   async transcribe(audio: Blob): Promise<string> {
