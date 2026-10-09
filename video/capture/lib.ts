@@ -15,7 +15,13 @@ export const FOOTAGE = join(VIDEO, "footage");
 export const WORK = join(VIDEO, ".capture");
 export const PROFILE = join(WORK, "profile");
 export const MEDIA = join(WORK, "media");
-export const APP = process.env.GUHIT_URL ?? "http://localhost:3191";
+/** Flag value from the command line: `--name=value`. */
+export const flag = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+/**
+ * The app to film: the local build served by capture/serve-app.mjs by default,
+ * or a live site with `--url=https://guhit.iam4bs.dev` (or GUHIT_URL).
+ */
+export const APP = (flag("url") ?? process.env.GUHIT_URL ?? "http://localhost:3191").replace(/\/$/, "");
 
 export const PHONE = { width: 430, height: 932, scale: 2, mobile: true } as const;
 export const LAPTOP = { width: 1280, height: 800, scale: 1.5, mobile: false } as const;

@@ -29,18 +29,21 @@ Everything runs on this computer: the app, its models (from the local mirror), t
 capture browser, the voice placeholders and the music.
 
 ```sh
-# 0. The app build and its model mirror (from the repo root, once)
+# 0. The app build (from the repo root, once). The final film fetches models the way
+#    users do, from Guhit's R2 copy (the app's default); a local mirror is optional.
 npm ci && npm run build
-mkdir -p mirror && ln -s /path/to/mirror/models mirror/models   # the 4.7 GB local model mirror
+# optional, only for --models=local: mkdir -p mirror && ln -s /path/to/mirror/models mirror/models
 
 # 1. The video project
 cd video
 npm ci
 node scripts/copy-assets.mjs /path/to/guhit/assets   # logo, splash, sample drawings, generated stills
-node capture/serve-app.mjs &                           # serves ../out + the mirror on http://localhost:3191
+node capture/serve-app.mjs --isolate &                 # serves ../out on http://localhost:3191 (cross-origin isolated, like the live site)
+# …or skip the local server and film the live site: add --url=https://guhit.iam4bs.dev to every capture command
 
 # 2. Film the real app (headed Chrome opens; leave it alone while it runs)
-node capture/setup.ts --fresh   # /setup loading every model: parts-list timelapse + each row's "Ready" picture
+node capture/setup.ts --fresh   # /setup loading every model from R2: parts-list timelapse + each row's "Ready" picture
+                                # (--models=local uses the dev mirror instead; --url=… films the live site)
 node capture/hero.ts            # snap → cut-out → guess → talk with real on-device AI → footage/hero.mp4
 node capture/moves.ts           # drive / sway / fly / walk → footage/move-*.mp4
 
@@ -91,19 +94,20 @@ re-lays itself out. Render it with the same command and `Guhit9x16 out/guhit-60s
 
 ## Capture notes
 
-- **The model mirror must match the build you film.** The setup run downloads exactly
-  what that build asks for; if the mirror lacks a file (for example a model the new build
-  no longer uses, or one it newly needs), setup falls back (e.g. to the device voice) and
-  the shot shows it. Check `footage/setup.json` (`ok`, `parts[].detail`) after the run.
+- **Where the models come from.** By default setup fetches from Guhit's R2 copy, exactly
+  as users do (`--models=local` uses a dev mirror, which must then match the build being
+  filmed, or setup falls back, e.g. to the device voice, and the shot shows it). Check
+  `footage/setup.json` (`ok`, `models`, `parts[].detail`) after the run.
 - **Setup shot** (`capture/setup.ts`): filmed at phone width (430 px, 3×) as element
   screenshots of the parts list itself, so the crop follows the list whatever the
   wording. It writes `footage/setup-list.mp4`, one picture per finished row
   (`footage/setup-row-<n>.png`) and `footage/setup.json` (sizes, marks for "first bar
   moving" and "every row ready", the rows' names). The edit plays the list from the
   first bar to "all ready" and pairs each row with its moment in the app
-  (`PART_MOMENTS` in `src/Promo.tsx`; rows are matched in the setup screen's order:
-  story helper, listening ears, seeing eyes, voice — change `row` there if the final
-  screen reorders them).
+  (`PART_MOMENTS` in `src/Promo.tsx`). Rows are found by their words (seeing/eyes/guess,
+  listen/ears/hear, story/helper/write, voice/speak/aloud), so a reworded or reordered
+  screen still pairs up; if a new wording matches none of them, set that moment's
+  `row` index by hand (the row order is in `footage/setup.json` → `parts`).
 - The capture browser is Google Chrome (headed, for WebGPU) with its own profile in
   `.capture/profile` (git-ignored), so the models downloaded by `/setup` stay between
   runs. `capture/setup.ts --fresh` starts from an empty profile to film the full load.

@@ -670,17 +670,27 @@ function Setup() {
 }
 
 /**
- * Which app moment each setup part powers. Rows come from footage/setup.json in
- * the order the setup screen lists them (the app's STAGES: story helper,
- * listening ears, seeing eyes, voice); if the final screen reorders its rows,
- * change `row` here.
+ * Which app moment each setup part powers. Each is found in footage/setup.json's
+ * rows by its words (name + description), so a reworded or reordered setup
+ * screen still pairs up; `row` is only the fallback (the old order: story
+ * helper, listening ears, seeing eyes, voice) and can be set by hand.
  */
-const PART_MOMENTS: { row: number; does: string; at: number; crop: Rect; color: string }[] = [
-  { row: 2, does: "guesses what was drawn", at: 1.4, crop: { x: 0, y: 110, w: 860, h: 1100 }, color: C.grape },
-  { row: 1, does: "hears your child talk", at: 1.0, crop: { x: 0, y: 110, w: 860, h: 1420 }, color: C.red },
-  { row: 0, does: "thinks up every reply and story", at: 0.7, crop: { x: 0, y: 110, w: 860, h: 1580 }, color: C.sky },
-  { row: 3, does: "says it out loud", at: 0.5, crop: { x: 34, y: 154, w: 792, h: 930 }, color: C.orange },
+const PART_MOMENTS: { match: RegExp; row: number; does: string; at: number; crop: Rect; color: string }[] = [
+  { match: /\b(see|seeing|eyes?|look|guess|drew|draw)/i, row: 2, does: "guesses what was drawn", at: 1.4, crop: { x: 0, y: 110, w: 860, h: 1100 }, color: C.grape },
+  { match: /\b(listen|listening|ears?|hear|understand|says)/i, row: 1, does: "hears your child talk", at: 1.0, crop: { x: 0, y: 110, w: 860, h: 1420 }, color: C.red },
+  { match: /\b(story|stories|helper|write|writes|think|answer|repl)/i, row: 0, does: "thinks up every reply and story", at: 0.7, crop: { x: 0, y: 110, w: 860, h: 1580 }, color: C.sky },
+  { match: /\b(voice|speak|aloud|out loud|read)/i, row: 3, does: "says it out loud", at: 0.5, crop: { x: 34, y: 154, w: 792, h: 930 }, color: C.orange },
 ];
+/** Row picture for each moment: first unused row whose words match, else the fallback index. */
+const PART_ROWS = (() => {
+  const used = new Set<number>();
+  return PART_MOMENTS.map((pm) => {
+    const found = SETUP.parts.findIndex((p, i) => !used.has(i) && pm.match.test(`${p.name} ${p.detail}`));
+    const row = found >= 0 ? found : pm.row;
+    used.add(row);
+    return row;
+  });
+})();
 const momentStart = (i: number) => [M.guess, M.hold, M.heard, M.heard][i] + PART_MOMENTS[i].at;
 
 /** Each part of the setup list, matched to what it does in the app. */
@@ -693,7 +703,7 @@ function Parts() {
     <AbsoluteFill>
       <SoftGradient hue="sky" />
       {PART_MOMENTS.map((pm, i) => {
-        const part = SETUP.parts[pm.row];
+        const part = SETUP.parts[PART_ROWS[i]];
         const local = frame - i * each;
         const pop = spring({ frame: local, fps: FPS, config: { damping: 14, stiffness: 200 } });
         const last = i === PART_MOMENTS.length - 1;

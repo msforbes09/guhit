@@ -10,10 +10,13 @@
 //   node capture/setup.ts --fresh    (deletes the profile first; the normal way)
 //   node capture/setup.ts            (keeps the profile: only "starting up" is filmed)
 //   node capture/setup.ts --assemble (only rebuilds the clip from the last run's screenshots)
+// Models come from the app's default source (Guhit's R2 copy, as users get them)
+// unless `--models=local` (the dev mirror served at /models) or `--models=hf`.
+// `--url=https://guhit.iam4bs.dev` films the live site instead of the local build.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { APP, FFPROBE, ffmpeg, FOOTAGE, launch, PROFILE, sleep, WORK } from "./lib.ts";
+import { APP, FFPROBE, ffmpeg, flag, FOOTAGE, launch, PROFILE, sleep, WORK } from "./lib.ts";
 
 const DEVICE = { width: 430, height: 932, scale: 3, mobile: false } as const;
 const TIMELAPSE_SECONDS = 7;
@@ -36,7 +39,10 @@ async function capture() {
   page.on("console", (m) => {
     if (m.type() === "error") console.log(`  console: ${m.text().slice(0, 200)}`);
   });
-  await page.goto(`${APP}/setup?models=local`);
+  // "r2" resets any remembered choice to the app's default source.
+  const models = flag("models") ?? "r2";
+  await page.goto(`${APP}/setup?models=${encodeURIComponent(models)}`);
+  console.log(`setup: filming ${APP}/setup, models from ${models}`);
   await page.locator("main ul").first().waitFor();
   // The app's launch splash covers the page for a few seconds on every load.
   await page.locator(".splash").waitFor({ state: "detached", timeout: 15_000 }).catch(() => {});
@@ -158,6 +164,8 @@ writeFileSync(
       clip: "setup-list.mp4",
       width: W,
       height: H,
+      app: APP,
+      models: flag("models") ?? "r2",
       realSeconds: +seconds.toFixed(1),
       ok: !failed,
       failed,
