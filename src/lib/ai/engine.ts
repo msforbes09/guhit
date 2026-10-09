@@ -139,21 +139,17 @@ export class RealAI implements LocalAI {
         import("./vision"),
       ]);
       // Downloads run side by side: the first visit is bound by network, not GPU.
-      await Promise.all([
+      const [, , , voices] = await Promise.all([
         this.loadLLM(new LLMClient(), choice),
         this.loadSTT(new STTClient(), choice),
         this.loadVision(new VisionClient(), choice),
+        // Never fails the load: without the neural voice, the built-in one speaks.
+        this.speaker.load(support, choice.modelHost, (loaded, total, text) =>
+          this.emit({ stage: "tts", loaded, total, text }),
+        ),
       ]);
-
-      const ttsStarted = performance.now();
-      this.voices = await this.speaker.init();
-      this.timings.ttsMs = performance.now() - ttsStarted;
-      this.emit({
-        stage: "tts",
-        loaded: 1,
-        total: 1,
-        text: this.voices.narrator ? `Voice ready (${this.voices.narrator})` : "No voice found on this device",
-      });
+      this.voices = voices;
+      this.timings.ttsMs = voices.loadMs;
 
       this.timings.totalMs = performance.now() - started;
       this.state = "ready";

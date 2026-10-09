@@ -14,6 +14,8 @@ import {
   type PrecacheResult,
 } from "@/lib/ai/offline";
 import type { LoadProgress } from "@/lib/ai/types";
+import { isKokoroCached } from "@/lib/ai/voice/kokoro";
+import { chooseTTSDevice, KOKORO, PRELOADED_VOICES, type TTSDevice } from "@/lib/ai/voice/voices";
 
 type Stage = LoadProgress["stage"];
 type Phase = "checking" | "unsupported" | "idle" | "loading" | "ready" | "error";
@@ -22,7 +24,7 @@ const STAGES: { stage: Stage; label: string; detail: string }[] = [
   { stage: "llm", label: "Story helper", detail: "talks and writes with your child" },
   { stage: "stt", label: "Listening ears", detail: "understands what your child says" },
   { stage: "vision", label: "Seeing eyes", detail: "guesses what your child drew" },
-  { stage: "tts", label: "Voice", detail: "reads everything aloud" },
+  { stage: "tts", label: "Voice", detail: "a warm storytelling voice that reads everything aloud" },
 ];
 
 const size = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
@@ -36,6 +38,7 @@ interface OfflineReport {
 export function SetupClient() {
   const [support, setSupport] = useState<DeviceSupport | null>(null);
   const [choice, setChoice] = useState<ModelChoice | null>(null);
+  const [ttsDevice, setTTSDevice] = useState<TTSDevice>("webgpu");
   const [cached, setCached] = useState<Record<Stage, boolean> | null>(null);
   const [phase, setPhase] = useState<Phase>("checking");
   const [progress, setProgress] = useState<Partial<Record<Stage, LoadProgress>>>({});
@@ -55,13 +58,16 @@ export function SetupClient() {
       }
       const picked = chooseModels(found, window.location.search);
       setChoice(picked);
-      const [llm, stt, vision] = await Promise.all([
+      const voiceDevice = chooseTTSDevice(found, window.location.search);
+      setTTSDevice(voiceDevice);
+      const [llm, stt, vision, tts] = await Promise.all([
         isLLMCached(picked.llm, picked.modelHost),
         isSTTCached(picked.stt, picked.sttDevice),
         isVisionCached(picked.vision),
+        isKokoroCached(voiceDevice),
       ]);
       if (!alive) return;
-      setCached({ llm, stt, vision, tts: true });
+      setCached({ llm, stt, vision, tts });
       setPhase(getAI().status() === "ready" ? "ready" : "idle");
     })();
     return () => {
@@ -73,8 +79,8 @@ export function SetupClient() {
     llm: choice ? (findLLM(choice.llm)?.downloadMB ?? 0) * 1e6 : 0,
     stt: choice ? (findSTT(choice.stt)?.downloadMB[choice.sttDevice] ?? 0) * 1e6 : 0,
     vision: choice ? (findVision(choice.vision)?.downloadMB ?? 0) * 1e6 : 0,
-    // The voices come with the operating system.
-    tts: 0,
+    // Kokoro for this device plus the voices /lab can switch between.
+    tts: choice ? (KOKORO.modelMB[ttsDevice] + KOKORO.voiceMB * PRELOADED_VOICES.length) * 1e6 : 0,
   };
   const totalBytes = STAGES.reduce((sum, { stage }) => sum + bytes[stage], 0);
   const toDownload = STAGES.reduce((sum, { stage }) => sum + (cached?.[stage] ? 0 : bytes[stage]), 0);

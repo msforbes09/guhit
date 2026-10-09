@@ -40,6 +40,13 @@ const onnxRepos = [
       "onnx/decoder_model_merged_q4.onnx",
     ],
   },
+  // Kokoro voice (src/lib/ai/voice/voices.ts): fp32 for WebGPU, 8-bit for
+  // phones, and only the voices the app offers (PRELOADED_VOICES).
+  {
+    repo: "onnx-community/Kokoro-82M-v1.0-ONNX",
+    onnx: ["onnx/model.onnx", "onnx/model_quantized.onnx"],
+    voices: ["af_heart", "af_bella", "af_nicole", "af_aoede", "af_kore", "af_sarah", "af_nova", "af_sky", "bf_emma"],
+  },
 ];
 
 const complete = (target, expectedSize) =>
@@ -89,8 +96,14 @@ for (const id of llmIds) {
   queue.push({ url: record.model_lib, target: join(root, "libs", record.model_lib.split("/").pop()) });
   queue.push(...(await filesOf(`mlc-ai/${id}`, wanted)));
 }
-for (const { repo, onnx } of onnxRepos) {
-  queue.push(...(await filesOf(repo, (name) => (name.startsWith("onnx/") ? onnx.includes(name) : wanted(name)))));
+for (const { repo, onnx, voices } of onnxRepos) {
+  const keep = (name) =>
+    name.startsWith("onnx/")
+      ? onnx.includes(name)
+      : name.startsWith("voices/") && voices
+        ? voices.includes(name.slice("voices/".length, -".bin".length))
+        : wanted(name);
+  queue.push(...(await filesOf(repo, keep)));
 }
 
 const total = queue.length;
