@@ -6,6 +6,7 @@ import { getAI } from "@/lib/ai";
 import type { ChatTurn } from "@/lib/ai";
 import { saveFriend, type Friend } from "@/lib/story/db";
 import type { AliveCharacterHandle, Motion } from "./alive";
+import { FriendBooks } from "./FriendBooks";
 import { FriendStage } from "./FriendStage";
 import { useAIReady, usePushToTalk } from "./hooks";
 import {
@@ -337,6 +338,8 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
               ))}
             </div>
           </div>
+
+          <FriendBooks friendId={friend.id} />
 
           {friend.chat.length > 0 && (
             <div className="lg:mt-auto">
