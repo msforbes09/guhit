@@ -10,6 +10,8 @@ export interface LoadProgress {
   total: number;
   /** Human-readable progress line for this stage. */
   text: string;
+  /** Set once this stage is loaded and started; a full bar alone does not mean ready. */
+  done?: boolean;
 }
 
 export interface ChatTurn {

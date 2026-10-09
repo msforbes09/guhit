@@ -1,10 +1,9 @@
 import {
-  CreateWebWorkerMLCEngine,
   prebuiltAppConfig,
+  WebWorkerMLCEngine,
   type AppConfig,
   type CompletionUsage,
   type InitProgressReport,
-  type WebWorkerMLCEngine,
 } from "@mlc-ai/web-llm";
 import type { LLMWorkerSetup } from "@/workers/llm.worker";
 import { LLM_DOWNLOAD_CHANNEL, type ModelSource } from "./model-fetch";
@@ -48,6 +47,8 @@ export interface TextGenerator {
 
 export class LLMClient implements TextGenerator {
   private engine: WebWorkerMLCEngine | null = null;
+  /** The worker's engine, kept from a failed load so a retry reuses it. */
+  private shell: WebWorkerMLCEngine | null = null;
   // WebLLM runs one request at a time; queue callers instead of failing them.
   private chain: Promise<unknown> = Promise.resolve();
   modelId = "";
@@ -60,10 +61,17 @@ export class LLMClient implements TextGenerator {
     /** Total bytes downloaded so far, as they arrive (WebLLM reports only whole files). */
     onBytes?: (downloaded: number) => void,
   ): Promise<void> {
-    const worker = new Worker(new URL("../../workers/llm.worker.ts", import.meta.url), { type: "module" });
     const { modelHost, source, maxDownloads } = origin;
-    // Must reach the worker before WebLLM's first message: it sets up how files are downloaded.
-    worker.postMessage({ type: "guhit-setup", source, maxDownloads } satisfies LLMWorkerSetup);
+    // A retry ("Continue download") reloads in the worker of the failed attempt:
+    // WebLLM's reload() first frees what that attempt left on the GPU, and
+    // stopping a WebLLM worker part-way crashes the whole page in WebKit (iPhone).
+    if (!this.shell) {
+      const worker = new Worker(new URL("../../workers/llm.worker.ts", import.meta.url), { type: "module" });
+      // Must reach the worker before WebLLM's first message: it sets up how files are downloaded.
+      worker.postMessage({ type: "guhit-setup", source, maxDownloads } satisfies LLMWorkerSetup);
+      this.shell = new WebWorkerMLCEngine(worker, { appConfig: appConfigFor(modelId, modelHost) });
+    }
+    this.shell.setInitProgressCallback(onProgress);
     const progress = new BroadcastChannel(LLM_DOWNLOAD_CHANNEL);
     let downloaded = 0;
     progress.onmessage = (event: MessageEvent<number>) => {
@@ -71,14 +79,8 @@ export class LLMClient implements TextGenerator {
       onBytes?.(downloaded);
     };
     try {
-      this.engine = await CreateWebWorkerMLCEngine(worker, modelId, {
-        initProgressCallback: onProgress,
-        appConfig: appConfigFor(modelId, modelHost),
-      });
-    } catch (error) {
-      // A retry starts a fresh worker; this one must not keep downloading beside it.
-      worker.terminate();
-      throw error;
+      await this.shell.reload(modelId);
+      this.engine = this.shell;
     } finally {
       progress.close();
     }

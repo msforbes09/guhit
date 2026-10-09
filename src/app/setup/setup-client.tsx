@@ -410,7 +410,8 @@ export function SetupClient() {
             {STAGES.map(({ stage, label, detail }) => {
               const p = progress[stage];
               const isCached = cached?.[stage];
-              const done = phase === "ready" || (p && p.total > 0 && p.loaded >= p.total);
+              // Ready only when the engine says so: a full bar can still be starting up.
+              const done = phase === "ready" || !!p?.done;
               const live = p && p.total > 0 ? Math.min(1, p.loaded / p.total) : 0;
               // What an interrupted setup already saved stays on the bar while loading catches up.
               const kept = !isCached && saved[stage] && bytes[stage] ? Math.min(0.99, saved[stage] / bytes[stage]) : 0;
@@ -421,7 +422,17 @@ export function SetupClient() {
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="font-semibold">{label}</span>
                     <span className="text-sm text-stone-500">
-                      {done ? "Ready" : !bytes[stage] ? "Built in" : isCached ? "On this device" : size(bytes[stage])}
+                      {done
+                        ? "Ready"
+                        : !bytes[stage]
+                          ? "Built in"
+                          : isCached
+                            ? phase === "loading"
+                              ? p
+                                ? "Downloaded, starting"
+                                : "Downloaded, starting next"
+                              : "Downloaded"
+                            : size(bytes[stage])}
                     </span>
                   </div>
                   <p className="text-sm text-stone-500">{p?.text ?? keptText ?? detail}</p>
