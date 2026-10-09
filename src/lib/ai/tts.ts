@@ -53,6 +53,41 @@ function rank(voices: SpeechSynthesisVoice[], preferred: string[], avoid?: Speec
   );
 }
 
+/**
+ * Loudness for the built-in voice, which gives no access to its audio: each
+ * spoken word bumps the level, which then fades out over ~150 ms. Voices that
+ * report no word boundaries get a gentle syllable-like wobble instead.
+ */
+export class WordMeter {
+  private speakingSince: number | null = null;
+  private lastWord = 0;
+  private peak = 0;
+
+  start() {
+    this.speakingSince = performance.now();
+    this.lastWord = 0;
+  }
+
+  word() {
+    this.lastWord = performance.now();
+    this.peak = 0.65 + Math.random() * 0.35;
+  }
+
+  stop() {
+    this.speakingSince = null;
+  }
+
+  level(): number {
+    if (this.speakingSince === null) return 0;
+    const now = performance.now();
+    if (this.lastWord) return Math.max(0, this.peak * (1 - (now - this.lastWord) / 150));
+    const t = (now - this.speakingSince) / 1000;
+    return t < 0.25 ? 0.5 : 0.15 + 0.6 * Math.abs(Math.sin(t * Math.PI * 4));
+  }
+}
+
+export type StartListener = (voice: VoiceRole) => void;
+
 /** One spoken message, fed sentence by sentence while the model is still writing it. */
 export class Playback {
   text = "";
@@ -71,6 +106,8 @@ export class Playback {
   constructor(
     readonly role: VoiceRole,
     private voice: SpeechSynthesisVoice | null,
+    private meter: WordMeter,
+    private startListeners: Set<StartListener>,
   ) {
     this.done = new Promise((resolve) => (this.release = resolve));
   }
@@ -88,11 +125,18 @@ export class Playback {
     utterance.rate = STYLE[this.role].rate;
     utterance.pitch = STYLE[this.role].pitch;
     utterance.onstart = () => {
+      if (this.cancelled) return;
+      this.meter.start();
       if (this.started) return;
       this.started = true;
       this.onStart?.();
+      for (const listener of this.startListeners) listener(this.role);
+    };
+    utterance.onboundary = (event) => {
+      if (!this.cancelled && event.name === "word") this.meter.word();
     };
     utterance.onend = utterance.onerror = () => {
+      this.meter.stop();
       this.pending--;
       this.check();
     };
@@ -124,6 +168,7 @@ export class Playback {
   private finish() {
     if (this.finished) return;
     this.finished = true;
+    this.meter.stop();
     if (this.watchdog) clearTimeout(this.watchdog);
     this.utterances = [];
     this.release();
@@ -136,6 +181,8 @@ export class Speaker {
   private voices: Record<VoiceRole, SpeechSynthesisVoice | null> = { narrator: null, character: null };
   private initPromise: Promise<VoiceInfo> | null = null;
   private active: Playback | null = null;
+  private meter = new WordMeter();
+  private startListeners = new Set<StartListener>();
 
   get supported() {
     return typeof window !== "undefined" && "speechSynthesis" in window;
@@ -171,7 +218,7 @@ export class Speaker {
   /** Starts a message that is spoken sentence by sentence as text arrives. */
   stream(role: VoiceRole): Playback {
     this.stop();
-    const playback = new Playback(role, this.voices[role]);
+    const playback = new Playback(role, this.voices[role], this.meter, this.startListeners);
     this.active = playback;
     return playback;
   }
@@ -194,5 +241,14 @@ export class Speaker {
     this.active?.cancel();
     this.active = null;
     window.speechSynthesis.cancel();
+  }
+
+  level(): number {
+    return this.meter.level();
+  }
+
+  onStart(listener: StartListener): () => void {
+    this.startListeners.add(listener);
+    return () => this.startListeners.delete(listener);
   }
 }

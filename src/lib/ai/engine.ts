@@ -430,4 +430,12 @@ export class RealAI implements LocalAI {
   stopSpeaking(): void {
     this.speaker.stop();
   }
+
+  speechLevel(): number {
+    return this.speaker.level();
+  }
+
+  onSpeechStart(cb: (voice: "narrator" | "character") => void): () => void {
+    return this.speaker.onStart(cb);
+  }
 }

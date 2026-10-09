@@ -68,4 +68,14 @@ export interface LocalAI {
   titleFor(story: Story): Promise<string>;
   speak(text: string, voice?: "narrator" | "character"): Promise<void>;
   stopSpeaking(): void;
+  /**
+   * How loud the voice is right now, 0..1 (smoothed); 0 when nothing is
+   * playing. Cheap: poll it every animation frame to move a mouth.
+   */
+  speechLevel(): number;
+  /**
+   * Calls `cb` when a spoken message actually starts playing (not when it is
+   * queued), with the voice that speaks it. Returns the unsubscribe function.
+   */
+  onSpeechStart(cb: (voice: "narrator" | "character") => void): () => void;
 }
