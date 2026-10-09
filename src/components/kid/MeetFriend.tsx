@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { getAI } from "@/lib/ai";
-import { saveFriend, type Friend } from "@/lib/story/db";
+import { deleteFriend, saveFriend, type Friend } from "@/lib/story/db";
 import { nameFrom, parseIntro, readYesNo, tidy } from "@/lib/story/intro";
+import { NotThisOne } from "./BringToLife";
 import { FriendStage } from "./FriendStage";
 import { useAIReady, usePushToTalk } from "./hooks";
 import { ArrowsClockwise, Check, Keyboard, PaperPlaneRight, X } from "./icons";
@@ -18,15 +19,16 @@ import { Button, SpeechBubble, ThinkingDots, TopBar } from "./ui";
  * name     → "What's my name?"
  * ask      → no guess: "Tell me who this is!" in one go
  * confirm  → check name and description, then save
+ * flagged  → the engine judged the drawing not right for a friend
  */
-type Step = "looking" | "guess" | "describe" | "name" | "ask" | "confirm";
+type Step = "looking" | "guess" | "describe" | "name" | "ask" | "confirm" | "flagged";
 
 /** Recognition must never hold the child up. */
 const LOOK_TIMEOUT_MS = 8000;
 /** Long enough that the "let me look" moment registers even when recognition is instant. */
 const LOOK_MIN_MS = 1200;
 
-const LINES: Record<Exclude<Step, "looking" | "guess" | "confirm">, string> = {
+const LINES: Record<Exclude<Step, "looking" | "guess" | "confirm" | "flagged">, string> = {
   describe: "Oops! So what am I?",
   name: "What's my name?",
   ask: "Hi! Who am I?",
@@ -63,7 +65,9 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
   }, [go]);
 
   useEffect(() => {
-    if (ready === "checking" || ready === "waking") return;
+    // Already looked at while it was being cut out: no second call, same moment on screen.
+    const known = friend.seenAs;
+    if (known === undefined && (ready === "checking" || ready === "waking")) return;
     let alive = true;
     const settle = (label: string) => {
       const wait = Math.max(0, LOOK_MIN_MS - (performance.now() - mountedAt.current));
@@ -76,7 +80,8 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
         } else go("ask");
       }, wait);
     };
-    if (ready !== "ready") settle("");
+    if (known !== undefined) settle(known);
+    else if (ready !== "ready") settle("");
     else {
       getAI()
         // The original photo cropped to the cut-out carries more detail than the cut-out.
@@ -84,7 +89,13 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
           friend.cutout ?? friend.drawing,
           friend.cutout && friend.photoCrop ? { image: friend.drawing, crop: friend.photoCrop } : undefined,
         )
-        .then((r) => settle(r.label?.trim() ?? ""))
+        .then((r: { label?: string; flagged?: unknown }) => {
+          if (r.flagged && alive) {
+            // Saved before the engine could look: it must not stay on the device.
+            deleteFriend(friend.id).catch(() => {});
+            go("flagged");
+          } else settle(r.label?.trim() ?? "");
+        })
         .catch(() => settle(""));
     }
     return () => {
@@ -93,7 +104,9 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
   }, [ready, friend, go]);
 
   const line =
-    step === "guess" ? `Am I ${guess}?` : step === "confirm" ? (name.trim() ? `I'm ${name.trim()}! Is that right?` : "Hi! Who am I?") : step === "looking" ? "" : LINES[step];
+    step === "flagged"
+      ? ""
+      : step === "guess" ? `Am I ${guess}?` : step === "confirm" ? (name.trim() ? `I'm ${name.trim()}! Is that right?` : "Hi! Who am I?") : step === "looking" ? "" : LINES[step];
 
   // The character says its question out loud when it can.
   useEffect(() => {
@@ -319,6 +332,23 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
           </Button>
         </div>
       </form>
+    );
+  }
+
+  if (step === "flagged") {
+    return (
+      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col">
+        <TopBar title="Let's try another" />
+        <div className="flex flex-1 flex-col px-4 pb-6 sm:px-6">
+          <NotThisOne
+            png={friend.cutout ?? friend.drawing}
+            actions={[
+              { label: "Draw a new one", icon: "draw", href: "/draw" },
+              { label: "Take another photo", icon: "photo", href: "/snap" },
+            ]}
+          />
+        </div>
+      </main>
     );
   }
 

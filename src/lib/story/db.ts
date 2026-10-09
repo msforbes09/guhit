@@ -6,6 +6,8 @@ export interface Friend extends Character {
   chat: ChatTurn[];
   /** Where the cut-out sits in `drawing`, so recognition can read the original pixels. */
   photoCrop?: PixelRect;
+  /** What the drawing reader thought it was when it was made ("" = no guess). */
+  seenAs?: string;
   createdAt: number;
   updatedAt: number;
 }
