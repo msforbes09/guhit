@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
+import { sfx, type SoundName } from "@/lib/sfx";
 import { ArrowLeft, House } from "./icons";
 
 export type Tone = "sun" | "sky" | "grass" | "grape" | "red" | "pink" | "paper";
@@ -37,14 +38,20 @@ type ButtonProps = ComponentProps<"button"> & {
   size?: Size;
   icon?: ReactNode;
   tilt?: number;
+  /** The 8-bit sound of pressing it; false when the action plays its own. */
+  sound?: SoundName | false;
 };
 
-export function Button({ tone = "sun", size = "md", icon, tilt, className, children, style, ...rest }: ButtonProps) {
+export function Button({ tone = "sun", size = "md", icon, tilt, sound = "tap", className, children, style, onClick, ...rest }: ButtonProps) {
   return (
     <button
       type="button"
       className={classes(tone, size, className)}
       style={{ ...style, ...(tilt ? ({ "--tilt": `${tilt}deg` } as CSSProperties) : null) }}
+      onClick={(e) => {
+        if (sound) sfx(sound);
+        onClick?.(e);
+      }}
       {...rest}
     >
       {icon}
@@ -60,11 +67,15 @@ type LinkButtonProps = ComponentProps<typeof Link> & {
   tilt?: number;
 };
 
-export function LinkButton({ tone = "sun", size = "md", icon, tilt, className, children, style, ...rest }: LinkButtonProps) {
+export function LinkButton({ tone = "sun", size = "md", icon, tilt, className, children, style, onClick, ...rest }: LinkButtonProps) {
   return (
     <Link
       className={classes(tone, size, className)}
       style={{ ...style, ...(tilt ? ({ "--tilt": `${tilt}deg` } as CSSProperties) : null) }}
+      onClick={(e) => {
+        sfx("tap");
+        onClick?.(e);
+      }}
       {...rest}
     >
       {icon}
@@ -90,6 +101,7 @@ export function TopBar({
     <header className="flex items-center gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 sm:px-6">
       <Link
         href={back}
+        onClick={() => sfx("tap")}
         className="crayon-edge press inline-flex min-h-14 min-w-14 items-center justify-center gap-2 rounded-cut bg-paper px-3 font-display text-lg font-bold text-ink"
       >
         <BackIcon size={26} weight="bold" aria-hidden="true" />

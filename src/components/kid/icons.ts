@@ -27,6 +27,7 @@ export { Play } from "@phosphor-icons/react/dist/ssr/Play";
 export { Scissors } from "@phosphor-icons/react/dist/ssr/Scissors";
 export { Sparkle } from "@phosphor-icons/react/dist/ssr/Sparkle";
 export { SpeakerHigh } from "@phosphor-icons/react/dist/ssr/SpeakerHigh";
+export { SpeakerSlash } from "@phosphor-icons/react/dist/ssr/SpeakerSlash";
 export { Stop } from "@phosphor-icons/react/dist/ssr/Stop";
 export { Trash } from "@phosphor-icons/react/dist/ssr/Trash";
 export { Users } from "@phosphor-icons/react/dist/ssr/Users";

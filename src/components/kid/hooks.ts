@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getAI, isMarkedReady, isTestMode, RealAI } from "@/lib/ai";
 import type { AIStatus } from "@/lib/ai";
+import { babbleLevel, onBabbleStart } from "@/lib/sfx/babble";
 
 /**
  * Models are on this device: /setup finished once, or the canned engine
@@ -204,8 +205,8 @@ export function usePushToTalk(onAudio: (audio: Blob) => void) {
   return { state, level, start, stop, cancel };
 }
 
-/** The engine's voice loudness, read by the character every animation frame. */
-export const speechLevel = () => getAI().speechLevel();
+/** The voice's loudness (the engine's, or the 8-bit babble's), read by the character every animation frame. */
+export const speechLevel = () => Math.max(getAI().speechLevel(), babbleLevel());
 
 /** How long the voice may stay silent before a speaker counts as finished. */
 const QUIET_MS = 1500;
@@ -223,13 +224,19 @@ export function useSpeakingVoice(): "narrator" | "character" | null {
       quietSince = 0;
       setVoice(v);
     });
+    // The babble is always the character talking.
+    const offBabble = onBabbleStart(() => {
+      quietSince = 0;
+      setVoice("character");
+    });
     const check = setInterval(() => {
-      if (ai.speechLevel() > 0.01) quietSince = 0;
+      if (speechLevel() > 0.01) quietSince = 0;
       else if (!quietSince) quietSince = performance.now();
       else if (performance.now() - quietSince > QUIET_MS) setVoice(null);
     }, 150);
     return () => {
       off();
+      offBabble();
       clearInterval(check);
     };
   }, []);

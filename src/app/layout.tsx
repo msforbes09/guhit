@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Andika, Grandstander } from "next/font/google";
 import { EarlyWake } from "@/components/kid/EarlyWake";
+import { SoundUnlock } from "@/components/kid/SoundToggle";
 import { TestModePill } from "@/components/kid/TestModePill";
 import { Splash } from "@/components/kid/Splash";
 import pkg from "../../package.json";
@@ -87,6 +88,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {children}
         <Splash version={pkg.version} />
         <EarlyWake />
+        <SoundUnlock />
         <TestModePill />
         <ServiceWorkerRegister />
       </body>
