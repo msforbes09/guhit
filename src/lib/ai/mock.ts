@@ -1,0 +1,93 @@
+import type { Character, Story } from "@/lib/story/types";
+import type { AIStatus, LoadProgress, LocalAI } from "./types";
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const pick = <T,>(items: T[], index: number): T => items[index % items.length];
+
+const FOLLOW_UPS = [
+  (name: string) => `What does ${name} like to eat for breakfast?`,
+  (name: string) => `Who is ${name}'s best friend?`,
+  (name: string) => `What makes ${name} laugh the most?`,
+  (name: string) => `Where does ${name} go on a sunny day?`,
+  (name: string) => `What is ${name} a little bit afraid of?`,
+];
+
+/**
+ * Canned, kid-friendly stand-in for the on-device engine so screens can be
+ * built and demoed before (or without) the real models.
+ */
+export class MockAI implements LocalAI {
+  private state: AIStatus = "idle";
+  private speakTimer: ReturnType<typeof setTimeout> | null = null;
+  private speakResolve: (() => void) | null = null;
+
+  status(): AIStatus {
+    return this.state;
+  }
+
+  async load(onProgress: (p: LoadProgress) => void): Promise<void> {
+    if (this.state === "ready") return;
+    this.state = "loading";
+    const stages: LoadProgress["stage"][] = ["llm", "stt", "tts"];
+    for (const stage of stages) {
+      for (let step = 0; step <= 4; step++) {
+        onProgress({
+          stage,
+          loaded: step,
+          total: 4,
+          text: step === 4 ? `${stage} ready` : `Loading ${stage}…`,
+        });
+        await wait(80);
+      }
+    }
+    this.state = "ready";
+  }
+
+  async transcribe(audio: Blob): Promise<string> {
+    await wait(400);
+    return audio.size > 0 ? "He lives in a big tree house by the river." : "";
+  }
+
+  async firstQuestion(character: Character): Promise<string> {
+    await wait(500);
+    return `Hello! Where does ${character.name} live?`;
+  }
+
+  async nextQuestion(story: Story): Promise<string> {
+    await wait(500);
+    return pick(FOLLOW_UPS, story.pages.length)(story.character.name);
+  }
+
+  async writePage(story: Story, _question: string, answer: string): Promise<string> {
+    await wait(700);
+    const name = story.character.name;
+    const idea = answer.trim().replace(/[.!?]+$/, "") || "something wonderful happened";
+    return `${name} smiled. ${idea.charAt(0).toUpperCase()}${idea.slice(1)}. Can you draw what happens next?`;
+  }
+
+  async titleFor(story: Story): Promise<string> {
+    await wait(300);
+    return `The Adventures of ${story.character.name}`;
+  }
+
+  speak(text: string): Promise<void> {
+    this.stopSpeaking();
+    return new Promise((resolve) => {
+      this.speakResolve = resolve;
+      // Roughly the time it takes to read the text aloud at a gentle pace.
+      this.speakTimer = setTimeout(() => {
+        this.speakTimer = null;
+        this.speakResolve = null;
+        resolve();
+      }, Math.min(4000, 60 * text.length));
+    });
+  }
+
+  stopSpeaking(): void {
+    if (this.speakTimer) clearTimeout(this.speakTimer);
+    this.speakTimer = null;
+    this.speakResolve?.();
+    this.speakResolve = null;
+  }
+}
