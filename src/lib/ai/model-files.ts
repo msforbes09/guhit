@@ -98,7 +98,10 @@ export async function listModelFiles(
 
   const cpu = findLLM(choice.llm)?.cpu;
   if (cpu) {
-    files.push(...transformersFiles("llm", choice.llm, { model: cpu.dtype }, host));
+    const [graph] = transformersFiles("llm", choice.llm, { [cpu.file]: cpu.dtype }, host);
+    files.push(graph);
+    // Its weights, split into files as Transformers.js names them.
+    for (let i = 0; i < cpu.dataFiles; i++) files.push({ ...graph, key: `${graph.key}_data${i ? `_${i}` : ""}` });
   } else {
     const [{ prebuiltAppConfig }, { appConfigFor }] = await Promise.all([import("@mlc-ai/web-llm"), import("./llm")]);
     const config = appConfigFor(choice.llm, choice.modelHost) ?? prebuiltAppConfig;

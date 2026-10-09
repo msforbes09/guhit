@@ -10,8 +10,12 @@ export interface LLMModel {
   downloadMB: number;
   /** Qwen3-family chat templates accept the no-think switch. */
   thinking: boolean;
-  /** Runs on the CPU through Transformers.js (devices without WebGPU) instead of WebLLM. */
-  cpu?: { dtype: string };
+  /**
+   * Runs on the CPU through Transformers.js (devices without WebGPU) instead of
+   * WebLLM: the ONNX file `onnx/<file>_<dtype>.onnx`, its weights in `dataFiles`
+   * separate files (Transformers.js "use_external_data_format").
+   */
+  cpu?: { dtype: string; file: string; dataFiles: number };
 }
 
 export const LLM_MODELS: LLMModel[] = [
@@ -21,13 +25,15 @@ export const LLM_MODELS: LLMModel[] = [
   { id: "Qwen3-0.6B-q4f16_1-MLC", label: "Qwen3 0.6B (phone)", downloadMB: 352, thinking: true },
   { id: "Qwen3-0.6B-q4f32_1-MLC", label: "Qwen3 0.6B f32 (phone, no f16 GPU)", downloadMB: 352, thinking: true },
   { id: "Qwen3.5-0.8B-q4f16_1-MLC", label: "Qwen3.5 0.8B (phone, alt)", downloadMB: 447, thinking: true },
-  // The same Qwen3-0.6B as phones, as ONNX for the CPU: 8-bit is ONNX Runtime's fastest there.
+  // The same Qwen3-0.6B as phones, as ONNX for the CPU: 8-bit is ONNX Runtime's
+  // fastest there. Its 618 MB of weights are split into files under 300 MB
+  // (R2's upload limit) by scripts/split-onnx.py, served from Guhit's R2 only.
   {
     id: "onnx-community/Qwen3-0.6B-ONNX",
     label: "Qwen3 0.6B (CPU, no WebGPU)",
     downloadMB: 620,
     thinking: true,
-    cpu: { dtype: "q8" },
+    cpu: { dtype: "q8", file: "model_chunked", dataFiles: 3 },
   },
 ];
 

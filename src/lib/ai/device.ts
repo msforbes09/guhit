@@ -153,9 +153,9 @@ export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
 
   // Florence-2 large named every test drawing right (base called Tala "a purple
   // cat"); phones keep base for memory and download size.
-  // Without a GPU, base too: large is three times the work on the CPU.
-  let vision =
-    support.mobile || !support.webgpu ? "onnx-community/Florence-2-base-ft" : "onnx-community/Florence-2-large-ft";
+  // Base everywhere: large's vision encoder is a single 316 MB file, over R2's
+  // 300 MB upload limit (and three times the work); /lab can still try it.
+  let vision = "onnx-community/Florence-2-base-ft";
   const visionOverride = params.get("vision");
   if (visionOverride && VISION_MODELS.some((m) => m.id === visionOverride)) vision = visionOverride;
   const visionDevice: STTDevice = support.webgpu && params.get("visionDevice") !== "wasm" ? "webgpu" : "wasm";

@@ -8,17 +8,17 @@ const DTYPES: KokoroDtype[] = ["fp32", "fp16", "q8", "q4f16"];
 
 /**
  * Kokoro-82M v1.0 (Apache-2.0, weights and voices) as converted to ONNX by
- * onnx-community. WebGPU runs the full-precision file: Kokoro's fp16 and
- * 4-bit builds sound noticeably worse there, and the 8-bit one is slow on
- * GPUs. The CPU fallback (phones) runs the 8-bit file, the fastest on wasm;
- * the repo's "q4" build is larger than 8-bit, so it is no help on phones.
+ * onnx-community. Every device runs the 8-bit file on the CPU (wasm), the
+ * fastest there (see chooseTTSDevice); "webgpu" is only for /lab's
+ * "?ttsDevice=webgpu", with the 8-bit file too. The repo's "q4" build is larger
+ * than 8-bit, so it is no help.
  */
 export const KOKORO = {
   id: "onnx-community/Kokoro-82M-v1.0-ONNX",
   sampleRate: 24000,
-  dtype: { webgpu: "fp32", wasm: "q8" } as Record<TTSDevice, KokoroDtype>,
+  dtype: { webgpu: "q8", wasm: "q8" } as Record<TTSDevice, KokoroDtype>,
   /** Model file plus tokenizer and config, from the Hugging Face repo listing. */
-  modelMB: { webgpu: 325.5, wasm: 92.4 } as Record<TTSDevice, number>,
+  modelMB: { webgpu: 92.4, wasm: 92.4 } as Record<TTSDevice, number>,
   /** Each voice is a 510×256 float32 style table. */
   voiceMB: 0.52,
 } as const;
@@ -161,8 +161,14 @@ export function chooseTTSDtype(device: TTSDevice, search = ""): KokoroDtype {
   return override && DTYPES.includes(override) ? override : KOKORO.dtype[device];
 }
 
-export function chooseTTSDevice(support: { webgpu: boolean; mobile: boolean }, search = ""): TTSDevice {
+/**
+ * Every device runs the 8-bit voice on the CPU: the full-precision WebGPU file
+ * is over R2's 300 MB upload limit, the 16-bit one produced invalid audio on
+ * WebGPU, and 8-bit on the GPU is slower than speech. "?ttsDevice=" still lets
+ * /lab try the GPU.
+ */
+export function chooseTTSDevice(_support: { webgpu: boolean; mobile: boolean }, search = ""): TTSDevice {
   const override = new URLSearchParams(search).get("ttsDevice");
   if (override === "wasm" || override === "webgpu") return override;
-  return support.webgpu && !support.mobile ? "webgpu" : "wasm";
+  return "wasm";
 }

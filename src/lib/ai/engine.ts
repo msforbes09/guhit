@@ -449,7 +449,7 @@ export class RealAI implements LocalAI {
     this.emit({ stage: "llm", loaded: 0, total: expected, text: "Getting the story helper ready…" });
     const { CpuLLMClient } = await import("./llm-cpu");
     const llm = new CpuLLMClient();
-    const { warmupMs } = await llm.load(choice.llm, model.cpu.dtype, choice.modelHost, choice.source, (loaded, total) => {
+    const { warmupMs } = await llm.load(choice.llm, model.cpu, choice.modelHost, choice.source, (loaded, total) => {
       const size = Math.max(total, expected);
       this.emit({
         stage: "llm",

@@ -11,7 +11,16 @@ import { configureTransformers, type FileProgress } from "./ort-env";
 /** The story helper on the CPU, for devices where WebGPU is missing or refused. */
 
 export type CpuLLMRequest =
-  | { type: "load"; model: string; dtype: string; modelHost: string | null; source: ModelSource }
+  | {
+      type: "load";
+      model: string;
+      dtype: string;
+      /** onnx/<file>_<dtype>.onnx, its weights in `dataFiles` separate files. */
+      file: string;
+      dataFiles: number;
+      modelHost: string | null;
+      source: ModelSource;
+    }
   | {
       type: "generate";
       id: number;
@@ -114,6 +123,8 @@ self.onmessage = (event: MessageEvent<CpuLLMRequest>) => {
           AutoModelForCausalLM.from_pretrained(request.model, {
             device: "wasm",
             dtype: request.dtype as never,
+            model_file_name: request.file,
+            use_external_data_format: request.dataFiles,
             progress_callback,
           }),
         ]);

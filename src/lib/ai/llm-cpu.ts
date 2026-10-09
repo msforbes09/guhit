@@ -23,7 +23,7 @@ export class CpuLLMClient implements TextGenerator {
 
   async load(
     modelId: string,
-    dtype: string,
+    build: { dtype: string; file: string; dataFiles: number },
     modelHost: string | null,
     source: ModelSource,
     onProgress: (loaded: number, total: number) => void,
@@ -38,7 +38,8 @@ export class CpuLLMClient implements TextGenerator {
         worker.post({ type: "stop" } satisfies CpuLLMRequest);
       }
     };
-    const result = await worker.load({ type: "load", model: modelId, dtype, modelHost, source } satisfies CpuLLMRequest, onProgress);
+    const request = { type: "load", model: modelId, ...build, modelHost, source } satisfies CpuLLMRequest;
+    const result = await worker.load(request, onProgress);
     this.worker = worker;
     this.modelId = modelId;
     return result;
