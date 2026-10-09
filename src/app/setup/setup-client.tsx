@@ -29,7 +29,8 @@ import {
   type Part,
 } from "@/lib/ai/parts";
 import { allowGuessesAgain } from "@/lib/ai/guess-guard";
-import { isSetupInProgress, markSetupInProgress, shouldAutoContinue } from "@/lib/ai/setup-resume";
+import { crashedParts, tryPartsAgain } from "@/lib/ai/part-guard";
+import { isSetupInProgress, markSetupInProgress, shouldAutoContinue, shouldStartOnOpen } from "@/lib/ai/setup-resume";
 import {
   isLLMCached,
   isSTTCached,
@@ -229,6 +230,8 @@ export function SetupClient() {
   const [installed, setInstalled] = useState<Part[]>([]);
   /** What suits this device's memory: shown as a hint, never ticked for the parent. */
   const [recommended, setRecommended] = useState<Part[]>([]);
+  /** Parts that stopped the page while starting (part-guard.ts): left out until ticked again. */
+  const [crashed, setCrashed] = useState<Part[]>([]);
 
   // A parent who follows the install tip gets the storage protection asked for again.
   useEffect(() => {
@@ -291,6 +294,8 @@ export function SetupClient() {
 
   /** The parent's ticks become the plan, then setup runs it. */
   function applyChoice() {
+    tryPartsAgain(selected);
+    setCrashed(crashedParts());
     setChosenParts(selected.filter(offered));
     // A guess that once killed the tab (iPhone) turned guessing off; the parent's tap turns it back on.
     allowGuessesAgain();
@@ -305,6 +310,9 @@ export function SetupClient() {
         setPhase("test");
         return;
       }
+      // First: a part that stopped the page last time is taken out of the choice
+      // before setup (or its carrying on by itself) reads it.
+      setCrashed(crashedParts());
       const found = await detectSupport();
       if (!alive) return;
       setSupport(found);
@@ -335,10 +343,12 @@ export function SetupClient() {
       if (status === "ready" && !isSetupInProgress()) {
         setAlreadyLoaded(true);
         setPhase("ready");
-      } else if (status === "loading" || isSetupInProgress() || allOnDevice) {
+      } else if (
+        shouldStartOnOpen({ engine: status, inProgress: isSetupInProgress(), allOnDevice, online: navigator.onLine })
+      ) {
         // Nothing downloads before the parent's tap: this only joins the same
-        // wake-up EarlyWake does, or carries on a download the parent started
-        // and the device interrupted (app closed, phone slept).
+        // wake-up EarlyWake does, or carries on (online) a download the parent
+        // started and the device interrupted (app closed, phone slept).
         void getReady();
       } else {
         setPhase("idle");
@@ -521,7 +531,13 @@ export function SetupClient() {
                           Not on this device: it is too slow here, so the friend talks in playful sounds.
                         </span>
                       )}
-                      {!required && offered(part) && recommended.includes(part) && !installed.includes(part) && (
+                      {crashed.includes(part) && !ticked && (
+                        <span className="text-sm font-semibold text-amber-800">
+                          {info.label} didn&rsquo;t fit on this {support?.mobile ? "phone" : "device"}: the page closed while
+                          it was getting ready, so it was left out. Everything else works without it. Tick it to try again.
+                        </span>
+                      )}
+                      {!required && offered(part) && recommended.includes(part) && !installed.includes(part) && !crashed.includes(part) && (
                         <span className="text-xs font-semibold text-green-800">Recommended for this device</span>
                       )}
                       {leaving && (

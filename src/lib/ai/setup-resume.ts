@@ -35,6 +35,27 @@ export interface ResumeState {
   autoTries: number;
 }
 
+export interface OpenState {
+  /** getAI().status() when /setup opens. */
+  engine: string;
+  inProgress: boolean;
+  /** Every chosen part is already on the device: opening only wakes them. */
+  allOnDevice: boolean;
+  online: boolean;
+}
+
+/**
+ * Whether /setup starts on its own when it opens. Waking parts that are on
+ * the device is fine offline; carrying on an unfinished setup is not: with no
+ * network it could only start parts whose start never finished, and a part
+ * that crashed the page (iPhone) would crash it again on every open.
+ */
+export function shouldStartOnOpen(s: OpenState): boolean {
+  if (s.allOnDevice) return true;
+  if (s.inProgress) return s.online;
+  return s.engine === "loading";
+}
+
 export function shouldAutoContinue(s: ResumeState): boolean {
   if (!s.inProgress || !s.visible || !s.online || s.autoTries >= AUTO_TRIES) return false;
   return s.phase === "idle" || (s.phase === "error" && s.errorKind === "network");

@@ -25,6 +25,11 @@ Everything goes through `getAI()` from `@/lib/ai` (the `LocalAI` interface in
   page carries on by itself when it is back on screen or online. Where
   Background Fetch exists (Chrome), the browser downloads the missing files
   itself and the service worker stores them under each library's cache key.
+  Offline, `/setup` never carries on an unfinished setup by itself.
+- A part that makes the browser close the page while it starts (an iPhone
+  out of memory: "A problem repeatedly occurred") is left out of the choice
+  from then on (`src/lib/ai/part-guard.ts`), so no page starts it again;
+  `/setup` says it did not fit, and ticking it again tries again.
 
 ## The talk loop (character chat)
 

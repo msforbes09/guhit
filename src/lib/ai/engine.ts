@@ -34,6 +34,7 @@ import {
 } from "./sanitize";
 import { screen, topicChange } from "./safety";
 import { guessAllowed, guessFinished, guessStarted } from "./guess-guard";
+import { crashedParts, partSettled, partStarting } from "./part-guard";
 import { sharedAttempt } from "./shared-attempt";
 import type { STTClient } from "./stt";
 import type { VisionClient } from "./vision";
@@ -239,7 +240,9 @@ export class RealAI implements LocalAI {
   async load(onProgress: (p: LoadProgress) => void, parts: Part[] = installedParts()): Promise<void> {
     this.listeners.add(onProgress);
     try {
-      await this.loadParts(parts);
+      // A part that once stopped the page while starting is never started again by itself (part-guard.ts).
+      const crashed = crashedParts();
+      await this.loadParts(parts.filter((part) => !crashed.includes(part)));
     } finally {
       this.listeners.delete(onProgress);
     }
@@ -297,6 +300,7 @@ export class RealAI implements LocalAI {
   private async runPart(part: Part) {
     this.partState[part] = "loading";
     this.updateState();
+    partStarting(part);
     try {
       await this.withStallWatch(part, this.partRuns[part]());
       this.partState[part] = "ready";
@@ -305,6 +309,7 @@ export class RealAI implements LocalAI {
       this.partState[part] = "error";
       throw error;
     } finally {
+      partSettled(part);
       this.updateState();
     }
   }
