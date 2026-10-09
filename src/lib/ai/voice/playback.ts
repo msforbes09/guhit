@@ -1,3 +1,4 @@
+import { splitSentences } from "../sanitize";
 import type { AudioOut } from "./audio-out";
 import type { KokoroClient, Synthesis } from "./kokoro";
 import { KOKORO, type TTSDevice, type VoiceRole, type VoiceStyle } from "./voices";
@@ -138,15 +139,18 @@ export class NeuralPlayback implements SpeechPlayback {
     this.done = new Promise((resolve) => (this.release = resolve));
   }
 
-  add(sentence: string) {
-    if (this.cancelled || !this.open || !sentence.trim()) return;
-    this.text = this.text ? `${this.text} ${sentence}` : sentence;
-    const opening = this.count === 0 ? splitOpening(sentence) : null;
-    if (opening) {
-      this.enqueue(opening[0], CLAUSE_GAP_S);
-      this.enqueue(opening[1], SENTENCE_GAP_S);
-    } else {
-      this.enqueue(sentence, SENTENCE_GAP_S);
+  add(text: string) {
+    if (this.cancelled || !this.open || !text.trim()) return;
+    this.text = this.text ? `${this.text} ${text}` : text;
+    // Callers may hand over several sentences at once; each is voiced on its own.
+    for (const sentence of splitSentences(text)) {
+      const opening = this.count === 0 ? splitOpening(sentence) : null;
+      if (opening) {
+        this.enqueue(opening[0], CLAUSE_GAP_S);
+        this.enqueue(opening[1], SENTENCE_GAP_S);
+      } else {
+        this.enqueue(sentence, SENTENCE_GAP_S);
+      }
     }
   }
 
