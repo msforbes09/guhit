@@ -22,10 +22,10 @@ which downloads the models once. After that Guhit works offline.
 
 | Device | What to expect |
 | --- | --- |
-| Laptop, Chrome or Edge with WebGPU | The full experience. The larger story helper (Qwen3-1.7B) runs on the GPU; seeing and listening run on the GPU too. About 1.5 GB to download; Chrome keeps downloading in the background if the tab is closed. |
+| Laptop, Chrome or Edge with WebGPU | The full experience. The larger story helper (Qwen3-1.7B) runs on the GPU; seeing, listening and the voice (Kokoro at full precision) run on the GPU too. About 1.5 GB to download; Chrome keeps downloading in the background if the tab is closed. |
 | Laptop without WebGPU | Works on the CPU instead: a smaller story helper (Qwen3-0.6B), about 1 GB to download. Slower replies. |
-| Android, Chrome | The phone-sized story helper (Qwen3-0.6B) on the GPU when WebGPU is available, else on the CPU. Parts are set up one at a time; Chrome keeps downloading in the background. On phones with less memory, setup suggests leaving out Talking. |
-| iPhone / iPad, Safari | Same models as Android. Downloads happen in the page, so keep it open during setup. Memory is tight, so heavy parts load one at a time and the story helper steps aside while the drawing is being guessed. |
+| Android, Chrome | Florence-2 for seeing; the phone-sized story helper (Qwen3-0.6B) on the GPU when WebGPU is available, else on the CPU. Parts are set up one at a time; Chrome keeps downloading in the background. On phones with less memory, setup suggests leaving out Talking. |
+| iPhone / iPad, Safari | Seeing eyes only by default (about 46 MB): the **light eyes** (MobileCLIP S0 on the CPU) instead of Florence-2, which iOS stopped for memory. The storytelling voice is not offered (too slow there; the device's own voice reads instead). Talking is optional. Downloads happen in the page, so keep it open during setup; the story helper steps aside while the drawing is being guessed. |
 
 Snapping, cutting out and animating the drawing need no model at all and work
 on every device.
@@ -50,23 +50,29 @@ What runs on the device, named as parents see it in setup:
 
 | Part | Model | Runtime |
 | --- | --- | --- |
-| Seeing eyes (guesses the drawing) | Florence-2 base | Transformers.js / ONNX Runtime Web, WebGPU, CPU (wasm) fallback |
+| Seeing eyes (guesses the drawing), Android and laptops | Florence-2 base | Transformers.js / ONNX Runtime Web, WebGPU, CPU (wasm) fallback |
+| Light eyes (guesses the drawing), iPhone and iPad | MobileCLIP S0, image half only (`Xenova/mobileclip_s0`, full precision, 46 MB), matched against built-in text embeddings for 69 kid-drawing subjects | Transformers.js / ONNX Runtime Web on the CPU (wasm) |
 | AI cut-out | IS-Net (8-bit) | Transformers.js / ONNX Runtime Web, WebGPU, CPU fallback |
 | Listening ears (speech to text) | Whisper base.en | Transformers.js / ONNX Runtime Web, WebGPU, CPU fallback |
 | Story helper (replies, questions, story pages) | Qwen3-1.7B (laptops) / Qwen3-0.6B (phones) | WebLLM on WebGPU; Qwen3-0.6B 8-bit ONNX on the CPU when there is no usable GPU |
-| Voice (narrator and character) | Kokoro-82M (8-bit) | Transformers.js / ONNX Runtime Web on the CPU, every device |
+| Voice (narrator and character) | Kokoro-82M (full precision on WebGPU; 8-bit on the CPU) | Transformers.js / ONNX Runtime Web: WebGPU on laptops, CPU (wasm) elsewhere; not offered on iPhone and iPad |
 
 Every model runs in its own Web Worker. Under the hood:
 
-- **Model hosting.** Models are mirrored on the team's own Cloudflare R2
-  bucket (`models.iam4bs.dev`), with Hugging Face as the per-file fallback.
+- **Model hosting.** Model files are served from Guhit's own model server
+  (`models.iam4bs.dev`, Cloudflare R2), with Hugging Face as the per-file
+  backup.
   Every file is kept under 300 MB (the larger CPU language model is split into
   smaller weight files). Downloads retry and resume part-way.
 - **Cross-origin isolation.** The site is served with COOP/COEP headers
   (`public/_headers`), so ONNX Runtime can use several CPU threads; the CPU
   voice and story helper run about 2.5× faster.
 - **Offline.** A service worker caches the app, and each library keeps its
-  model files in Cache Storage, so after setup Guhit works with Wi-Fi off.
+  model files in Cache Storage, so after setup snap, cut-out and the guess all
+  work in airplane mode.
+- **Troubleshooting.** "Start log (for a grown-up helping)" in Get ready
+  (`/setup`) and "Why no guess?" on the meet screen show what the app did on
+  its last starts and why a drawing was not guessed.
 
 ## Privacy
 
@@ -123,12 +129,16 @@ public/           Service worker, manifest, icons, Cloudflare Pages headers
 
 - **Talking needs the story helper.** Spoken and typed chat and the storybook
   only work once the Talking part (listening ears and story helper) is set up.
-- **The voice needs a fast enough CPU.** Kokoro runs on the CPU everywhere.
+- **The voice needs a fast enough device.** Kokoro runs on the GPU on laptops
+  with WebGPU and on the CPU elsewhere, and is not offered on iPhone and iPad.
   Where it measures slower than speech (most phones, older laptops), the
   character talks in playful 8-bit babble and story pages are read by the
   device's simpler built-in voice.
-- **iPhones have tight memory.** Heavy parts load one at a time, and the first
-  reply after a guess takes longer while the story helper reloads.
+- **iPhones have tight memory.** They guess with the light eyes, which name
+  one of 69 kid-drawing subjects rather than describing the drawing freely
+  (when none stands out, the child is asked). Heavy parts load one at a time,
+  and the first reply after a guess takes longer while the story helper
+  reloads.
 - **First setup is big.** Up to about 2 GB on laptops (about 1.5 GB with the
   default models), less on phones. Once done it never downloads again.
 - **English only** for speech recognition and the voice.
@@ -139,13 +149,15 @@ Guhit is released under the GNU General Public License v3.0, see
 [LICENSE](LICENSE).
 
 It stands on open models and libraries: Qwen3 (Alibaba Qwen), Florence-2
-(Microsoft), Whisper (OpenAI), Kokoro-82M (hexgrad), IS-Net, WebLLM / MLC,
+(Microsoft), MobileCLIP (Apple), Whisper (OpenAI), Kokoro-82M (hexgrad),
+IS-Net, WebLLM / MLC,
 Transformers.js and ONNX Runtime. Every model and library, its licence and
 where it comes from is listed in [docs/disclosures.md](docs/disclosures.md).
 
 ## How it was built
 
 Guhit's code was written with Claude Code, an AI coding tool, under the team's
-direction and review, and the promo video used ElevenLabs for the narration
-and Higgsfield for three background images. Details are in
+direction and review. The promo video's narration is by ElevenLabs, it was
+edited in Remotion, and its footage is the real app plus the owner's own
+iPhone screen recording. Details are in
 [Tools used to build Guhit](docs/disclosures.md#tools-used-to-build-guhit).
