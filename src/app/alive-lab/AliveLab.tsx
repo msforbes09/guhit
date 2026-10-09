@@ -5,6 +5,7 @@ import { AliveStage } from "@/components/alive/AliveStage";
 import type { AliveCharacterHandle, AliveStats } from "@/components/alive/AliveCharacter";
 import { cutout, cutoutFromCanvas, maskToCanvas } from "@/lib/alive/cutout";
 import { ALIVE_MOTIONS, type AliveMotion, type CutoutWithDebug } from "@/lib/alive/types";
+import { filmstrip } from "./filmstrip";
 import { SAMPLES } from "./samples";
 
 type TalkMode = "off" | "auto" | "slider";
@@ -20,6 +21,7 @@ export function AliveLab() {
   const [stats, setStats] = useState<AliveStats | null>(null);
   const [taps, setTaps] = useState(0);
   const [drawing, setDrawing] = useState(false);
+  const [strip, setStrip] = useState<{ url: string; label: string } | null>(null);
   const charRef = useRef<AliveCharacterHandle>(null);
   const lastBlob = useRef<Blob | null>(null);
 
@@ -61,7 +63,8 @@ export function AliveLab() {
   const meta = result?.meta;
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 text-zinc-900">
+    <main className="flex min-h-screen w-full flex-col bg-white text-zinc-900">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-2xl font-bold">Alive lab</h1>
         <p className="text-sm text-zinc-500">Cut-out + animation engine test bench. Everything runs on this device.</p>
@@ -193,6 +196,26 @@ export function AliveLab() {
               </button>
             ))}
             <button
+              onClick={async () => {
+                const rows = [
+                  ...ALIVE_MOTIONS.map((m) => ({ motion: m })),
+                  { motion: "idle" as const, talking: true },
+                  { motion: "idle" as const, pokeAt: 0.2 },
+                ];
+                const f = await filmstrip(result, rows);
+                setStrip((old) => {
+                  if (old) URL.revokeObjectURL(old.url);
+                  return {
+                    url: f.url,
+                    label: `10 frames per row over 2.4 s at a fixed 60 Hz · ${f.msPerFrame.toFixed(3)} ms per frame (update + draw + GPU finish, ${f.renderer})`,
+                  };
+                });
+              }}
+              className="rounded-full border border-violet-300 px-4 py-2 text-sm font-semibold text-violet-900 hover:bg-violet-50"
+            >
+              Filmstrip (all motions)
+            </button>
+            <button
               onClick={() => charRef.current?.poke()}
               className="rounded-full bg-pink-100 px-4 py-2 text-sm font-semibold text-pink-900 hover:bg-pink-200"
             >
@@ -221,8 +244,16 @@ export function AliveLab() {
               {stats ? `${stats.fps} fps · ${stats.renderer} · ${stats.triangles} triangles` : "…"} · taps {taps}
             </span>
           </div>
+          {strip && (
+            <figure className="flex flex-col gap-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={strip.url} alt="filmstrip" className="w-full rounded-lg border border-zinc-200" />
+              <figcaption className="font-mono text-xs text-zinc-500">{strip.label}</figcaption>
+            </figure>
+          )}
         </section>
       )}
+      </div>
     </main>
   );
 }

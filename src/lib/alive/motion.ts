@@ -100,13 +100,14 @@ export class MotionController {
   private fidgetStart = -10;
   private level = 0;
 
-  setMotion(m: AliveMotion, now: number) {
+  /** @param instant skip the cross-fade from the previous motion. */
+  setMotion(m: AliveMotion, now: number, instant = false) {
     if (m === this.motion) return;
     this.prevMotion = this.motion;
     this.prevStart = this.motionStart;
     this.motion = m;
     this.motionStart = now;
-    this.switchAt = now;
+    this.switchAt = instant ? -Infinity : now;
     this.bounceIndex = -1;
     this.jumpLanded = -1;
   }
@@ -141,9 +142,9 @@ export class MotionController {
     const rate = target > this.level ? 28 : 9;
     this.level += (target - this.level) * Math.min(1, dt * rate);
     const l = this.level;
-    pose.squash += 0.075 * l;
-    pose.head += 0.07 * l * Math.sin(now * 9.0) + 0.03 * l;
-    pose.bend += 0.015 * l * Math.sin(now * 5.0);
+    pose.squash += 0.1 * l;
+    pose.head += 0.09 * l * Math.sin(now * 9.0) + 0.03 * l;
+    pose.bend += 0.02 * l * Math.sin(now * 5.0);
 
     // Tap reaction layer.
     const tr = now - this.reactAt;
@@ -222,10 +223,10 @@ export class MotionController {
   }
 
   private idle(t: number, now: number): Pose {
-    const p = breathing(now, 3.2, 0.028);
-    p.bend = 0.035 * Math.sin((TAU * now) / 4.3 + 1);
-    p.lean = 0.018 * Math.sin((TAU * now) / 5.7);
-    p.head += 0.045 * Math.sin((TAU * now) / 3.9 + 0.5);
+    const p = breathing(now, 3.0, 0.036);
+    p.bend = 0.05 * Math.sin((TAU * now) / 4.3 + 1);
+    p.lean = 0.022 * Math.sin((TAU * now) / 5.7);
+    p.head += 0.06 * Math.sin((TAU * now) / 3.9 + 0.5);
 
     // Every few seconds a small fidget: a hop, a look around, or a wiggle.
     if (now > this.fidgetAt) {
@@ -282,7 +283,7 @@ export class MotionController {
     const s = this.stepPhase;
     const stepIndex = Math.floor(s);
     const q = s - stepIndex;
-    p.lift = 0.06 * Math.sin(q * Math.PI) * moving;
+    p.lift = 0.085 * Math.sin(q * Math.PI) * moving;
     p.air = 0.4 * Math.sin(q * Math.PI) * moving;
     p.lean = 0.075 * Math.sin(s * Math.PI) * moving - this.dir * 0.05 * moving;
     p.head = -0.04 * Math.sin(s * Math.PI) * moving;
@@ -350,9 +351,9 @@ function sleep(t: number): Pose {
   const settle = ease(t / 1.2);
   const p = { ...ZERO };
   const b = Math.sin((TAU * t) / 4.2);
-  p.squash = (0.045 * b - 0.03) * settle;
-  p.lean = 0.09 * settle;
-  p.head = 0.16 * settle + 0.02 * b;
+  p.squash = (0.05 * b - 0.05) * settle;
+  p.lean = 0.1 * settle;
+  p.head = 0.18 * settle + 0.025 * b;
   p.bend = (0.03 * b + 0.02) * settle;
   return p;
 }

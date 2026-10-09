@@ -6,7 +6,7 @@ import { MotionController, type Pose } from "@/lib/alive/motion";
 import { createRenderer, type Placement, type Renderer } from "@/lib/alive/renderer";
 import { analyzeMask, buildMesh, hitMask, type RigInfo } from "@/lib/alive/rig";
 import type { AliveMotion, Cutout } from "@/lib/alive/types";
-import styles from "./alive.module.css";
+import { ALIVE_CSS, cls } from "./styles";
 
 export interface AliveCharacterHandle {
   /** Trigger the happy tap reaction from code (e.g. when the child answers). */
@@ -216,27 +216,30 @@ export function AliveCharacter({
   return (
     <div
       ref={rootRef}
-      className={`${styles.root} ${className ?? ""}`}
+      className={`${cls.root} ${className ?? ""}`}
       style={style}
       onPointerDown={onPointerDown}
       data-ready={ready || undefined}
     >
-      <canvas ref={canvasRef} className={styles.canvas} aria-hidden />
+      <style href="guhit-alive" precedence="medium">
+        {ALIVE_CSS}
+      </style>
+      <canvas ref={canvasRef} className={cls.canvas} aria-hidden />
       {motion === "sleep" && (
-        <div ref={zzzRef} className={styles.zzz} aria-hidden>
-          <span className={styles.z}>z</span>
-          <span className={styles.z}>z</span>
-          <span className={styles.z}>Z</span>
+        <div ref={zzzRef} className={cls.zzz} aria-hidden>
+          <span className={cls.z}>z</span>
+          <span className={cls.z}>z</span>
+          <span className={cls.z}>Z</span>
         </div>
       )}
       {bursts.map((b) => (
-        <div key={b.id} className={styles.burst} style={{ left: b.x, top: b.y }} aria-hidden>
+        <div key={b.id} className={cls.burst} style={{ left: b.x, top: b.y }} aria-hidden>
           {HEARTS.map((h, i) => {
             const a = (i / HEARTS.length) * Math.PI * 2 - Math.PI / 2;
             return (
               <span
                 key={i}
-                className={styles.heart}
+                className={cls.heart}
                 style={
                   {
                     "--dx": `${Math.cos(a) * 70}px`,

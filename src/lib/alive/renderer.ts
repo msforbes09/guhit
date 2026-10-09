@@ -21,6 +21,8 @@ export interface Renderer {
   setCharacter(image: TexImageSource, mesh: Mesh, rig: RigInfo): void;
   resize(width: number, height: number): void;
   draw(pose: Pose, place: Placement, shadow: boolean): void;
+  /** Block until the GPU has finished (benchmarks only). */
+  finish(): void;
   dispose(): void;
 }
 
@@ -294,6 +296,10 @@ class GLRenderer implements Renderer {
     gl.bindVertexArray(null);
   }
 
+  finish() {
+    this.gl.finish();
+  }
+
   dispose() {
     const gl = this.gl;
     if (this.tex) gl.deleteTexture(this.tex);
@@ -360,6 +366,8 @@ class Canvas2DRenderer implements Renderer {
     ctx.drawImage(this.image as CanvasImageSource, -rig.anchorX, -rig.anchorY);
     ctx.restore();
   }
+
+  finish() {}
 
   dispose() {}
 }
