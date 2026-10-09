@@ -5,13 +5,14 @@ import { AliveStage } from "@/components/alive/AliveStage";
 import type { AliveCharacterHandle, AliveStats } from "@/components/alive/AliveCharacter";
 import { CutoutTouchUp } from "@/components/alive/CutoutTouchUp";
 import { JointPicker } from "@/components/alive/JointPicker";
+import { meterStream } from "@/lib/alive/level";
 import type { Joints } from "@/lib/alive/skeleton";
 import { cutout, cutoutFromCanvas, maskToCanvas } from "@/lib/alive/cutout";
 import { ALIVE_MOTIONS, type AliveMotion, type CutoutWithDebug } from "@/lib/alive/types";
 import { filmstrip } from "./filmstrip";
 import { SAMPLES } from "./samples";
 
-type TalkMode = "off" | "auto" | "slider";
+type TalkMode = "off" | "auto" | "slider" | "mic";
 
 export function AliveLab() {
   const [original, setOriginal] = useState<string | null>(null);
@@ -28,6 +29,34 @@ export function AliveLab() {
   const [touching, setTouching] = useState(false);
   const [joints, setJoints] = useState<Joints | undefined>(undefined);
   const [picking, setPicking] = useState(false);
+  const [micLevel, setMicLevel] = useState<(() => number) | null>(null);
+
+  // Microphone test: speak and the character "talks" with your loudness.
+  useEffect(() => {
+    if (talk !== "mic") return;
+    let stopped = false;
+    let ctx: AudioContext | null = null;
+    let stream: MediaStream | null = null;
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((s) => {
+        if (stopped) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream = s;
+        ctx = new AudioContext();
+        const meter = meterStream(ctx, s);
+        setMicLevel(() => meter.level);
+      })
+      .catch((e) => setError("Microphone: " + (e instanceof Error ? e.message : String(e))));
+    return () => {
+      stopped = true;
+      stream?.getTracks().forEach((t) => t.stop());
+      ctx?.close();
+      setMicLevel(null);
+    };
+  }, [talk]);
   const charRef = useRef<AliveCharacterHandle>(null);
   const [source, setSource] = useState<Blob | null>(null);
 
@@ -226,7 +255,7 @@ export function AliveLab() {
               cutout={result}
               motion={motion}
               talking={talk !== "off"}
-              level={talk === "slider" ? level : undefined}
+              level={talk === "slider" ? level : talk === "mic" ? (micLevel ?? 0) : undefined}
               onTap={() => setTaps((t) => t + 1)}
               joints={joints}
               onStats={setStats}
@@ -280,7 +309,7 @@ export function AliveLab() {
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="font-semibold">Talking:</span>
-            {(["off", "auto", "slider"] as TalkMode[]).map((m) => (
+            {(["off", "auto", "slider", "mic"] as TalkMode[]).map((m) => (
               <label key={m} className="flex items-center gap-1">
                 <input type="radio" name="talk" checked={talk === m} onChange={() => setTalk(m)} />
                 {m}
