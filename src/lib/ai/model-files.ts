@@ -46,11 +46,12 @@ export function transformersFiles(
   modelId: string,
   dtype: Record<string, string>,
   remoteHost: string,
+  json = MODEL_JSON[stage] ?? [],
 ): ModelFile[] {
   const base = `${remoteHost.replace(/\/?$/, "/")}${modelId}/resolve/main/`;
   const file = (path: string): ModelFile => ({ stage, cache: "transformers-cache", key: `${base}${path}` });
   return [
-    ...(MODEL_JSON[stage] ?? []).map(file),
+    ...json.map(file),
     ...Object.entries(dtype).map(([part, precision]) => file(onnxFile(part, precision))),
   ];
 }
@@ -127,7 +128,8 @@ export async function listModelFiles(
   }
 
   files.push(...transformersFiles("stt", choice.stt, STT_DTYPES[choice.sttDevice], host));
-  files.push(...transformersFiles("vision", choice.vision, findVision(choice.vision)?.dtype ?? {}, host));
+  const vision = findVision(choice.vision);
+  files.push(...transformersFiles("vision", choice.vision, vision?.dtype ?? {}, host, vision?.json));
   const cutout = `${HUGGING_FACE}${CUTOUT_MODEL.id}/resolve/${CUTOUT_MODEL.revision}/`;
   for (const file of CUTOUT_FILES) files.push({ stage: "vision", cache: "transformers-cache", key: cutout + file });
   // Full precision comes as a graph plus weight files, each under R2's 300 MB limit.

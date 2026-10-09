@@ -9,7 +9,7 @@ import {
   type ModelChoice,
 } from "./device";
 import type { LLMClient, TextGenerator } from "./llm";
-import { CPU_LLM, findLLM, findSTT, findVision, STT_DTYPES } from "./models";
+import { CPU_LLM, findLLM, findSTT, findVision, LIGHT_VISION, STT_DTYPES } from "./models";
 import { deleteModelFiles, partModelIds, storeCutoutModel } from "./model-files";
 import { isVisionCached, markReady, requestPersistence } from "./offline";
 import { installedParts, isPartInstalled, markInstalled, partOf, PARTS } from "./parts";
@@ -33,7 +33,7 @@ import {
   splitSentences,
 } from "./sanitize";
 import { screen, topicChange } from "./safety";
-import { guessAllowed, guessFinished, guessStarted } from "./guess-guard";
+import { guessAllowed, guessFinished, guessStarted, lightEyesChosen } from "./guess-guard";
 import { crashedParts, partSettled, partStarting } from "./part-guard";
 import { heapNote, recordNote, setGuessStep } from "@/lib/boot-log";
 import { sharedAttempt } from "./shared-attempt";
@@ -742,14 +742,19 @@ export class RealAI implements LocalAI {
       recordNote(`No guess: the eyes could not wake after ${took(begun)}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
-    if (guarded) guessStarted();
+    // A guess cut short on the full eyes moved this device to the light eyes (guess-guard.ts).
+    if (guarded && lightEyesChosen() && this.choice && this.choice.vision !== LIGHT_VISION) {
+      this.choice = { ...this.choice, vision: LIGHT_VISION, visionDevice: "wasm" };
+    }
+    const light = this.choice?.vision === LIGHT_VISION;
+    if (guarded) guessStarted(this.choice?.vision ?? "");
     const started = performance.now();
     setGuessStep(`loading the eyes' model (since ${new Date().toLocaleTimeString()})`);
     const vision = await this.acquireVision();
     this.takeOverPrefetch();
     const loadMs = performance.now() - started;
     const threads = self.crossOriginIsolated ? `${navigator.hardwareConcurrency ?? "?"} threads` : "1 thread, not isolated";
-    const how = `eyes on ${this.choice?.visionDevice ?? "?"} (${threads}), started in ${(loadMs / 1000).toFixed(1)} s${heapNote()}`;
+    const how = `${light ? "light eyes" : "eyes"} on ${this.choice?.visionDevice ?? "?"} (${threads}), started in ${(loadMs / 1000).toFixed(1)} s${heapNote()}`;
     setGuessStep(`looking (eyes started in ${(loadMs / 1000).toFixed(1)} s)`);
     try {
       if (!vision) {
@@ -758,23 +763,25 @@ export class RealAI implements LocalAI {
       }
       // The original photo reads better than the cut-out on white (tested in /lab).
       const task = this.choice?.visionTask;
-      const { caption } = photo
+      const { caption, detail } = photo
         ? await vision.describe(photo.image, photo.crop, task)
         : await vision.describe(png, undefined, task);
+      // The light eyes' likeliest subjects, so a miss in the log says what they thought.
+      const seen = detail ? `; likeliest: ${detail}` : "";
       const ms = performance.now() - started;
       const verdict = screen(caption, "drawing");
       if (!verdict.ok) {
         const detail = `${caption} [flagged: ${verdict.category}]`;
         this.record({ kind: "describe", text: "", detail, ms, loadMs, fallback: true });
-        recordNote(`Guess set aside (${verdict.category}) after ${took(begun)} (${how})`);
+        recordNote(`Guess set aside (${verdict.category}) after ${took(begun)} (${how}${seen})`);
         return { label: "", flagged: verdict.category };
       }
       const label = cleanCaption(caption);
       this.record({ kind: "describe", text: label, detail: caption, ms, loadMs, fallback: !label });
       recordNote(
         label
-          ? `Guessed "${label}" in ${took(begun)} (${how})`
-          : `No guess: the eyes said "${caption}", no name in it, after ${took(begun)} (${how})`,
+          ? `Guessed "${label}" in ${took(begun)} (${how}${seen})`
+          : `No guess: the eyes said "${caption}", no name in it, after ${took(begun)} (${how}${seen})`,
       );
       return { label };
     } catch (error) {

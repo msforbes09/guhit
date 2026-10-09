@@ -112,4 +112,4 @@ export const isSTTCached = (modelId: string, device: STTDevice) =>
   isTransformersModelCached(modelId, STT_DTYPES[device], MODEL_JSON.stt);
 
 export const isVisionCached = (modelId: string) =>
-  isTransformersModelCached(modelId, findVision(modelId)?.dtype ?? {}, MODEL_JSON.vision);
+  isTransformersModelCached(modelId, findVision(modelId)?.dtype ?? {}, findVision(modelId)?.json ?? MODEL_JSON.vision);

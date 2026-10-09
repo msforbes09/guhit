@@ -7,6 +7,8 @@ import type { PixelRect } from "./types";
 export interface Caption {
   caption: string;
   ms: number;
+  /** The light eyes' likeliest subjects, for the grown-up log. */
+  detail?: string;
 }
 
 export class VisionClient {
@@ -43,6 +45,6 @@ export class VisionClient {
     if (!this.worker) throw new Error("Drawing recognition is not loaded yet.");
     const blob = await (await fetch(image)).blob();
     const result = await this.worker.call({ type: "describe", image: blob, crop, task });
-    return { caption: result.caption, ms: result.ms };
+    return { caption: result.caption, ms: result.ms, detail: result.detail };
   }
 }

@@ -2,9 +2,11 @@ import {
   AutoModelForVision2Seq,
   AutoProcessor,
   AutoTokenizer,
+  CLIPVisionModelWithProjection,
   Florence2ForConditionalGeneration,
   RawImage,
 } from "@huggingface/transformers";
+import { decodeLabels, pickLabel } from "@/lib/ai/light-eyes";
 import type { ModelSource } from "@/lib/ai/model-fetch";
 import { configureTransformers, type FileProgress } from "./ort-env";
 
@@ -12,6 +14,8 @@ import { configureTransformers, type FileProgress } from "./ort-env";
 const DEFAULT_TASK = "<CAPTION>";
 /** The model sees 768×768; anything larger only costs decode time. */
 const MAX_SIDE = 768;
+/** The light eyes see 256×256; a little more keeps thin crayon lines from aliasing on the way down. */
+const LIGHT_SIDE = 448;
 /** White margin around the cut-out, so wings and tails touching the crop edge stay in view. */
 const MARGIN = 0.12;
 /**
@@ -44,13 +48,15 @@ export type VisionRequest =
 export type VisionResponse =
   | { type: "progress"; file: string; loaded: number; total: number }
   | { type: "ready"; warmupMs: number }
-  | { type: "result"; id: number; caption: string; ms: number }
+  | { type: "result"; id: number; caption: string; ms: number; detail?: string }
   | { type: "error"; id?: number; message: string };
 
-/** One way of turning a picture into a short description. */
-type Captioner = (image: RawImage, task?: string) => Promise<string>;
+/** One way of turning a picture into a short description (and, for the log, how it got there). */
+type Captioner = (image: RawImage, task?: string) => Promise<string | { caption: string; detail: string }>;
 
 let captioner: Captioner | null = null;
+/** The light eyes crop the centre square, so their pictures are made square (and smaller) first. */
+let fit = { maxSide: MAX_SIDE, square: false };
 
 type ProgressCallback = (p: FileProgress) => void;
 
@@ -112,21 +118,45 @@ async function loadSmolVLM(model: string, options: Record<string, unknown>, prog
   };
 }
 
+/**
+ * The light eyes (iPhone and iPad): MobileCLIP S0's image half (46 MB, on the
+ * CPU) and the subjects' embeddings that come with the app, so a guess needs
+ * a fraction of Florence-2's memory. It names the closest subject or nothing.
+ */
+async function loadLightEyes(model: string, options: Record<string, unknown>, progress_callback: ProgressCallback) {
+  const [vision, processor, { default: stored }] = (await Promise.all([
+    CLIPVisionModelWithProjection.from_pretrained(model, { ...options, progress_callback }),
+    AutoProcessor.from_pretrained(model, { progress_callback }),
+    import("@/lib/ai/light-eyes-labels.json"),
+  ])) as unknown as [
+    (inputs: Record<string, unknown>) => Promise<{ image_embeds: { data: Float32Array } }>,
+    (image: RawImage) => Promise<Record<string, unknown>>,
+    { default: Parameters<typeof decodeLabels>[0] },
+  ];
+  const labels = decodeLabels(stored);
+  return async (image: RawImage) => {
+    const { image_embeds } = await vision(await processor(image));
+    const { label, top } = pickLabel(image_embeds.data, labels);
+    return { caption: label, detail: top.map(([name, share]) => `${name} ${Math.round(share * 100)}%`).join(", ") };
+  };
+}
+
 const post = (message: VisionResponse) => self.postMessage(message);
 
 /** The child's cut-out has a transparent background; the model expects a photo, so it goes onto white paper. */
 async function onWhite(blob: Blob): Promise<RawImage> {
   const bitmap = await createImageBitmap(blob);
-  const fit = Math.min(1, (MAX_SIDE * (1 - 2 * MARGIN)) / Math.max(bitmap.width, bitmap.height));
-  const w = Math.round(bitmap.width * fit);
-  const h = Math.round(bitmap.height * fit);
+  const scale = Math.min(1, (fit.maxSide * (1 - 2 * MARGIN)) / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
   const pad = Math.round(Math.max(w, h) * MARGIN);
-  const canvas = new OffscreenCanvas(w + 2 * pad, h + 2 * pad);
+  const side = Math.max(w, h) + 2 * pad;
+  const canvas = fit.square ? new OffscreenCanvas(side, side) : new OffscreenCanvas(w + 2 * pad, h + 2 * pad);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No 2D canvas in this browser's workers.");
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(bitmap, pad, pad, w, h);
+  ctx.drawImage(bitmap, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
   bitmap.close();
   const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   return new RawImage(data, canvas.width, canvas.height, 4).rgb();
@@ -145,19 +175,24 @@ async function photoRegion(blob: Blob, crop: { x: number; y: number; w: number; 
   const w = Math.min(bitmap.width, crop.x + crop.w + pad) - x;
   const h = Math.min(bitmap.height, crop.y + crop.h + pad) - y;
   if (w <= 0 || h <= 0) throw new Error("The crop lies outside the photo.");
-  const fit = Math.min(1, MAX_SIDE / Math.max(w, h));
-  const canvas = new OffscreenCanvas(Math.round(w * fit), Math.round(h * fit));
+  const scale = Math.min(1, fit.maxSide / Math.max(w, h));
+  const [cw, ch] = [Math.round(w * scale), Math.round(h * scale)];
+  // Square for the light eyes: the photo centred on white, nothing cropped away.
+  const canvas = fit.square ? new OffscreenCanvas(Math.max(cw, ch), Math.max(cw, ch)) : new OffscreenCanvas(cw, ch);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No 2D canvas in this browser's workers.");
-  ctx.drawImage(bitmap, x, y, w, h, 0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, x, y, w, h, (canvas.width - cw) / 2, (canvas.height - ch) / 2, cw, ch);
   bitmap.close();
   const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   return new RawImage(data, canvas.width, canvas.height, 4).rgb();
 }
 
-async function caption(image: RawImage, task?: string): Promise<string> {
+async function caption(image: RawImage, task?: string): Promise<{ caption: string; detail?: string }> {
   if (!captioner) throw new Error("Drawing recognition is not loaded yet.");
-  return captioner(image, task);
+  const result = await captioner(image, task);
+  return typeof result === "string" ? { caption: result } : result;
 }
 
 self.onmessage = async (event: MessageEvent<VisionRequest>) => {
@@ -171,9 +206,14 @@ self.onmessage = async (event: MessageEvent<VisionRequest>) => {
         }
       };
       const options = { device: request.device, dtype: request.dtype as never };
-      captioner = /smolvlm/i.test(request.model)
-        ? await loadSmolVLM(request.model, options, progress_callback)
-        : await loadFlorence(request.model, options, progress_callback);
+      if (/mobileclip/i.test(request.model)) {
+        captioner = await loadLightEyes(request.model, options, progress_callback);
+        fit = { maxSide: LIGHT_SIDE, square: true };
+      } else {
+        captioner = /smolvlm/i.test(request.model)
+          ? await loadSmolVLM(request.model, options, progress_callback)
+          : await loadFlorence(request.model, options, progress_callback);
+      }
       // No warm-up: the model is loaded right when a drawing needs a guess and
       // freed afterwards, so a blank-page run would only add to the child's wait.
       post({ type: "ready", warmupMs: 0 });
@@ -183,8 +223,8 @@ self.onmessage = async (event: MessageEvent<VisionRequest>) => {
     if (request.type === "describe") {
       const started = performance.now();
       const image = request.crop ? await photoRegion(request.image, request.crop) : await onWhite(request.image);
-      const text = await caption(image, request.task);
-      post({ type: "result", id: request.id, caption: text, ms: performance.now() - started });
+      const { caption: text, detail } = await caption(image, request.task);
+      post({ type: "result", id: request.id, caption: text, ms: performance.now() - started, detail });
     }
   } catch (error) {
     post({

@@ -1,5 +1,6 @@
 import type { ModelSource } from "./model-fetch";
-import { CPU_LLM, LLM_MODELS, STT_MODELS, VISION_MODELS, type STTDevice } from "./models";
+import { lightEyesChosen } from "./guess-guard";
+import { CPU_LLM, LIGHT_VISION, LLM_MODELS, STT_MODELS, VISION_MODELS, type STTDevice } from "./models";
 
 export interface DeviceSupport {
   webgpu: boolean;
@@ -155,10 +156,14 @@ export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
   // cat"); phones keep base for memory and download size.
   // Base everywhere: large's vision encoder is a single 316 MB file, over R2's
   // 300 MB upload limit (and three times the work); /lab can still try it.
-  let vision = "onnx-community/Florence-2-base-ft";
+  // iPhone and iPad (and a device whose full-eyes guess was cut short) get the
+  // light eyes: iOS killed the page during Florence-2's guess.
+  let vision = isAppleMobile() || lightEyesChosen() ? LIGHT_VISION : "onnx-community/Florence-2-base-ft";
   const visionOverride = params.get("vision");
   if (visionOverride && VISION_MODELS.some((m) => m.id === visionOverride)) vision = visionOverride;
-  const visionDevice: STTDevice = support.webgpu && params.get("visionDevice") !== "wasm" ? "webgpu" : "wasm";
+  // The light eyes run on the CPU: small enough, and no GPU buffers on top of the page.
+  const visionDevice: STTDevice =
+    vision !== LIGHT_VISION && support.webgpu && params.get("visionDevice") !== "wasm" ? "webgpu" : "wasm";
 
   const tasks: Record<string, string> = {
     caption: "<CAPTION>",

@@ -72,7 +72,17 @@ export interface VisionModel {
    * serves every device; the token embeddings only exist in 8-bit or larger.
    */
   dtype: Record<string, string>;
+  /** The JSON files it starts with, when not the usual captioning set (see MODEL_JSON). */
+  json?: string[];
 }
+
+/**
+ * iPhone and iPad: the light eyes. Florence-2's guess was killed by iOS for
+ * memory (seen on the owner's iPhone), so these devices pick from a list of
+ * kid-drawing subjects with MobileCLIP S0's small image half instead (Apple
+ * sample code licence, MIT-style); the label embeddings come with the app.
+ */
+export const LIGHT_VISION = "Xenova/mobileclip_s0";
 
 export const VISION_MODELS: VisionModel[] = [
   {
@@ -94,6 +104,14 @@ export const VISION_MODELS: VisionModel[] = [
     label: "SmolVLM 256M",
     downloadMB: 182,
     dtype: { vision_encoder: "q4", embed_tokens: "q8", decoder_model_merged: "q4" },
+  },
+  {
+    // Full precision: the model's own default for the image half, and still only 46 MB.
+    id: LIGHT_VISION,
+    label: "MobileCLIP S0 (light eyes)",
+    downloadMB: 46,
+    dtype: { vision_model: "fp32" },
+    json: ["config.json", "preprocessor_config.json"],
   },
 ];
 
