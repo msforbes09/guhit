@@ -355,14 +355,15 @@ function Move({ kind, label, color, from = 0.6 }: { kind: string; label: string;
         from={from}
         source={LAPTOP_SRC}
         crop={crop}
-        height={portrait ? height * 0.56 : height * 0.66}
+        height={portrait ? height * 0.56 : height * 0.64}
         x={width / 2}
-        y={portrait ? height * 0.44 : height * 0.49}
+        y={portrait ? height * 0.45 : height * 0.51}
         tilt={{ x: 2, y: kind === "plant" ? 4 : -4 }}
         radius={60}
       />
-      <AbsoluteFill style={{ alignItems: portrait ? "center" : "flex-start", justifyContent: "flex-start", padding: portrait ? "150px 60px" : "34px 90px" }}>
-        <IdeaTag color={color} style={{ fontSize: portrait ? 120 : 110, textShadow: "0 6px 0 rgba(255,255,255,0.9), 0 12px 30px rgba(42,34,56,0.25)" }}>
+      {/* Inside the title-safe area (5% in from every edge), clear of the footage window. */}
+      <AbsoluteFill style={{ alignItems: portrait ? "center" : "flex-start", justifyContent: "flex-start", padding: portrait ? "170px 80px" : "78px 132px" }}>
+        <IdeaTag color={color} style={{ fontSize: portrait ? 116 : 98, textShadow: "0 6px 0 rgba(255,255,255,0.9), 0 12px 30px rgba(42,34,56,0.25)" }}>
           {label}
         </IdeaTag>
       </AbsoluteFill>

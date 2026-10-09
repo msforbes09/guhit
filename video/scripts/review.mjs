@@ -60,7 +60,7 @@ for (let g = 0; g * per < sorted.length; g++) {
   let graph = "";
   chunk.forEach((t, i) => {
     args.push("-i", join(dir, `t${t.toFixed(3).padStart(7, "0")}.jpg`));
-    graph += `[${i}:v]scale=${tw}:${th},drawtext=fontfile=${FONT}:text='${t.toFixed(2)}':x=6:y=6:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.6[s${i}];`;
+    graph += `[${i}:v]scale=${tw}:${th},drawtext=fontfile=${FONT}:text='${t.toFixed(2)}':x=w-tw-6:y=h-th-6:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.6[s${i}];`;
   });
   const lay = chunk.map((_, i) => `${(i % gcols) * tw}_${Math.floor(i / gcols) * th}`).join("|");
   graph += chunk.map((_, i) => `[s${i}]`).join("") + (chunk.length > 1 ? `xstack=inputs=${chunk.length}:layout=${lay}:fill=black` : "null");
@@ -83,7 +83,7 @@ for (const [i, t] of picks.entries()) {
   const file = join(dir, `sheet-${String(i).padStart(2, "0")}.jpg`);
   execFileSync(ffmpeg, [
     "-v", "error", "-y", "-ss", String(t), "-i", mp4, "-frames:v", "1",
-    "-vf", `scale=${thumbW}:-2,drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='${t.toFixed(1)}s':x=10:y=10:fontsize=22:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=6`,
+    "-vf", `scale=${thumbW}:-2,drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='${t.toFixed(1)}s':x=w-tw-8:y=h-th-8:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=4`,
     file,
   ]);
   inputs.push(file);
