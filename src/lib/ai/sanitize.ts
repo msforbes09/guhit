@@ -126,8 +126,24 @@ export function cleanCaption(raw: string): string {
   // Long captions read badly in "Is that …?": keep the first ten words, ending before a dangling "and"/"with".
   let kept = words.slice(0, 10);
   while (kept.length > 2 && /^(?:and|with|of|in|on|the|a|an)$/i.test(kept[kept.length - 1])) kept = kept.slice(0, -1);
-  const phrase = kept.join(" ").replace(/,$/, "");
-  return withArticle(phrase.charAt(0).toLowerCase() + phrase.slice(1));
+  const phrase = withArticle(kept.join(" ").replace(/,$/, ""));
+  const label = phrase.charAt(0).toLowerCase() + phrase.slice(1);
+  return isSensibleLabel(label) ? label : "";
+}
+
+// Captions that name the medium or the page, not what the child drew.
+const GENERIC_SUBJECT = new RegExp(
+  `^(?:an? |the )?(?:(?:white|blank|plain|black|small|large|simple)\\s)*(?:${PICTURE_WORDS}|paper|piece of paper|sheet of paper|background|object|thing|shape|shapes|logo|icon|text|letter|letters|number|line|lines|circle|scribble|scribbles|design|pattern|card|sign|sticker|page|toy|person)s?$`,
+  "i",
+);
+
+/** "Is that …?" only makes sense for a short phrase that names a subject. */
+function isSensibleLabel(label: string): boolean {
+  const words = label.split(/\s+/);
+  if (words.length < 2 || words.length > 10) return false;
+  if (GENERIC_SUBJECT.test(label)) return false;
+  // Must contain at least one real word beyond the article.
+  return /[a-z]{3,}/i.test(words.slice(1).join(" "));
 }
 
 /** A spoken character line: drops "Tala:" prefixes the model may add. */

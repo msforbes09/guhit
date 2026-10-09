@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getAI, RealAI } from "@/lib/ai";
+import { getAI, photoCropFromCutout, RealAI } from "@/lib/ai";
 import { chooseModels, detectSupport, type DeviceSupport, type ModelChoice } from "@/lib/ai/device";
 import type { CallMetric, LoadTimings } from "@/lib/ai/engine";
 import { LLM_MODELS, STT_MODELS } from "@/lib/ai/models";
-import type { ChatTurn, LoadProgress } from "@/lib/ai/types";
+import type { ChatTurn, DrawingPhoto, LoadProgress } from "@/lib/ai/types";
 import type { Character, Story } from "@/lib/story/types";
 
 const TALA: Character = {
@@ -26,8 +26,8 @@ const SAMPLE_DRAWINGS = ["tala-dragon", "cat-uneven-light", "robot-on-table", "f
 
 interface DrawingResult {
   name: string;
-  /** "cut-out" runs the real pipeline (alive cut-out, then describe); "photo" captions the raw photo. */
-  input: "cut-out" | "photo";
+  /** "cut-out" captions the cut-out on white; "photo crop" captions the original photo around the cut-out. */
+  input: "cut-out" | "photo crop";
   image: string;
   label: string;
   caption: string;
@@ -139,12 +139,13 @@ export function LabClient() {
       if (!response.ok) throw new Error(`missing /samples/drawings/${name}.png (copy assets/test-drawings there)`);
       const photo = await response.blob();
       const cut = await cutout(photo);
-      const inputs: [DrawingResult["input"], string][] = [
-        ["cut-out", cut.png],
-        ["photo", URL.createObjectURL(photo)],
+      const photoUrl = URL.createObjectURL(photo);
+      const inputs: [DrawingResult["input"], string, DrawingPhoto | undefined][] = [
+        ["cut-out", cut.png, undefined],
+        ["photo crop", photoUrl, cut.meta ? { image: photoUrl, crop: photoCropFromCutout(cut.meta) } : undefined],
       ];
-      for (const [input, image] of inputs) {
-        const { label } = await ai.describeDrawing(image);
+      for (const [input, image, source] of inputs) {
+        const { label } = await ai.describeDrawing(cut.png, source);
         const metric = real?.metrics.at(-1);
         results.push({ name, input, image, label, caption: metric?.detail ?? "", ms: metric?.ms ?? 0 });
         setDrawings([...results]);
