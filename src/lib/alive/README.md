@@ -47,7 +47,7 @@ import { AliveStage } from "@/components/alive";
 ## Offline notes
 
 - The classical cut-out and the animation make no network calls.
-- **AI cut-out.** The ONNX Runtime files are served from our own origin (`/ort/`, copied at build time and cached by the service worker, shared with speech recognition). The model is `xrds/isnet-general-onnx-int8` at a pinned revision, about 44 MB, from huggingface.co on first use. Both are kept in Cache Storage (`transformers-cache`). A page that is already open keeps working offline.
+- **AI cut-out.** The ONNX Runtime files are served from our own origin (`/ort/`, copied at build time and cached by the service worker, shared with speech recognition). The model is `xrds/isnet-general-onnx-int8` at a pinned revision, about 44 MB, from Guhit's R2 copy (Hugging Face as fallback) on first use, or saved with the eyes on `/setup`. It is kept in Cache Storage (`transformers-cache`) under its pinned-revision Hugging Face URLs; every file is read at that revision (`AI_PATH_TEMPLATE`), so a saved model starts with no network. With the network off, a model that is not saved is never fetched. The snap screen retries a poor cut-out with AI only when `isAiCutoutCached()` says the model is on the device.
 - **Fresh offline load.** The service worker must have cached the app's `/_next/static` chunks (including the worker and the Transformers.js chunk) and `/ort/`.
 
 ## Licences

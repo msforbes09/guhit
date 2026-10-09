@@ -10,7 +10,7 @@ import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { kindOf } from "@/lib/story/kind";
 import { shrinkPhoto } from "@/lib/story/image";
 import { isAppleMobile } from "@/lib/ai/device";
-import { cutout, CutoutTouchUp, type Cutout } from "./alive";
+import { cutout, CutoutTouchUp, isAiCutoutCached, type Cutout } from "./alive";
 import { FriendStage } from "./FriendStage";
 import { usePart } from "./hooks";
 import { ArrowsClockwise, Camera, Check, PaintBrush, Scissors, Sparkle } from "./icons";
@@ -27,7 +27,7 @@ type Seen = DrawingDescription;
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** The AI cut-out may need its model the first time; never keep a child waiting longer. */
+/** The AI cut-out starts its model from storage first; never keep a child waiting longer. */
 const AI_RETRY_MS = 12000;
 /** Reading the drawing must never hold the child up. */
 // A phone's first guess loads the eyes' model from storage before it looks.
@@ -105,10 +105,12 @@ export function useBringToLife() {
         // Editable keeps the full frame so "Fix the edges" can brush parts in or out.
         const [first, picture] = await Promise.all([cutout(image, { editable: true }), shrinkPhoto(image), wait(1100)]);
         let cut = first;
-        // (Not in test mode: the AI cut-out downloads its model on first use.)
+        // Only with its model already on this device (saved with the eyes): a kid
+        // screen never downloads it, so a missing or slow network can't hold the
+        // child up, and offline it never tries the network at all. Not in test mode.
         // Not on iPhone or iPad: the AI cut-out model and the eyes together can be
         // more memory than Safari gives a tab.
-        if (first.meta?.quality === "poor" && !isTestMode() && !isAppleMobile()) {
+        if (first.meta?.quality === "poor" && !isTestMode() && !isAppleMobile() && (await isAiCutoutCached())) {
           // A messy cut-out gets one closer look with the on-device AI model
           // before the child is asked to take the photo again.
           setWorking("closer");
