@@ -102,7 +102,7 @@ self.onmessage = async (event: MessageEvent<VisionRequest>) => {
   const request = event.data;
   try {
     if (request.type === "load") {
-      configureTransformers(request.modelHost);
+      await configureTransformers(request.modelHost);
       const progress_callback = (p: FileProgress) => {
         if (p.status === "progress" && p.file) {
           post({ type: "progress", file: p.file, loaded: p.loaded ?? 0, total: p.total ?? 0 });

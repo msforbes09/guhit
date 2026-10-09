@@ -21,7 +21,7 @@ const FILES = [
   "/icons/guhit-icon-512.png",
   "/icons/guhit-icon-maskable-512.png",
   "/ort/ort-wasm-simd-threaded.asyncify.mjs",
-  "/ort/ort-wasm-simd-threaded.asyncify.wasm",
+  "/ort/ort-wasm-simd-threaded.asyncify.wasm.gz",
 ];
 // Written by scripts/precache-manifest.mjs after each build: every file in
 // /_next/static, including chunks that are only loaded lazily (the AI engine).

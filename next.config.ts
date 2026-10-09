@@ -1,18 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
-  async headers() {
-    return [
-      {
-        // Browsers must always re-check the service worker, or a fix never reaches devices.
-        source: "/sw.js",
-        headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }],
-      },
-    ];
-  },
+  // A plain static site (out/) for Cloudflare Pages: every screen runs in the
+  // browser and all AI is on the device, so nothing needs a server.
+  // Response headers live in public/_headers. Cache Components (partial
+  // prerendering) needs a server, so it is off.
+  output: "export",
   turbopack: {
     rules: {
       "*.css": {

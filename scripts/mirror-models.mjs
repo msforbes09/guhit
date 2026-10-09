@@ -1,12 +1,14 @@
-// Downloads the models into public/models so this machine's own server can
-// hand them to the browser (open the app once with "?models=local"). Used when
-// the browser cannot reach Hugging Face quickly, e.g. on venue Wi-Fi, and for
-// first setup with no internet at all once the mirror exists.
+// Downloads the models into mirror/models so this machine can hand them to the
+// browser itself: `npm run serve` serves the built app plus the mirror at
+// /models; open the app once with "?models=local". Used when the browser
+// cannot reach Hugging Face quickly, e.g. on venue Wi-Fi, and for first setup
+// with no internet at all once the mirror exists.
 //
 //   node scripts/mirror-models.mjs [llm-model-id ...]
 //
 // The layout copies Hugging Face's ("<repo>/resolve/main/<file>"), so the
-// libraries only need a different host. The files are large and gitignored.
+// libraries only need a different host. The files are large and gitignored;
+// they live outside public/ because the static export copies all of public/.
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -16,7 +18,7 @@ import { prebuiltAppConfig } from "@mlc-ai/web-llm";
 const run = promisify(execFile);
 const PARALLEL = 8;
 
-const root = join(process.cwd(), "public", "models");
+const root = join(process.cwd(), "mirror", "models");
 const llmIds = process.argv.slice(2).length ? process.argv.slice(2) : ["Qwen3-1.7B-q4f16_1-MLC"];
 // Transformers.js models and the ONNX files of the precisions src/lib/ai/models.ts loads.
 const onnxRepos = [
