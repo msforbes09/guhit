@@ -3,6 +3,22 @@ import { env } from "@huggingface/transformers";
 let ortBinary: Promise<ArrayBuffer> | null = null;
 
 /**
+ * Transformers.js reads cached files first, but it also probes the network for
+ * optional files a model never had (for example a processor config) and only
+ * treats a 404 as "absent"; with no network the probe throws and the load
+ * fails. Answering a network failure with a 404 lets cached models start with
+ * Wi-Fi off; a required file that is really missing still fails clearly.
+ */
+async function offlineTolerantFetch(input: string | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (init?.signal?.aborted) throw error;
+    return new Response(null, { status: 404, statusText: "No network" });
+  }
+}
+
+/**
  * ONNX Runtime's wasm (25.6 MiB) ships gzipped from our own origin, because
  * Cloudflare Pages rejects files over 25 MiB; it is inflated here with the
  * browser's built-in DecompressionStream. Nothing comes from a CDN, and the
@@ -27,6 +43,7 @@ function loadOrtBinary(ortBase: string): Promise<ArrayBuffer> {
 export async function configureTransformers(modelHost: string | null) {
   const ortBase = new URL("/ort/", self.location.origin).href;
   env.allowLocalModels = false;
+  env.fetch = offlineTolerantFetch;
   if (env.backends.onnx.wasm) {
     env.backends.onnx.wasm.wasmBinary = await loadOrtBinary(ortBase);
     // Only the JS glue is fetched by URL; the binary above is used as is.

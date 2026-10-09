@@ -16,9 +16,14 @@ export function ServiceWorkerRegister() {
       });
       return;
     }
-    navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch(() => {
-      // The app still works online without it; offline use just is not available.
-    });
+    navigator.serviceWorker
+      .register("/sw.js", { scope: "/", updateViaCache: "none" })
+      .then(() => navigator.serviceWorker.ready)
+      // Store a newly deployed build's files now, while the network is here.
+      .then((registration) => registration.active?.postMessage({ type: "refresh" }))
+      .catch(() => {
+        // The app still works online without it; offline use just is not available.
+      });
   }, []);
   return (
     <>

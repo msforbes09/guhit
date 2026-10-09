@@ -27,6 +27,8 @@ const FILES = [
 // /_next/static, including chunks that are only loaded lazily (the AI engine).
 const BUILD_MANIFEST = "/precache-manifest.json";
 const STATIC_REF = /\/_next\/static\/[^"'\s\\)]+/g;
+// Records which build is fully stored, so a refresh for the same build does nothing.
+const BUILD_MARK = "/__guhit-precached-build";
 const PAGE_TIMEOUT_MS = 3000;
 const FETCH_TIMEOUT_MS = 60000;
 
@@ -58,8 +60,10 @@ async function precache() {
   const assets = await caches.open(ASSETS);
   const wanted = new Set(FILES);
 
+  let buildId = null;
   try {
     const manifest = await (await fetchOk(BUILD_MANIFEST)).json();
+    buildId = manifest.buildId ?? null;
     for (const url of manifest.assets ?? []) wanted.add(url);
   } catch {
     // Without the build list, the static files referenced by each page still get cached below.
@@ -79,7 +83,21 @@ async function precache() {
   // Files in /_next/static are content-hashed, so a cached copy never goes stale.
   const results = await Promise.allSettled([...wanted].map((url) => cacheAsset(assets, url)));
   const failed = results.filter((r) => r.status === "rejected").length;
+  if (buildId && failed === 0) await assets.put(BUILD_MARK, new Response(buildId));
   return { pages: pageCount, assets: wanted.size - failed, failed };
+}
+
+/**
+ * sw.js rarely changes between deploys, so the browser does not reinstall it
+ * and a new build's chunks would only be cached once used. Every app start
+ * asks for this check instead; already-stored files are skipped, so a
+ * repeat run for the same build costs one small request.
+ */
+async function precacheIfNewBuild() {
+  const manifest = await (await fetchOk(BUILD_MANIFEST)).json();
+  const mark = await (await caches.open(ASSETS)).match(BUILD_MARK);
+  if (mark && (await mark.text()) === manifest.buildId) return { ok: true, upToDate: true };
+  return { ok: true, ...(await precache()) };
 }
 
 self.addEventListener("install", (event) => {
@@ -102,14 +120,17 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// /setup asks for a fresh precache once the models are in, so everything the
-// app needs is on the device before the network goes away.
+// "precache": /setup asks for a full pass once the models are in, so everything
+// the app needs is on the device before the network goes away.
+// "refresh": every app start, to pick up a new build (see precacheIfNewBuild).
 self.addEventListener("message", (event) => {
-  if (event.data?.type !== "precache") return;
+  const type = event.data?.type;
+  if (type !== "precache" && type !== "refresh") return;
   const port = event.ports[0];
+  const run = type === "precache" ? precache().then((result) => ({ ok: true, ...result })) : precacheIfNewBuild();
   event.waitUntil(
-    precache().then(
-      (result) => port?.postMessage({ ok: true, ...result }),
+    run.then(
+      (result) => port?.postMessage(result),
       (error) => port?.postMessage({ ok: false, error: String(error) }),
     ),
   );
@@ -200,12 +221,18 @@ self.addEventListener("fetch", (event) => {
   // Next.js falls back to a full page load, which the page cache answers.
   if (url.searchParams.has("_rsc") || request.headers.get("RSC")) return;
   if (url.pathname.startsWith("/_next/webpack-hmr") || url.pathname === BUILD_MANIFEST) return;
-  // A local model mirror: the model libraries cache these files themselves.
-  if (url.pathname.startsWith("/models/")) return;
+  // A local model mirror: the model libraries cache these files themselves,
+  // except WebLLM's compiled kernels (a few MB), which it never caches when
+  // they come from "localhost"; the service worker keeps those.
+  if (url.pathname.startsWith("/models/") && !url.pathname.startsWith("/models/libs/")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(handlePage(request));
-  } else if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/ort/")) {
+  } else if (
+    url.pathname.startsWith("/_next/static/") ||
+    url.pathname.startsWith("/ort/") ||
+    url.pathname.startsWith("/models/libs/")
+  ) {
     event.respondWith(handleAsset(request));
   } else {
     event.respondWith(handleOther(request));
