@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode, Ref } from "react";
-import { AliveStage, type AliveCharacterHandle, type Cutout, type Motion } from "./alive";
+import { AliveStage, type AliveCharacterHandle, type Cutout, type Joints, type Motion } from "./alive";
 
 /**
  * The child's character alive in its meadow. Thinking is shown here (a sway
@@ -17,6 +17,7 @@ export function FriendStage({
   bubble,
   onTap,
   characterRef,
+  joints,
   size,
   className,
 }: {
@@ -28,6 +29,8 @@ export function FriendStage({
   bubble?: ReactNode;
   onTap?: () => void;
   characterRef?: Ref<AliveCharacterHandle>;
+  /** Keep the same object between renders: a new one reloads the character. */
+  joints?: Joints;
   /** Character height as a share of the stage. */
   size?: number;
   className?: string;
@@ -36,7 +39,7 @@ export function FriendStage({
     <div className={`crayon-edge relative overflow-hidden rounded-cut-lg bg-sky/30 shadow-soft ${thinking ? "kid-thinking" : ""} ${className ?? ""}`}>
       <span className="sr-only">{name ? `${name}, your drawing, alive` : "Your drawing, alive"}</span>
       {cutout ? (
-        <AliveStage cutout={cutout} motion={motion} talking={talking} onTap={onTap} characterRef={characterRef} size={size}>
+        <AliveStage cutout={cutout} motion={motion} talking={talking} onTap={onTap} characterRef={characterRef} joints={joints} size={size}>
           <div className="absolute inset-x-0 top-0 z-10 flex justify-center px-4 pt-4 sm:pt-5">{bubble}</div>
         </AliveStage>
       ) : (

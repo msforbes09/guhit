@@ -6,10 +6,10 @@ import { getAI, photoCropFromCutout } from "@/lib/ai";
 import type { DrawingDescription, PixelRect } from "@/lib/ai";
 import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { shrinkPhoto } from "@/lib/story/image";
-import { cutout, type Cutout } from "./alive";
+import { cutout, CutoutTouchUp, type Cutout } from "./alive";
 import { FriendStage } from "./FriendStage";
 import { useAIReady } from "./hooks";
-import { ArrowsClockwise, Camera, Check, PaintBrush, Scissors } from "./icons";
+import { ArrowsClockwise, Camera, Check, PaintBrush, Scissors, Sparkle } from "./icons";
 import { Button, LinkButton } from "./ui";
 
 type Phase = "idle" | "cutting" | "preview" | "saving" | "full" | "flagged" | "error";
@@ -52,7 +52,14 @@ export function useBringToLife() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [photo, setPhoto] = useState<string | null>(null);
   const [working, setWorking] = useState<Working>("cutting");
-  const [result, setResult] = useState<{ drawing: string; cut: Cutout; photoCrop?: PixelRect; seen: Seen | null } | null>(null);
+  const [result, setResult] = useState<{
+    drawing: string;
+    /** How much the kept photo was shrunk from the original. */
+    scale: number;
+    cut: Cutout;
+    photoCrop?: PixelRect;
+    seen: Seen | null;
+  } | null>(null);
 
   useEffect(
     () => () => {
@@ -84,20 +91,21 @@ export function useBringToLife() {
       try {
         // Hold the scissors moment briefly even when cutting is instant, so the
         // child sees something happen to their drawing.
-        const [first, picture] = await Promise.all([cutout(image), shrinkPhoto(image), wait(1100)]);
+        // Editable keeps the full frame so "Fix the edges" can brush parts in or out.
+        const [first, picture] = await Promise.all([cutout(image, { editable: true }), shrinkPhoto(image), wait(1100)]);
         let cut = first;
         if (first.meta?.quality === "poor") {
           // A messy cut-out gets one closer look with the on-device AI model
           // before the child is asked to take the photo again.
           setWorking("closer");
-          const better = await Promise.race([cutout(image, { method: "ai" }).catch(() => null), wait(AI_RETRY_MS).then(() => null)]);
+          const better = await Promise.race([cutout(image, { method: "ai", editable: true }).catch(() => null), wait(AI_RETRY_MS).then(() => null)]);
           if (better && better.meta?.quality !== "poor") cut = better;
         }
         const photoCrop = cut.meta ? scaleRect(photoCropFromCutout(cut.meta), picture.scale) : undefined;
         // The engine looks before anything comes alive or is saved.
         setWorking("looking");
         const seen = await look(cut.png, photoCrop ? { image: picture.dataUrl, crop: photoCrop } : undefined);
-        setResult({ drawing: picture.dataUrl, cut, photoCrop, seen });
+        setResult({ drawing: picture.dataUrl, scale: picture.scale, cut, photoCrop, seen });
         setPhase(seen && seen.flagged ? "flagged" : "preview");
       } catch {
         setPhase("error");
@@ -110,6 +118,13 @@ export function useBringToLife() {
     setResult(null);
     setPhoto(null);
     setPhase("idle");
+  }, []);
+
+  /** The child brushed the edges: same drawing, cleaner cut-out. */
+  const fixEdges = useCallback((fixed: Cutout) => {
+    setResult((r) =>
+      r ? { ...r, cut: fixed, photoCrop: fixed.meta ? scaleRect(photoCropFromCutout(fixed.meta), r.scale) : r.photoCrop } : r,
+    );
   }, []);
 
   // After making room on a full shelf, keep the friend the child just confirmed.
@@ -139,7 +154,7 @@ export function useBringToLife() {
     }
   }, [result, router]);
 
-  return { phase, photo, working, result, start, reset, accept, backToPreview };
+  return { phase, photo, working, result, start, reset, accept, backToPreview, fixEdges };
 }
 
 const WORKING_TEXT: Record<Working, string> = {
@@ -178,13 +193,38 @@ export function CutoutPreview({
   retakeLabel,
   onRetake,
   onAccept,
+  onFixed,
 }: {
   cut: Cutout;
   saving: boolean;
   retakeLabel: string;
   onRetake: () => void;
   onAccept: () => void;
+  onFixed: (fixed: Cutout) => void;
 }) {
+  const [fixing, setFixing] = useState(false);
+
+  if (fixing && cut.edit) {
+    return (
+      <div className="anim-float-in flex flex-1 flex-col items-center gap-4 py-2">
+        <h2 className="text-center text-4xl font-black text-ink sm:text-5xl">Fix the edges</h2>
+        <p className="max-w-xl text-center text-xl text-ink-soft">
+          Paint <strong className="text-ink">Keep</strong> over bits of your drawing that went missing, and <strong className="text-ink">Remove</strong> over bits of paper.
+        </p>
+        <div className="kid-tools crayon-edge w-full max-w-2xl rounded-cut-lg bg-white p-4 shadow-soft">
+          <CutoutTouchUp
+            cutout={cut}
+            onDone={(fixed) => {
+              onFixed(fixed);
+              setFixing(false);
+            }}
+            onCancel={() => setFixing(false)}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col items-center gap-5 py-2 sm:gap-6">
       <h2 className="anim-float-in text-center text-4xl font-black text-ink sm:text-5xl">Is this your friend?</h2>
@@ -205,6 +245,18 @@ export function CutoutPreview({
         >
           {retakeLabel}
         </Button>
+        {cut.edit && (
+          <Button
+            tone="paper"
+            size="lg"
+            onClick={() => setFixing(true)}
+            disabled={saving}
+            icon={<Sparkle size={28} weight="fill" aria-hidden="true" />}
+            className="sm:flex-1"
+          >
+            Fix the edges
+          </Button>
+        )}
         <Button
           tone="grass"
           size="lg"

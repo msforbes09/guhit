@@ -359,6 +359,7 @@ export function DrawScreen() {
             retakeLabel="Keep drawing"
             onRetake={life.reset}
             onAccept={life.accept}
+            onFixed={life.fixEdges}
           />
         )}
         {life.phase === "error" && <CutError onRetry={life.reset} />}

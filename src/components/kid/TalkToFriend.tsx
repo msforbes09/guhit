@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { getAI } from "@/lib/ai";
 import type { ChatTurn } from "@/lib/ai";
 import { saveFriend, type Friend } from "@/lib/story/db";
-import type { AliveCharacterHandle, Motion } from "./alive";
+import { JointPicker, loadCutout, type AliveCharacterHandle, type Cutout, type Joints, type Motion } from "./alive";
 import { FriendBooks } from "./FriendBooks";
 import { FriendStage } from "./FriendStage";
 import { useAIReady, usePushToTalk } from "./hooks";
@@ -19,11 +19,12 @@ import {
   MoonStars,
   MusicNotes,
   PaperPlaneRight,
+  Sparkle,
   SpeakerHigh,
 } from "./icons";
 import { MicButton } from "./MicButton";
 import { ReadyCard } from "./ReadyCard";
-import { Button, SpeechBubble, ThinkingDots, TopBar, type Tone } from "./ui";
+import { Button, Sheet, SpeechBubble, ThinkingDots, TopBar, type Tone } from "./ui";
 
 type Phase = "idle" | "hearing" | "thinking" | "speaking" | "oops";
 
@@ -60,7 +61,34 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   const moveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greeted = useRef(false);
   const character = useRef<AliveCharacterHandle>(null);
+  // "Make it move more": the picker needs the cut-out with its mask.
+  const [picking, setPicking] = useState<Cutout | null>(null);
   const name = friend.name;
+
+  const openPicker = async () => {
+    if (!friend.cutout) return;
+    try {
+      setPicking(await loadCutout(friend.cutout));
+    } catch {
+      // Without a mask there is nothing to pick on; the motions still work.
+    }
+  };
+
+  const keepJoints = async (joints: Joints) => {
+    setPicking(null);
+    const next = { ...friendRef.current, joints };
+    friendRef.current = next;
+    setFriend(next);
+    // Show off the new arms and legs straight away.
+    setMotion("dance");
+    if (moveTimer.current) clearTimeout(moveTimer.current);
+    moveTimer.current = setTimeout(() => setMotion("idle"), 4000);
+    try {
+      friendRef.current = await saveFriend(next);
+    } catch {
+      // It still moves this time even if it could not be kept.
+    }
+  };
 
   const busy = phase === "hearing" || phase === "thinking";
   const lastLine = [...friend.chat].reverse().find((t) => t.who === "character")?.text;
@@ -229,16 +257,24 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
       />
 
       <div className="grid flex-1 gap-5 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 lg:grid-cols-[1fr_380px] lg:items-stretch">
-        <FriendStage
-          cutout={friend.cutout ?? friend.drawing}
-          name={name}
-          motion={phase === "thinking" || phase === "hearing" ? "idle" : motion}
-          talking={phase === "speaking"}
-          thinking={phase === "thinking" || phase === "hearing"}
-          characterRef={character}
-          bubble={bubble}
-          className="h-[50vh] min-h-80 lg:h-auto lg:min-h-[72vh]"
-        />
+        {picking ? (
+          <Sheet className="kid-tools flex flex-col gap-3 p-4 sm:p-6 lg:min-h-[72vh]">
+            <h2 className="text-center text-3xl font-black text-ink">Show me my head, hands and feet!</h2>
+            <JointPicker cutout={picking} onDone={keepJoints} onCancel={() => setPicking(null)} />
+          </Sheet>
+        ) : (
+          <FriendStage
+            cutout={friend.cutout ?? friend.drawing}
+            name={name}
+            joints={friend.joints}
+            motion={phase === "thinking" || phase === "hearing" ? "idle" : motion}
+            talking={phase === "speaking"}
+            thinking={phase === "thinking" || phase === "hearing"}
+            characterRef={character}
+            bubble={bubble}
+            className="h-[50vh] min-h-80 lg:h-auto lg:min-h-[72vh]"
+          />
+        )}
 
         <section className="flex flex-col gap-5" aria-label={`Talk to ${name}`}>
           {ready === "needs-setup" || ready === "error" ? (
@@ -337,6 +373,16 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
                 </button>
               ))}
             </div>
+            {friend.cutout && !picking && (
+              <button
+                type="button"
+                onClick={openPicker}
+                className="mt-3 inline-flex min-h-12 items-center gap-2 font-display text-lg font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
+              >
+                <Sparkle size={22} weight="fill" aria-hidden="true" />
+                {friend.joints ? "Change how I move" : "Make it move more"}
+              </button>
+            )}
           </div>
 
           <FriendBooks friendId={friend.id} />
