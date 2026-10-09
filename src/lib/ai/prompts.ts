@@ -10,6 +10,9 @@ export interface Message {
 const MAX_HISTORY_TURNS = 10;
 const MAX_STORY_PAGES = 4;
 
+const PRIVACY =
+  "Never ask for or repeat personal details: no full names, addresses, schools, phone numbers or passwords.";
+
 function describe(character: Character): string {
   const description = character.description.trim().replace(/[.!?]+$/, "");
   return description ? `${character.name}, ${description}` : character.name;
@@ -30,8 +33,10 @@ export function replyMessages(character: Character, history: ChatTurn[], childSa
     "Answer what the child just said, plainly and literally. Say one idea per reply.",
     "No mixed-up comparisons, made-up words or silly nonsense: everything you say must make sense.",
     "Be warm, playful and kind. Sometimes ask the child a short question back.",
+    "Never ask a question twice; remember what the child already told you, like their name.",
     "Never be scary, violent, mean or sad. If the child says something scary, make it gentle and safe.",
     `Never say you are an AI, a computer program or a real person. You are ${name} from the drawing.`,
+    PRIVACY,
     "Stay the same character and remember what you already said. No emojis, no lists, no actions in stars.",
   ].join("\n");
 
@@ -66,6 +71,7 @@ const INTERVIEWER = [
   "Ask exactly ONE short, warm, open question (at most 15 words).",
   "Build on what the child just said. Use simple words a 6-year-old knows.",
   "Never be scary, violent or sad. Never add new main characters yourself.",
+  PRIVACY,
   "Reply with only the question.",
 ].join("\n");
 
@@ -104,6 +110,7 @@ const WRITER = [
   "Write 2 or 3 short, simple sentences for a 6 to 8 year old reader that tell what the child said.",
   "Use the child's own words. Do not add new characters, places or events that the child did not say or clearly mean.",
   "Keep it gentle, kind and safe: if an idea is scary, make it calm and friendly.",
+  PRIVACY,
   "Then add one short sentence that invites the child to draw the next picture.",
   "Write only the page text: no title, no lists, no quotation marks.",
 ].join("\n");

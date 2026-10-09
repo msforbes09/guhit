@@ -46,6 +46,24 @@ removed) for "Is that …?". An empty `label` means no guess (model not
 available, nothing safe to say): ask the child instead. The drawing itself is
 never changed.
 
+## Safety (inside the engine, screens cannot skip it)
+
+`src/lib/ai/safety.ts` screens three things with word lists (plurals, leetspeak
+such as "k1ll" or "sh*t", English and common Tagalog swearing):
+
+- what the child says, before it reaches a model: blocked input gets a kind,
+  in-character change of subject instead of an answer ("Let's talk about
+  something happy!…"; for phone numbers, addresses, schools: "That's a secret
+  for grown-ups!…"); story pages say the character thought about happy things;
+- every sentence a model writes, before it is shown or spoken: a blocked
+  sentence is replaced and generation stops;
+- drawing guesses: `describeDrawing()` returns `{ label: "", flagged }`.
+
+Storybook adventure passes (swords, knights, dragons, monsters, pirates,
+bow and arrow, "shooting star", "leche flan"); guns, bombs, stabbing, blood,
+nudity, drugs, alcohol, swearing and personal details are blocked. The
+cases are in `src/lib/ai/safety-cases.ts` and run in `/lab` ("Safety tests").
+
 ## Story mode
 
 `firstQuestion(character)`, then per turn `writePage(story, question, answer)`
