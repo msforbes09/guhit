@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AIStatusPill } from "@/components/kid/AIStatusPill";
 import { FriendShelf } from "@/components/kid/FriendShelf";
 import { HeroDoodle } from "@/components/kid/HeroDoodle";
+import { Logo } from "@/components/kid/Logo";
 import { Camera, DownloadSimple, PaintBrush } from "@/components/kid/icons";
 import { LinkButton, Scribble } from "@/components/kid/ui";
 
@@ -9,10 +10,7 @@ export default function Home() {
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-8 sm:px-6">
       <header className="flex items-center justify-between gap-4">
-        <span className="relative font-display text-4xl font-black tracking-tight text-ink sm:text-5xl">
-          Guhit
-          <Scribble className="absolute -bottom-2 left-0 h-3 w-full" color="var(--crayon-red)" />
-        </span>
+        <Logo className="h-14 w-auto sm:h-16" />
         <AIStatusPill />
       </header>
 

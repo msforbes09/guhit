@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Andika, Grandstander } from "next/font/google";
+import { Splash } from "@/components/kid/Splash";
+import pkg from "../../package.json";
 import "./globals.css";
 import { ServiceWorkerRegister } from "./sw-register";
 
@@ -25,6 +27,13 @@ export const metadata: Metadata = {
     "Your child's drawing comes alive and talks back, and nothing ever leaves the device.",
   applicationName: "Guhit",
   appleWebApp: { capable: true, title: "Guhit", statusBarStyle: "default" },
+  icons: {
+    icon: [
+      { url: "/icons/favicon.svg", type: "image/svg+xml" },
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: "/icons/apple-touch-icon-180.png",
+  },
 };
 
 export const viewport: Viewport = {
@@ -45,6 +54,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </filter>
         </svg>
         {children}
+        <Splash version={pkg.version} />
         <ServiceWorkerRegister />
       </body>
     </html>
