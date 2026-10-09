@@ -1,6 +1,7 @@
 import type { VisionRequest, VisionResponse } from "@/workers/vision.worker";
 import { ModelWorker } from "./model-worker";
 import type { STTDevice } from "./models";
+import type { PixelRect } from "./types";
 
 export interface Caption {
   caption: string;
@@ -23,11 +24,14 @@ export class VisionClient {
     return this.worker.load({ type: "load", model, device, dtype, modelHost } satisfies VisionRequest, onProgress);
   }
 
-  /** `png` is the cut-out as a data URL; the worker puts it on white before captioning. */
-  async describe(png: string): Promise<Caption> {
+  /**
+   * `image` is a data URL: either the cut-out (put on white before captioning)
+   * or, with `crop`, the original photo (only the cropped region is captioned).
+   */
+  async describe(image: string, crop?: PixelRect): Promise<Caption> {
     if (!this.worker) throw new Error("Drawing recognition is not loaded yet.");
-    const image = await (await fetch(png)).blob();
-    const result = await this.worker.call({ type: "describe", image });
+    const blob = await (await fetch(image)).blob();
+    const result = await this.worker.call({ type: "describe", image: blob, crop });
     return { caption: result.caption, ms: result.ms };
   }
 }

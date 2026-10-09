@@ -16,7 +16,13 @@ export type VisionRequest =
       dtype: Record<string, string>;
       modelHost: string | null;
     }
-  | { type: "describe"; id: number; image: Blob };
+  | {
+      type: "describe";
+      id: number;
+      image: Blob;
+      /** Set for an original photo: caption just this region of it. Unset for a cut-out with transparency. */
+      crop?: { x: number; y: number; w: number; h: number };
+    };
 
 export type VisionResponse =
   | { type: "progress"; file: string; loaded: number; total: number }
@@ -54,6 +60,29 @@ async function onWhite(blob: Blob): Promise<RawImage> {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bitmap, pad, pad, w, h);
+  bitmap.close();
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return new RawImage(data, canvas.width, canvas.height, 4).rgb();
+}
+
+/**
+ * The original photo around the cut-out, with a little of the paper for
+ * context: the model reads real pixels (lines, colours, texture) far better
+ * than a cut-out pasted on white.
+ */
+async function photoRegion(blob: Blob, crop: { x: number; y: number; w: number; h: number }): Promise<RawImage> {
+  const bitmap = await createImageBitmap(blob);
+  const pad = Math.round(Math.max(crop.w, crop.h) * MARGIN * 0.5);
+  const x = Math.max(0, crop.x - pad);
+  const y = Math.max(0, crop.y - pad);
+  const w = Math.min(bitmap.width, crop.x + crop.w + pad) - x;
+  const h = Math.min(bitmap.height, crop.y + crop.h + pad) - y;
+  if (w <= 0 || h <= 0) throw new Error("The crop lies outside the photo.");
+  const fit = Math.min(1, MAX_SIDE / Math.max(w, h));
+  const canvas = new OffscreenCanvas(Math.round(w * fit), Math.round(h * fit));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("No 2D canvas in this browser's workers.");
+  ctx.drawImage(bitmap, x, y, w, h, 0, 0, canvas.width, canvas.height);
   bitmap.close();
   const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   return new RawImage(data, canvas.width, canvas.height, 4).rgb();
@@ -98,7 +127,8 @@ self.onmessage = async (event: MessageEvent<VisionRequest>) => {
 
     if (request.type === "describe") {
       const started = performance.now();
-      const text = await caption(await onWhite(request.image));
+      const image = request.crop ? await photoRegion(request.image, request.crop) : await onWhite(request.image);
+      const text = await caption(image);
       post({ type: "result", id: request.id, caption: text, ms: performance.now() - started });
     }
   } catch (error) {

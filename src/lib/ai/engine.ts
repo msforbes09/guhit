@@ -24,7 +24,7 @@ import {
 import type { STTClient } from "./stt";
 import type { VisionClient } from "./vision";
 import { Speaker, type VoiceInfo } from "./tts";
-import type { AIStatus, ChatTurn, DrawingDescription, LoadProgress, LocalAI } from "./types";
+import type { AIStatus, ChatTurn, DrawingDescription, DrawingPhoto, LoadProgress, LocalAI } from "./types";
 
 export type CallKind =
   | "reply"
@@ -280,13 +280,14 @@ export class RealAI implements LocalAI {
   }
 
   /** An empty label means "no guess": the screen asks the child instead of "Is that …?". */
-  async describeDrawing(png: string): Promise<DrawingDescription> {
+  async describeDrawing(png: string, photo?: DrawingPhoto): Promise<DrawingDescription> {
     await this.ready();
     const vision = this.vision;
-    if (!vision || !png) return { label: "" };
+    if (!vision || (!png && !photo)) return { label: "" };
     const started = performance.now();
     try {
-      const { caption } = await vision.describe(png);
+      // The original photo reads better than the cut-out on white (tested in /lab).
+      const { caption } = photo ? await vision.describe(photo.image, photo.crop) : await vision.describe(png);
       const label = cleanCaption(caption);
       this.record({ kind: "describe", text: label, detail: caption, ms: performance.now() - started, fallback: !label });
       return { label };
