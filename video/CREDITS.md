@@ -1,5 +1,18 @@
 # Credits and licences
 
+## AI used to make this video (for the disclosures)
+
+| Tool | What it made |
+|---|---|
+| ElevenLabs, voice "Jeni" (`eleven_multilingual_v2`) | The narration |
+| Higgsfield (the stills in `assets/video-gen`; model as recorded on that account) | The three table stills (hands with crayons, phone over paper, wide table). The dragon on the paper is the real sample drawing, composited in code |
+| Claude (Anthropic), via Claude Code | All of this project's code: capture scripts, the Remotion edit and motion graphics, compositing, the music and sound-effect synthesizer |
+| Whisper base.en, on this computer | Quality check only: listened to every narration take against the script (nothing in the video) |
+
+Not production tools: the AI seen and heard in the footage is Guhit's own on-device models
+at work while filming (Florence-2, Whisper, Qwen3, Kokoro). Music and sound effects are
+synthesized by code, not by an AI model.
+
 ## Sound
 
 | What | Source | Licence / terms |

@@ -19,7 +19,12 @@ export const APP = process.env.GUHIT_URL ?? "http://localhost:3191";
 
 export const PHONE = { width: 430, height: 932, scale: 2, mobile: true } as const;
 export const LAPTOP = { width: 1280, height: 800, scale: 1.5, mobile: false } as const;
-export type Device = typeof PHONE | typeof LAPTOP;
+export interface Device {
+  width: number;
+  height: number;
+  scale: number;
+  mobile: boolean;
+}
 
 const FPS = 30;
 

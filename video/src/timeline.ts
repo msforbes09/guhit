@@ -4,6 +4,7 @@
 // (ElevenLabs instead of the Kokoro placeholders) re-times the cut by itself.
 // If the total runs past MAX_SECONDS, flexible scenes give back time first.
 import hero from "../footage/hero.json";
+import setup from "../footage/setup.json";
 import narration from "../public/voice/narration.json";
 
 export const FPS = 30;
@@ -12,7 +13,7 @@ export const MAX_SECONDS = 59.7;
 
 export type SceneId =
   | "draw" | "snapPhoto" | "alive" | "problemA" | "problemB" | "logo" | "snapApp" | "cutout" | "meadow"
-  | "vehicle" | "plant" | "flyer" | "look" | "guess" | "hold" | "answer" | "airplane" | "setup" | "diagram"
+  | "vehicle" | "plant" | "flyer" | "look" | "guess" | "hold" | "answer" | "airplane" | "setup" | "parts" | "diagram"
   | "title" | "endLogo" | "maker";
 
 interface SceneSpec {
@@ -47,22 +48,26 @@ const replyVoice = voiceAfter("heard");
 const replySeconds = replyVoice.length ? replyVoice[replyVoice.length - 1].at + replyVoice[replyVoice.length - 1].seconds - (marks.heard ?? 0) : 3.5;
 
 export const BEATS: BeatSpec[] = [
-  { scenes: [{ id: "draw", min: 1.4 }, { id: "snapPhoto", min: 0.9 }, { id: "alive", min: 2.3 }], lines: ["hook"], lead: 0.3 },
+  { scenes: [{ id: "draw", min: 1.3 }, { id: "snapPhoto", min: 0.85 }, { id: "alive", min: 2.25 }], lines: ["hook"], lead: 0.3 },
   { scenes: [{ id: "problemA", min: 2.4 }], lines: ["problem-a"], lead: 0.15, tail: 0.15 },
   { scenes: [{ id: "problemB", min: 2.0 }], lines: ["problem-b"], lead: 0.1, tail: 0.05 },
-  { scenes: [{ id: "logo", min: 3.95, floor: 3.6 }] },
+  { scenes: [{ id: "logo", min: 3.6 }] },
   { scenes: [{ id: "snapApp", min: 1.9 }], lines: ["snap-a"], lead: 0.1, tail: 0.1 },
-  { scenes: [{ id: "cutout", min: 2.2 }, { id: "meadow", min: 2.4, floor: 2.0 }], lines: ["snap-b"], lead: 0.1, lineInFirst: true },
-  { scenes: [{ id: "vehicle", min: 2.1, floor: 1.8 }, { id: "plant", min: 2.1, floor: 1.8 }, { id: "flyer", min: 2.2, floor: 1.9 }], lines: ["moves"], lead: 0.15, lineInFirst: true },
+  // (The "meadow" landing shot was dropped to give the setup beat its time; the cut-out
+  // preview already shows the drawing alive on its meadow.)
+  { scenes: [{ id: "cutout", min: 2.5 }], lines: ["snap-b"], lead: 0.1, tail: 0.15 },
+  { scenes: [{ id: "vehicle", min: 2.35 }, { id: "plant", min: 1.7 }, { id: "flyer", min: 1.85 }], lines: ["moves"], lead: 0.15, lineInFirst: true },
   // The guess is said out loud by the drawing in the guess scene: the narration finishes in "look".
-  { scenes: [{ id: "look", min: 2.75 }, { id: "guess", min: 3.6, floor: 3.3 }], lines: ["guess"], lead: 0.15, lineInFirst: true },
-  { scenes: [{ id: "hold", min: 3.0 }, { id: "answer", min: Math.max(3.2, replySeconds + 0.6), floor: Math.max(3.0, replySeconds + 0.4) }], lines: ["talk"], lead: 0.1, lineInFirst: true },
-  { scenes: [{ id: "airplane", min: 3.0, floor: 2.6 }], lines: ["offline-a"], lead: 0.15, tail: 0.1 },
-  { scenes: [{ id: "setup", min: 3.5 }], lines: ["offline-b"], lead: 0.1, tail: 0.05 },
+  { scenes: [{ id: "look", min: 2.5 }, { id: "guess", min: 3.6, floor: 3.3 }], lines: ["guess"], lead: 0.15, lineInFirst: true },
+  { scenes: [{ id: "hold", min: 3.0 }, { id: "answer", min: Math.max(3.2, replySeconds + 0.25), floor: Math.max(3.0, replySeconds + 0.2) }], lines: ["talk"], lead: 0.1, lineInFirst: true },
+  { scenes: [{ id: "airplane", min: 2.8, floor: 2.6 }], lines: ["offline-a"], lead: 0.15, tail: 0.1 },
+  // How Guhit uses on-device AI: the real setup list filling, then each part matched to its moment.
+  { scenes: [{ id: "setup", min: 5.0, floor: 4.6 }], lines: ["offline-b"], lead: 0.3, tail: 0.2 },
+  { scenes: [{ id: "parts", min: 3.4, floor: 3.0 }] },
   { scenes: [{ id: "diagram", min: 3.7 }], lines: ["offline-c"], lead: 0.1, tail: 0.1 },
-  { scenes: [{ id: "title", min: 4.4 }], lines: ["title-a", "title-b", "title-c"], lead: 0.2, gap: 0.05, tail: 0.0 },
+  { scenes: [{ id: "title", min: 3.4 }], lines: ["title-a", "title-b", "title-c"], lead: 0.2, gap: 0.05, tail: 0.0 },
   { scenes: [{ id: "endLogo", min: 2.8 }], lines: ["end"], lead: 0.2 },
-  { scenes: [{ id: "maker", min: 2.3, floor: 2.0 }] },
+  { scenes: [{ id: "maker", min: 2.1, floor: 2.0 }] },
 ];
 
 type Manifest = { lines: Record<string, { text: string; file: string; seconds: number; engine: string }> };
@@ -153,4 +158,13 @@ export const scene = (id: SceneId) => {
  */
 export const LAG = 0.25;
 type HeroTexts = { guess?: string | null; greeting?: string | null; said?: string | null; reply?: string | null };
+/** The setup clip (capture/setup.ts): parts list timelapse, its marks and each part's row picture. */
+export const SETUP = setup as {
+  clip: string;
+  width: number;
+  height: number;
+  timelapseSeconds: number;
+  marks: { firstProgress: number; allReady: number };
+  parts: { name: string; detail: string; image: string }[];
+};
 export const HERO = { marks, voices, replySeconds, texts: ((hero as { texts?: HeroTexts }).texts ?? {}) as HeroTexts };

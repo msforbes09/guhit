@@ -28,6 +28,12 @@ const icons: Record<string, ReactNode> = {
       <circle cx="32" cy="32" r="3" fill={C.ink} stroke="none" />
     </g>
   ),
+  ear: (
+    <g {...ICON}>
+      <path d="M20 26 C20 12 32 6 40 6 C52 6 58 16 58 26 C58 36 50 40 46 46 C42 52 44 58 36 58 C30 58 28 54 28 50" fill={C.sky} />
+      <path d="M32 26 C32 20 36 16 41 16 C46 16 48 20 48 25 C48 30 42 32 42 36" />
+    </g>
+  ),
   chat: (
     <g {...ICON}>
       <path d="M10 12 h44 a6 6 0 0 1 6 6 v22 a6 6 0 0 1 -6 6 h-26 l-12 10 v-10 h-6 a6 6 0 0 1 -6 -6 v-22 a6 6 0 0 1 6 -6 z" fill={C.grass} />
@@ -48,6 +54,7 @@ const STEPS = [
   { icon: "camera", label: "Camera", tech: "your photo" },
   { icon: "scissors", label: "Cut-out", tech: "on-device" },
   { icon: "eye", label: "Seeing eyes", tech: "Florence-2" },
+  { icon: "ear", label: "Listening ears", tech: "Whisper" },
   { icon: "chat", label: "Story helper", tech: "Qwen3 LLM" },
   { icon: "voice", label: "Voice", tech: "Kokoro" },
 ];
@@ -86,14 +93,14 @@ function Cloud({ cross }: { cross: number }) {
 }
 
 /** Timings (frames from the start of the scene) the sound effects can follow. */
-export const DIAGRAM_BEATS = { steps: [2, 10, 18, 26, 34], cross: 58 };
+export const DIAGRAM_BEATS = { steps: [2, 9, 16, 23, 30, 37], cross: 58 };
 
 export function Diagram() {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
   const portrait = height > width;
   const phoneW = portrait ? 620 : 520;
-  const phoneH = portrait ? 1060 : 900;
+  const phoneH = portrait ? 1120 : 940;
   const cross = interpolate(frame, [DIAGRAM_BEATS.cross, DIAGRAM_BEATS.cross + 12], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const cloudIn = spring({ frame: frame - 40, fps, config: { damping: 14 } });
   // Already on its way in at the cut, so the first frame is never empty.
@@ -117,7 +124,7 @@ export function Diagram() {
             flexDirection: "column",
             justifyContent: "center",
             padding: "0 38px",
-            gap: 14,
+            gap: 8,
           }}
         >
           <div style={{ position: "absolute", top: 22, left: "50%", width: 110, height: 16, borderRadius: 10, background: C.ink, transform: "translateX(-50%)" }} />
@@ -126,8 +133,8 @@ export function Diagram() {
             return (
               <div key={step.label} style={{ display: "flex", flexDirection: "column", alignItems: "stretch" }}>
                 {i > 0 && (
-                  <div style={{ height: 22, display: "flex", justifyContent: "center", opacity: p }}>
-                    <svg width="30" height="22" viewBox="0 0 30 22">
+                  <div style={{ height: 20, display: "flex", justifyContent: "center", opacity: p }}>
+                    <svg width="30" height="20" viewBox="0 0 30 22">
                       <path d="M15 0 V16 M7 10 L15 19 L23 10" stroke={C.inkSoft} strokeWidth={4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </div>
@@ -137,7 +144,7 @@ export function Diagram() {
                     display: "flex",
                     alignItems: "center",
                     gap: 20,
-                    padding: "12px 20px",
+                    padding: "8px 18px",
                     borderRadius: 30,
                     background: "white",
                     border: `4px solid ${C.ink}`,
@@ -145,11 +152,11 @@ export function Diagram() {
                     opacity: interpolate(p, [0, 0.3], [0, 1], { extrapolateRight: "clamp" }),
                   }}
                 >
-                  <svg viewBox="0 0 64 64" width={70} height={70} style={{ flexShrink: 0 }}>
+                  <svg viewBox="0 0 64 64" width={62} height={62} style={{ flexShrink: 0 }}>
                     {icons[step.icon]}
                   </svg>
                   <div>
-                    <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 40, color: C.ink, lineHeight: 1 }}>{step.label}</div>
+                    <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 38, color: C.ink, lineHeight: 1 }}>{step.label}</div>
                     <div style={{ fontFamily: BODY, fontWeight: 700, fontSize: 25, color: C.inkSoft, marginTop: 4 }}>{step.tech}</div>
                   </div>
                 </div>

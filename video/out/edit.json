@@ -1,115 +1,115 @@
 {
-  "totalFrames": 1791,
+  "totalFrames": 1785,
   "scenes": [
     {
       "id": "draw",
       "from": 0,
-      "dur": 1.4
+      "dur": 1.3
     },
     {
       "id": "snapPhoto",
-      "from": 1.4,
-      "dur": 0.9
+      "from": 1.3,
+      "dur": 0.85
     },
     {
       "id": "alive",
-      "from": 2.3,
-      "dur": 2.3
+      "from": 2.15,
+      "dur": 2.25
     },
     {
       "id": "problemA",
-      "from": 4.6,
+      "from": 4.4,
       "dur": 2.436
     },
     {
       "id": "problemB",
-      "from": 7.036,
+      "from": 6.836,
       "dur": 2.4539999999999997
     },
     {
       "id": "logo",
-      "from": 9.489999999999998,
-      "dur": 3.8990000000000125
+      "from": 9.29,
+      "dur": 3.6
     },
     {
       "id": "snapApp",
-      "from": 13.38900000000001,
+      "from": 12.889999999999999,
       "dur": 1.9000000000000001
     },
     {
       "id": "cutout",
-      "from": 15.28900000000001,
-      "dur": 2.556
-    },
-    {
-      "id": "meadow",
-      "from": 17.84500000000001,
-      "dur": 2.044
+      "from": 14.79,
+      "dur": 2.506
     },
     {
       "id": "vehicle",
-      "from": 19.88900000000001,
-      "dur": 2.342
+      "from": 17.296,
+      "dur": 2.35
     },
     {
       "id": "plant",
-      "from": 22.23100000000001,
-      "dur": 1.9818139534883719
+      "from": 19.646,
+      "dur": 1.7000000000000002
     },
     {
       "id": "flyer",
-      "from": 24.212813953488382,
-      "dur": 2.0761860465116277
+      "from": 21.346,
+      "dur": 1.85
     },
     {
       "id": "look",
-      "from": 26.28900000000001,
-      "dur": 2.75
+      "from": 23.195999999999998,
+      "dur": 2.654
     },
     {
       "id": "guess",
-      "from": 29.03900000000001,
-      "dur": 3.6
+      "from": 25.849999999999998,
+      "dur": 3.4460000000000006
     },
     {
       "id": "hold",
-      "from": 32.63900000000001,
-      "dur": 2.9999999999999996
-    },
-    {
-      "id": "answer",
-      "from": 35.63900000000001,
-      "dur": 4.360999999999994
-    },
-    {
-      "id": "airplane",
-      "from": 40.00000000000001,
+      "from": 29.296,
       "dur": 3
     },
     {
+      "id": "answer",
+      "from": 32.296,
+      "dur": 4.010999999999996
+    },
+    {
+      "id": "airplane",
+      "from": 36.306999999999995,
+      "dur": 2.8
+    },
+    {
       "id": "setup",
-      "from": 43.00000000000001,
-      "dur": 3.5
+      "from": 39.10699999999999,
+      "dur": 5
+    },
+    {
+      "id": "parts",
+      "from": 44.10699999999999,
+      "dur": 3.4
     },
     {
       "id": "diagram",
-      "from": 46.50000000000001,
+      "from": 47.50699999999999,
       "dur": 3.7
     },
     {
       "id": "title",
-      "from": 50.20000000000001,
-      "dur": 4.4
+      "from": 51.206999999999994,
+      "dur": 3.4
     },
     {
       "id": "endLogo",
-      "from": 54.60000000000001,
+      "from": 54.60699999999999,
       "dur": 2.8
     },
     {
       "id": "maker",
-      "from": 57.400000000000006,
-      "dur": 2.3
+      "from": 57.40699999999999,
+      "dur": 2.1
     }
   ],
   "cues": [
@@ -122,102 +122,102 @@
     },
     {
       "id": "problem-a",
-      "at": 4.75,
+      "at": 4.550000000000001,
       "seconds": 2.136,
       "text": "Most AI imagines for kids.",
       "file": "voice/narration/problem-a.mp3"
     },
     {
       "id": "problem-b",
-      "at": 7.135999999999999,
+      "at": 6.936,
       "seconds": 2.304,
       "text": "Guhit makes kids imagine.",
       "file": "voice/narration/problem-b.mp3"
     },
     {
       "id": "snap-a",
-      "at": 13.48900000000001,
+      "at": 12.989999999999998,
       "seconds": 1.2,
       "text": "Snap your drawing.",
       "file": "voice/narration/snap-a.mp3"
     },
     {
       "id": "snap-b",
-      "at": 15.38900000000001,
+      "at": 14.889999999999999,
       "seconds": 2.256,
       "text": "Guhit cuts it out, and brings it to life.",
       "file": "voice/narration/snap-b.mp3"
     },
     {
       "id": "moves",
-      "at": 20.03900000000001,
+      "at": 17.445999999999998,
       "seconds": 1.992,
       "text": "It moves like what it is.",
       "file": "voice/narration/moves.mp3"
     },
     {
       "id": "guess",
-      "at": 26.439000000000007,
+      "at": 23.345999999999997,
       "seconds": 2.304,
       "text": "It even guesses what you drew.",
       "file": "voice/narration/guess.mp3"
     },
     {
       "id": "talk",
-      "at": 32.73900000000001,
+      "at": 29.396,
       "seconds": 2.304,
       "text": "Hold to talk, and your friend talks back.",
       "file": "voice/narration/talk.mp3"
     },
     {
       "id": "offline-a",
-      "at": 40.150000000000006,
+      "at": 36.456999999999994,
       "seconds": 2.04,
       "text": "No internet? Still works.",
       "file": "voice/narration/offline-a.mp3"
     },
     {
       "id": "offline-b",
-      "at": 43.10000000000001,
+      "at": 39.40699999999999,
       "seconds": 2.88,
       "text": "All the AI runs right here, on the device.",
       "file": "voice/narration/offline-b.mp3"
     },
     {
       "id": "offline-c",
-      "at": 46.60000000000001,
+      "at": 47.60699999999999,
       "seconds": 3.24,
       "text": "Nothing your child draws or says ever leaves it.",
       "file": "voice/narration/offline-c.mp3"
     },
     {
       "id": "title-a",
-      "at": 50.40000000000001,
+      "at": 51.407,
       "seconds": 0.768,
       "text": "No cloud.",
       "file": "voice/narration/title-a.mp3"
     },
     {
       "id": "title-b",
-      "at": 51.21800000000001,
+      "at": 52.224999999999994,
       "seconds": 0.864,
       "text": "No account.",
       "file": "voice/narration/title-b.mp3"
     },
     {
       "id": "title-c",
-      "at": 52.13200000000001,
+      "at": 53.138999999999996,
       "seconds": 1.008,
       "text": "Just crayons.",
       "file": "voice/narration/title-c.mp3"
     },
     {
       "id": "end",
-      "at": 54.80000000000001,
+      "at": 54.806999999999995,
       "seconds": 2.352,
       "text": "Every drawing has a friend inside.",
       "file": "voice/narration/end.mp3"
     }
   ],
-  "total": 59.7
+  "total": 59.50699999999999
 }

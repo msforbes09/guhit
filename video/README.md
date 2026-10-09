@@ -40,7 +40,7 @@ node scripts/copy-assets.mjs /path/to/guhit/assets   # logo, splash, sample draw
 node capture/serve-app.mjs &                           # serves ../out + the mirror on http://localhost:3191
 
 # 2. Film the real app (headed Chrome opens; leave it alone while it runs)
-node capture/setup.ts --fresh   # /setup loading every model (real timelapse) → footage/setup.mp4
+node capture/setup.ts --fresh   # /setup loading every model: parts-list timelapse + each row's "Ready" picture
 node capture/hero.ts            # snap → cut-out → guess → talk with real on-device AI → footage/hero.mp4
 node capture/moves.ts           # drive / sway / fly / walk → footage/move-*.mp4
 
@@ -53,6 +53,7 @@ node scripts/check-voice.mjs                          # Whisper listens to every
 npx remotion render src/index.ts Guhit16x9 out/guhit-60s-16x9.mp4 --codec=h264 --audio-codec=aac --crf=17
 node scripts/review.mjs 16x9   # duration/codecs/loudness, frames every 0.5 s + around cuts, review grids, contact sheet
 node scripts/stills.mjs Guhit16x9 12.5 37   # quick single frames without a full render
+node scripts/script-md.mjs     # refresh SCRIPT.md's shot table from the edit
 ```
 
 `npx remotion studio src/index.ts` previews and scrubs the edit live.
@@ -90,6 +91,19 @@ re-lays itself out. Render it with the same command and `Guhit9x16 out/guhit-60s
 
 ## Capture notes
 
+- **The model mirror must match the build you film.** The setup run downloads exactly
+  what that build asks for; if the mirror lacks a file (for example a model the new build
+  no longer uses, or one it newly needs), setup falls back (e.g. to the device voice) and
+  the shot shows it. Check `footage/setup.json` (`ok`, `parts[].detail`) after the run.
+- **Setup shot** (`capture/setup.ts`): filmed at phone width (430 px, 3×) as element
+  screenshots of the parts list itself, so the crop follows the list whatever the
+  wording. It writes `footage/setup-list.mp4`, one picture per finished row
+  (`footage/setup-row-<n>.png`) and `footage/setup.json` (sizes, marks for "first bar
+  moving" and "every row ready", the rows' names). The edit plays the list from the
+  first bar to "all ready" and pairs each row with its moment in the app
+  (`PART_MOMENTS` in `src/Promo.tsx`; rows are matched in the setup screen's order:
+  story helper, listening ears, seeing eyes, voice — change `row` there if the final
+  screen reorders them).
 - The capture browser is Google Chrome (headed, for WebGPU) with its own profile in
   `.capture/profile` (git-ignored), so the models downloaded by `/setup` stay between
   runs. `capture/setup.ts --fresh` starts from an empty profile to film the full load.

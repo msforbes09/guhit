@@ -5,6 +5,8 @@ import {
   AbsoluteFill,
   Audio,
   Easing,
+  Freeze,
+  Img,
   getStaticFiles,
   interpolate,
   OffthreadVideo,
@@ -22,7 +24,7 @@ import { Logo, LogoReveal } from "./components/Splash";
 import { Flash, IdeaTag, isPortrait, SoftGradient, Subtitle } from "./components/ui";
 import { CrayonRing, KineticLine, timeWords } from "./Kinetic";
 import { BODY, C, DISPLAY, GRAIN, LONG_SHADOW } from "./theme";
-import { EDIT, f, FPS, HERO, LAG, scene, type Cue, type SceneId } from "./timeline";
+import { EDIT, f, FPS, HERO, LAG, scene, SETUP, type Cue, type SceneId } from "./timeline";
 
 // ---------- footage geometry (source pixels) ----------
 const PHONE_SRC = { w: 860, h: 1864 };
@@ -238,7 +240,10 @@ function LogoScene() {
     <AbsoluteFill>
       <SoftGradient hue="sky" />
       <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", marginTop: portrait ? -60 : -10 }}>
-        <LogoReveal width={portrait ? 760 : 620} />
+        {/* Starts a few frames in, so the first frame already shows the crayon line. */}
+        <Sequence from={-4} layout="none">
+          <LogoReveal width={portrait ? 760 : 620} />
+        </Sequence>
       </AbsoluteFill>
     </AbsoluteFill>
   );
@@ -595,55 +600,159 @@ function Airplane() {
   );
 }
 
-/** The real setup screen, sped up, then its result card. */
+/**
+ * The real setup screen, sped up: the parts list (filmed by capture/setup.ts at
+ * phone width), each part's size and bar filling until every row says "Ready".
+ */
 function Setup() {
   const { durationInFrames, width, height } = useVideoConfig();
   const portrait = usePortrait();
-  // footage/setup.mp4 is 7 s; its first second is the launch splash and the idle "0 MB" start.
-  const timelapse = 6.0;
-  const playFor = durationInFrames * 0.72;
-  const rate = (timelapse * FPS) / playFor;
-  const card = spring({ frame: Math.round(durationInFrames * 0.66), fps: FPS, config: { damping: 14 } });
-  const cardIn = useCurrentFrame() - Math.round(durationInFrames * 0.66);
-  const pop = spring({ frame: cardIn, fps: FPS, config: { damping: 13, stiffness: 160 } });
-  void card;
+  const frame = useCurrentFrame();
+  const S = SETUP;
+  // Play from just before the first bar moves to just after every row is ready, then hold.
+  const from = Math.max(0, S.marks.firstProgress - 0.4);
+  const to = Math.min(S.timelapseSeconds, S.marks.allReady + 0.35);
+  const lead = 6;
+  const holdFrames = Math.round(FPS * 0.7);
+  const playFrames = Math.max(1, durationInFrames - lead - holdFrames);
+  const rate = ((to - from) * FPS) / playFrames;
+  // Landscape: the list as large as fits left of the headline, clear of the caption.
+  const winH = portrait ? Math.min(height * 0.5, ((width - 120) * S.height) / S.width) : Math.min(height * 0.76, ((width * 0.56) * S.height) / S.width);
+  const winW = (winH * S.width) / S.height;
+  const list = (play: boolean) => (
+    <AppScreen
+      src={`footage/${S.clip}`}
+      from={from}
+      source={{ w: S.width, h: S.height }}
+      crop={{ x: 0, y: 0, w: S.width, h: S.height }}
+      height={winH}
+      x={portrait ? width / 2 : 100 + winW / 2}
+      y={portrait ? 150 + winH / 2 : height * 0.45}
+      playbackRate={play ? rate : 1}
+      tilt={{ x: 3, y: 6 }}
+      radius={36}
+    />
+  );
+  const line = (delay: number) => spring({ frame: frame - delay, fps: FPS, config: { damping: 14, stiffness: 170 } });
+  const l1 = line(4);
+  const l2 = line(14);
   return (
     <AbsoluteFill>
       <SoftGradient hue="cream" />
-      <AppScreen
-        src="footage/setup.mp4"
-        from={1.0}
-        source={LAPTOP_SRC}
-        crop={{ x: 530, y: 330, w: 860, h: 770 }}
-        height={portrait ? height * 0.5 : height * 0.82}
-        x={portrait ? width / 2 : width * 0.36}
-        y={portrait ? height * 0.38 : height * 0.5}
-        playbackRate={rate}
-        tilt={{ x: 4, y: 8 }}
-      />
+      <Sequence durationInFrames={lead} layout="none">
+        <Freeze frame={0}>{list(false)}</Freeze>
+      </Sequence>
+      <Sequence from={lead} durationInFrames={playFrames} layout="none">
+        {list(true)}
+      </Sequence>
+      <Sequence from={lead + playFrames} layout="none">
+        <Freeze frame={Math.max(0, Math.round(((to - from) * FPS) / rate) - 1)}>{list(true)}</Freeze>
+      </Sequence>
       <AbsoluteFill
         style={
           portrait
-            ? { alignItems: "center", justifyContent: "flex-end", paddingBottom: 380 }
-            : { alignItems: "flex-start", justifyContent: "center", paddingLeft: width * 0.63, paddingRight: 70 }
+            ? { alignItems: "center", justifyContent: "flex-start", paddingTop: 150 + winH + 70, textAlign: "center" }
+            : { alignItems: "flex-start", justifyContent: "center", paddingLeft: 100 + winW + 70, paddingRight: 96 }
         }
       >
-        <div
-          style={{
-            opacity: cardIn < 0 ? 0 : interpolate(pop, [0, 0.3], [0, 1], { extrapolateRight: "clamp" }),
-            transform: `scale(${interpolate(pop, [0, 1], [0.7, 1])}) rotate(-2deg)`,
-            background: "#ECFAEF",
-            border: `5px solid ${C.ink}`,
-            borderRadius: 34,
-            padding: "30px 36px",
-            maxWidth: 620,
-            boxShadow: LONG_SHADOW,
-          }}
-        >
-          <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 54, color: "#1F6B33", lineHeight: 1.08 }}>Guhit is ready.</div>
-          <div style={{ fontFamily: DISPLAY, fontWeight: 800, fontSize: 40, color: C.ink, lineHeight: 1.15, marginTop: 8 }}>It now works without internet.</div>
+        <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: portrait ? 92 : 74, lineHeight: 1.04, letterSpacing: "-0.02em", whiteSpace: "nowrap" }}>
+          <div style={{ color: C.orange, opacity: interpolate(l1, [0, 0.3], [0, 1], { extrapolateRight: "clamp" }), transform: `translateY(${interpolate(l1, [0, 1], [24, 0])}px)` }}>
+            Downloaded once.
+          </div>
+          <div style={{ color: C.grass, marginTop: 10, opacity: interpolate(l2, [0, 0.3], [0, 1], { extrapolateRight: "clamp" }), transform: `translateY(${interpolate(l2, [0, 1], [24, 0])}px)` }}>
+            Runs on this device.
+          </div>
         </div>
+        <Badge delay={24}>The real setup screen · sped up</Badge>
       </AbsoluteFill>
+    </AbsoluteFill>
+  );
+}
+
+/**
+ * Which app moment each setup part powers. Rows come from footage/setup.json in
+ * the order the setup screen lists them (the app's STAGES: story helper,
+ * listening ears, seeing eyes, voice); if the final screen reorders its rows,
+ * change `row` here.
+ */
+const PART_MOMENTS: { row: number; does: string; at: number; crop: Rect; color: string }[] = [
+  { row: 2, does: "guesses what was drawn", at: 1.4, crop: { x: 0, y: 110, w: 860, h: 1100 }, color: C.grape },
+  { row: 1, does: "hears your child talk", at: 1.0, crop: { x: 0, y: 110, w: 860, h: 1420 }, color: C.red },
+  { row: 0, does: "thinks up every reply and story", at: 0.7, crop: { x: 0, y: 110, w: 860, h: 1580 }, color: C.sky },
+  { row: 3, does: "says it out loud", at: 0.5, crop: { x: 34, y: 154, w: 792, h: 930 }, color: C.orange },
+];
+const momentStart = (i: number) => [M.guess, M.hold, M.heard, M.heard][i] + PART_MOMENTS[i].at;
+
+/** Each part of the setup list, matched to what it does in the app. */
+function Parts() {
+  const { durationInFrames, width, height } = useVideoConfig();
+  const portrait = usePortrait();
+  const frame = useCurrentFrame();
+  const each = Math.floor(durationInFrames / PART_MOMENTS.length);
+  return (
+    <AbsoluteFill>
+      <SoftGradient hue="sky" />
+      {PART_MOMENTS.map((pm, i) => {
+        const part = SETUP.parts[pm.row];
+        const local = frame - i * each;
+        const pop = spring({ frame: local, fps: FPS, config: { damping: 14, stiffness: 200 } });
+        const last = i === PART_MOMENTS.length - 1;
+        return (
+          <Sequence key={i} from={i * each} durationInFrames={last ? durationInFrames - i * each : each} layout="none">
+            {/* The part, as the setup screen shows it, and what it does. */}
+            <div
+              style={{
+                position: "absolute",
+                left: portrait ? 70 : 110,
+                top: portrait ? 170 : height * 0.25,
+                width: portrait ? width - 140 : 940,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: portrait ? "center" : "flex-start",
+                gap: 30,
+              }}
+            >
+              {part && (
+                <Img
+                  src={staticFile(`footage/${part.image}`)}
+                  style={{
+                    width: portrait ? width - 140 : 940,
+                    borderRadius: 26,
+                    boxShadow: LONG_SHADOW,
+                    transform: `scale(${interpolate(pop, [0, 1], [0.92, 1])})`,
+                    opacity: interpolate(pop, [0, 0.3], [0, 1], { extrapolateRight: "clamp" }),
+                  }}
+                />
+              )}
+              <div
+                style={{
+                  fontFamily: DISPLAY,
+                  fontWeight: 900,
+                  fontSize: portrait ? 84 : 76,
+                  lineHeight: 1.05,
+                  color: pm.color,
+                  textAlign: portrait ? "center" : "left",
+                  opacity: interpolate(pop, [0.2, 0.6], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }),
+                  transform: `translateX(${portrait ? 0 : interpolate(pop, [0, 1], [-30, 0])}px)`,
+                }}
+              >
+                → {pm.does}
+              </div>
+            </div>
+            {/* …and the moment in the app it makes happen. */}
+            <AppScreen
+              src="footage/hero.mp4"
+              from={momentStart(i)}
+              source={PHONE_SRC}
+              crop={pm.crop}
+              height={portrait ? height * 0.44 : height * 0.8}
+              x={portrait ? width / 2 : width - 110 - ((height * 0.8 * pm.crop.w) / pm.crop.h) / 2}
+              y={portrait ? height * 0.66 : height * 0.47}
+              tilt={{ x: 3, y: -8 }}
+            />
+          </Sequence>
+        );
+      })}
     </AbsoluteFill>
   );
 }
@@ -797,6 +906,7 @@ const SCENES: Record<SceneId, (props: { cues: Cue[] }) => ReactNode> = {
   answer: Answer,
   airplane: Airplane,
   setup: Setup,
+  parts: Parts,
   diagram: DiagramScene,
   title: ({ cues }) => <Title cues={cues.filter((c) => c.id.startsWith("title-"))} />,
   endLogo: EndLogo,
@@ -820,12 +930,12 @@ function sfxList(): { at: number; name: string; volume?: number }[] {
     { at: s("logo").from + 3.22, name: "whoosh", volume: 0.5 },
     { at: s("snapApp").from + 1.5, name: "shutter" },
     { at: s("cutout").from + s("cutout").dur * 0.45, name: "pop", volume: 0.6 },
-    { at: s("meadow").from + 0.5, name: "pop", volume: 0.7 },
     { at: s("vehicle").from + 0.15, name: "boing", volume: 0.5 },
     { at: s("plant").from + 0.15, name: "boing", volume: 0.5 },
     { at: s("flyer").from + 0.15, name: "boing", volume: 0.5 },
     { at: s("hold").from + 0.45, name: "mic", volume: 0.6 },
-    { at: s("setup").from + s("setup").dur * 0.66, name: "ding", volume: 0.6 },
+    { at: s("setup").from + s("setup").dur - 0.75, name: "ding", volume: 0.6 },
+    ...[0, 1, 2, 3].map((i) => ({ at: s("parts").from + (i * s("parts").dur) / 4, name: "tick", volume: 0.5 })),
     ...DIAGRAM_BEATS.steps.map((fr) => ({ at: s("diagram").from + fr / FPS, name: "tick", volume: 0.45 })),
     { at: s("diagram").from + DIAGRAM_BEATS.cross / FPS, name: "cross", volume: 0.5 },
     { at: s("endLogo").from + 0.1, name: "sparkle", volume: 0.5 },
