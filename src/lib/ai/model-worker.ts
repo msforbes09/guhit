@@ -48,6 +48,13 @@ export class ModelWorker<Result extends { type: "result"; id: number }> {
     });
   }
 
+  /** Stops the worker; the browser frees its GPU device and every buffer with it. */
+  terminate() {
+    this.worker.terminate();
+    for (const waiter of this.pending.values()) waiter.reject(new Error("The model was unloaded."));
+    this.pending.clear();
+  }
+
   private settle(reply: WorkerReply) {
     if ((reply.type !== "result" && reply.type !== "error") || reply.id === undefined) return;
     const waiter = this.pending.get(reply.id);

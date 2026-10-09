@@ -171,10 +171,9 @@ self.onmessage = async (event: MessageEvent<VisionRequest>) => {
       captioner = /smolvlm/i.test(request.model)
         ? await loadSmolVLM(request.model, options, progress_callback)
         : await loadFlorence(request.model, options, progress_callback);
-      // Compile the GPU kernels on a blank page now, not on the child's first drawing.
-      const started = performance.now();
-      await caption(new RawImage(new Uint8ClampedArray(64 * 64 * 3).fill(255), 64, 64, 3));
-      post({ type: "ready", warmupMs: performance.now() - started });
+      // No warm-up: the model is loaded right when a drawing needs a guess and
+      // freed afterwards, so a blank-page run would only add to the child's wait.
+      post({ type: "ready", warmupMs: 0 });
       return;
     }
 

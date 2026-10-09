@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getAI } from "@/lib/ai";
+import { getAI, RealAI } from "@/lib/ai";
 import { chooseModels, detectSupport, type DeviceSupport, type ModelChoice } from "@/lib/ai/device";
 import { findLLM, findSTT, findVision } from "@/lib/ai/models";
 import {
@@ -85,7 +85,12 @@ export function SetupClient() {
     setError(null);
     const started = performance.now();
     try {
-      await getAI().load((p) => setProgress((previous) => ({ ...previous, [p.stage]: p })));
+      const ai = getAI();
+      const report = (p: LoadProgress) => setProgress((previous) => ({ ...previous, [p.stage]: p }));
+      await ai.load(report);
+      // Drawing recognition is not part of load() (it is loaded per guess and
+      // freed after); download it now so guesses work offline later.
+      if (ai instanceof RealAI && !cached?.vision) await ai.prepareVision(report);
       setSeconds((performance.now() - started) / 1000);
       setCached({ llm: true, stt: true, vision: true, tts: true });
       setPhase("ready");

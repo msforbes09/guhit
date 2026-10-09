@@ -52,6 +52,8 @@ export interface CallMetric {
   decodeTps?: number;
   prefillTps?: number;
   audioSeconds?: number;
+  /** For drawing descriptions: time spent loading the vision model for this guess (it is freed after each). */
+  loadMs?: number;
   /** For drawing descriptions: the model's caption before clean-up. */
   detail?: string;
   fallback?: boolean;
@@ -62,8 +64,8 @@ export interface LoadTimings {
   llmMs?: number;
   sttMs?: number;
   sttWarmupMs?: number;
+  /** The most recent vision model load (it is loaded per guess, see acquireVision). */
   visionMs?: number;
-  visionWarmupMs?: number;
   ttsMs?: number;
 }
 
@@ -129,6 +131,8 @@ export class RealAI implements LocalAI {
   private llm: LLMClient | null = null;
   private stt: STTClient | null = null;
   private vision: VisionClient | null = null;
+  private visionUsers = 0;
+  private visionLoading: Promise<VisionClient | null> | null = null;
   private speaker = new Speaker();
 
   status(): AIStatus {
@@ -163,17 +167,11 @@ export class RealAI implements LocalAI {
       this.choice = choice;
       void requestPersistence();
 
-      const [{ LLMClient }, { STTClient }, { VisionClient }] = await Promise.all([
-        import("./llm"),
-        import("./stt"),
-        import("./vision"),
-      ]);
+      const [{ LLMClient }, { STTClient }] = await Promise.all([import("./llm"), import("./stt")]);
       // Downloads run side by side: the first visit is bound by network, not GPU.
-      await Promise.all([
-        this.loadLLM(new LLMClient(), choice),
-        this.loadSTT(new STTClient(), choice),
-        this.loadVision(new VisionClient(), choice),
-      ]);
+      // Drawing recognition is not loaded here: it is loaded for each guess and
+      // freed straight after, so it never holds GPU memory during the talk loop.
+      await Promise.all([this.loadLLM(new LLMClient(), choice), this.loadSTT(new STTClient(), choice)]);
 
       const ttsStarted = performance.now();
       this.voices = await this.speaker.init();
@@ -243,36 +241,73 @@ export class RealAI implements LocalAI {
     this.emit({ stage: "stt", loaded: expected, total: expected, text: "Listening ears ready" });
   }
 
+  /**
+   * Drawing recognition is loaded for each guess (from the browser cache once
+   * setup has run) and freed afterwards, so its GPU memory never competes with
+   * the talk loop. Overlapping guesses share one load.
+   */
+  private acquireVision(onProgress?: (p: LoadProgress) => void): Promise<VisionClient | null> {
+    this.visionUsers++;
+    if (this.vision) return Promise.resolve(this.vision);
+    if (!this.visionLoading) {
+      this.visionLoading = this.loadVision(onProgress).finally(() => {
+        this.visionLoading = null;
+      });
+    }
+    return this.visionLoading;
+  }
+
+  /** Frees the vision model's GPU memory once no guess is using it. */
+  private releaseVision() {
+    this.visionUsers = Math.max(0, this.visionUsers - 1);
+    if (this.visionUsers === 0 && this.vision) {
+      this.vision.dispose();
+      this.vision = null;
+    }
+  }
+
   /** Optional: if it fails, describeDrawing() answers "no guess" and the talk loop is unaffected. */
-  private async loadVision(vision: VisionClient, choice: ModelChoice) {
+  private async loadVision(onProgress?: (p: LoadProgress) => void): Promise<VisionClient | null> {
+    const choice = this.choice;
+    if (!choice) return null;
     const started = performance.now();
     const model = findVision(choice.vision);
     const expected = (model?.downloadMB ?? 200) * 1e6;
-    this.emit({ stage: "vision", loaded: 0, total: expected, text: "Getting the seeing eyes ready…" });
+    onProgress?.({ stage: "vision", loaded: 0, total: expected, text: "Getting the seeing eyes ready…" });
+    const { VisionClient } = await import("./vision");
+    const vision = new VisionClient();
     try {
-      const { warmupMs } = await vision.load(
-        choice.vision,
-        choice.visionDevice,
-        model?.dtype ?? {},
-        choice.modelHost,
-        (loaded, total) => {
-          const size = Math.max(total, expected);
-          this.emit({
-            stage: "vision",
-            loaded,
-            total: size,
-            text: `Downloading the seeing eyes… ${Math.round((loaded / size) * 100)}%`,
-          });
-        },
-      );
+      await vision.load(choice.vision, choice.visionDevice, model?.dtype ?? {}, choice.modelHost, (loaded, total) => {
+        const size = Math.max(total, expected);
+        onProgress?.({
+          stage: "vision",
+          loaded,
+          total: size,
+          text: `Downloading the seeing eyes… ${Math.round((loaded / size) * 100)}%`,
+        });
+      });
       this.vision = vision;
+      this.visionError = null;
       this.timings.visionMs = performance.now() - started;
-      this.timings.visionWarmupMs = warmupMs;
-      this.emit({ stage: "vision", loaded: expected, total: expected, text: "Seeing eyes ready" });
+      onProgress?.({ stage: "vision", loaded: expected, total: expected, text: "Seeing eyes ready" });
+      return vision;
     } catch (error) {
+      vision.dispose();
       this.visionError = error instanceof Error ? error.message : String(error);
-      this.emit({ stage: "vision", loaded: expected, total: expected, text: "Drawing recognition is not available here" });
+      onProgress?.({ stage: "vision", loaded: expected, total: expected, text: "Drawing recognition is not available here" });
+      return null;
     }
+  }
+
+  /**
+   * For /setup: downloads drawing recognition into the browser cache so later
+   * guesses work offline, then frees it again. Returns false if it failed.
+   */
+  async prepareVision(onProgress: (p: LoadProgress) => void): Promise<boolean> {
+    await this.ready();
+    const vision = await this.acquireVision(onProgress);
+    this.releaseVision();
+    return vision !== null;
   }
 
   /**
@@ -313,28 +348,33 @@ export class RealAI implements LocalAI {
   /** An empty label means "no guess": the screen asks the child instead of "Is that …?". */
   async describeDrawing(png: string, photo?: DrawingPhoto): Promise<DrawingDescription> {
     await this.ready();
-    const vision = this.vision;
-    if (!vision || (!png && !photo)) return { label: "" };
+    if (!png && !photo) return { label: "" };
     const started = performance.now();
+    const vision = await this.acquireVision();
+    const loadMs = performance.now() - started;
     try {
+      if (!vision) return { label: "" };
       // The original photo reads better than the cut-out on white (tested in /lab).
       const task = this.choice?.visionTask;
       const { caption } = photo
         ? await vision.describe(photo.image, photo.crop, task)
         : await vision.describe(png, undefined, task);
+      const ms = performance.now() - started;
       const verdict = screen(caption, "drawing");
       if (!verdict.ok) {
-        const ms = performance.now() - started;
-        this.record({ kind: "describe", text: "", detail: `${caption} [flagged: ${verdict.category}]`, ms, fallback: true });
+        const detail = `${caption} [flagged: ${verdict.category}]`;
+        this.record({ kind: "describe", text: "", detail, ms, loadMs, fallback: true });
         return { label: "", flagged: verdict.category };
       }
       const label = cleanCaption(caption);
-      this.record({ kind: "describe", text: label, detail: caption, ms: performance.now() - started, fallback: !label });
+      this.record({ kind: "describe", text: label, detail: caption, ms, loadMs, fallback: !label });
       return { label };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      this.record({ kind: "describe", text: "", detail, ms: performance.now() - started, fallback: true });
+      this.record({ kind: "describe", text: "", detail, ms: performance.now() - started, loadMs, fallback: true });
       return { label: "" };
+    } finally {
+      this.releaseVision();
     }
   }
 
