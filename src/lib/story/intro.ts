@@ -32,7 +32,8 @@ export function parseIntro(spoken: string): { name: string; description: string 
   return { name: "", description: tidy(text) };
 }
 
-function tidy(rest: string): string {
+/** A spoken phrase as a tidy sentence: capitalised, with an ending full stop. */
+export function tidy(rest: string): string {
   const cleaned = rest
     .replace(/^[\s,.!?:;-]+/, "")
     .replace(/^(?:and\s+)?(?:(?:this|that|he|she|it|they)(?:'s| is| are)|who is|who's|is)\s+/i, "")
@@ -42,4 +43,43 @@ function tidy(rest: string): string {
   if (!cleaned) return "";
   const sentence = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
   return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
+const TITLE = /^(?:mister|mr|miss|mrs|ms|princess|prince|captain|king|queen|doctor|dr|sir|lady|baby|little|big)$/i;
+
+const FILLER = new Set([
+  "me",
+  "my", "name", "is", "it's", "its", "it", "call", "him", "her", "them", "i", "think", "maybe",
+  "um", "uh", "erm", "the", "a", "called", "he", "she", "they", "their", "his", "hmm", "and", "so", "well",
+]);
+
+/** Just the name from an answer to "What's my name?" ("Her name is Tala", "um, Tala"). */
+export function nameFrom(spoken: string): string {
+  for (const cue of spoken.matchAll(NAME_CUE)) {
+    if (!NOT_NAMES.has(cue[1].toLowerCase())) return capitalise(cue[1]);
+  }
+  const words = spoken
+    .replace(/[^A-Za-z' -]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w && !FILLER.has(w.toLowerCase()));
+  if (!words.length) return "";
+  // "Mister Robot", "Princess Ana": a title keeps the word after it.
+  return capitalise(TITLE.test(words[0]) && words[1] ? `${words[0]} ${words[1]}` : words[0]);
+}
+
+const YES = /^(?:yes|yeah|yep|yup|yay|sure|right|correct|ok|okay|oo|opo|oho)\b[\s,.!]*/i;
+const NO = /^(?:no|nope|nah|hindi|not really)\b[\s,.!]*/i;
+
+/**
+ * Reads a spoken reply to "Is that a purple dragon?": yes, no (with whatever
+ * the child says it really is), or a plain correction.
+ */
+export function readYesNo(spoken: string): { answer: "yes" | "no" | "other"; rest: string } {
+  const text = spoken.trim();
+  if (YES.test(text)) return { answer: "yes", rest: text.replace(YES, "").trim() };
+  if (NO.test(text)) {
+    const rest = text.replace(NO, "").replace(/^(?:it's|it is|its|that's|that is|i'm|i am)\s+/i, "").trim();
+    return { answer: "no", rest };
+  }
+  return { answer: "other", rest: text };
 }
