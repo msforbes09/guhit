@@ -177,10 +177,10 @@ const WORKING_TEXT: Record<Working, string> = {
 export function CuttingView({ photo, working = "cutting" }: { photo: string | null; working?: Working }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 py-6" role="status" aria-live="polite">
-      <div className="crayon-edge relative w-full max-w-md overflow-hidden rounded-cut-lg bg-white p-3 shadow-soft">
+      <div className="crayon-edge relative max-w-md overflow-hidden rounded-cut-lg bg-white shadow-soft">
         {photo && (
           // eslint-disable-next-line @next/next/no-img-element -- local object URL
-          <img src={photo} alt="" className="max-h-[52vh] w-full rounded-[22px] object-contain" />
+          <img src={photo} alt="" className="block max-h-[52vh] w-auto max-w-full" />
         )}
         <span
           aria-hidden="true"
@@ -309,9 +309,9 @@ type NotThisOneAction = { label: string; icon: "draw" | "photo"; href?: string; 
 export function NotThisOne({ png, actions }: { png: string; actions: [NotThisOneAction, NotThisOneAction] }) {
   return (
     <div className="anim-float-in flex flex-1 flex-col items-center gap-6 py-6 text-center" role="status">
-      <div className="crayon-edge grid w-full max-w-sm place-items-center rounded-cut-lg bg-white p-6 shadow-soft">
+      <div className="crayon-edge max-w-sm rounded-cut-lg bg-white p-4 shadow-soft">
         {/* eslint-disable-next-line @next/next/no-img-element -- the still cut-out, from this device */}
-        <img src={png} alt="" className="max-h-[30vh] w-auto object-contain opacity-70 grayscale-[30%]" />
+        <img src={png} alt="" className="block max-h-[30vh] w-auto max-w-full opacity-70 grayscale-[30%]" />
       </div>
       <p className="max-w-lg font-display text-3xl font-extrabold leading-snug text-ink sm:text-4xl">
         Hmm, that one looks a bit scary for me. Can you draw me a friend instead?
