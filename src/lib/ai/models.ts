@@ -45,5 +45,26 @@ export const STT_DTYPES: Record<STTDevice, Record<string, string>> = {
   wasm: { encoder_model: "q8", decoder_model_merged: "q8" },
 };
 
+export interface VisionModel {
+  id: string;
+  label: string;
+  downloadMB: number;
+  /**
+   * 4-bit weights run on both WebGPU and the CPU fallback, so one download
+   * serves every device; the token embeddings only exist in 8-bit or larger.
+   */
+  dtype: Record<string, string>;
+}
+
+export const VISION_MODELS: VisionModel[] = [
+  {
+    id: "onnx-community/Florence-2-base-ft",
+    label: "Florence-2 base",
+    downloadMB: 217,
+    dtype: { vision_encoder: "q4", embed_tokens: "q8", encoder_model: "q4", decoder_model_merged: "q4" },
+  },
+];
+
 export const findLLM = (id: string) => LLM_MODELS.find((m) => m.id === id);
+export const findVision = (id: string) => VISION_MODELS.find((m) => m.id === id);
 export const findSTT = (id: string) => STT_MODELS.find((m) => m.id === id);

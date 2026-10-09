@@ -83,6 +83,53 @@ export function cleanTitle(raw: string): string | null {
     .join(" ");
 }
 
+const PICTURE_WORDS =
+  "drawing|picture|photo|photograph|cartoon|illustration|sketch|image|painting|doodle|clip ?art|colou?ring page";
+const CAPTION_LEADS = [
+  /^(?:in )?(?:the|this) (?:image|picture|photo|drawing)(?: shows| is| depicts| features| of)?\s+/i,
+  /^(?:there is|this is|it is|here is)\s+/i,
+  new RegExp(
+    `^an? (?:(?:child'?s|kid'?s|simple|colou?rful|cute|hand[- ]drawn|black and white|cartoon) )*(?:${PICTURE_WORDS})(?: image)? of\\s+`,
+    "i",
+  ),
+  // "a cartoon dragon" → "a dragon"
+  /^(an?) (?:cartoon|drawing|sketch|doodle|illustration)(?: of)? (?=\w)/i,
+];
+const CAPTION_TAILS =
+  /\s*(?:,\s*)?(?:(?:drawn |sitting |standing )?(?:on|against|with|in front of|over) (?:a |the )?(?:plain |blank |clean )?(?:white|blank|plain|light) (?:background|paper|sheet|page|surface)(?: of paper)?|(?:on|drawn on) (?:a )?(?:piece|sheet) of paper)/gi;
+
+const withArticle = (phrase: string) => {
+  const bare = phrase.replace(/^(?:a|an)\s+/i, "");
+  if (/^(?:the|some|two|three|four|five|many|several|his|her|my)\b/i.test(phrase) && bare === phrase) return phrase;
+  return `${/^[aeiou]/i.test(bare) ? "an" : "a"} ${bare}`;
+};
+
+/**
+ * Turns a caption like "A cartoon drawing of a purple dragon with wings on a
+ * white background." into "a purple dragon with wings", ready for
+ * "Is that …?". Returns "" when nothing safe and useful is left.
+ */
+export function cleanCaption(raw: string): string {
+  // Model control tokens such as "</s>" or "<pad>" when decoding keeps them.
+  const untagged = raw.replace(/<\/?[a-z_]+>/gi, " ");
+  let text = plainText(untagged).split(/(?<=[.!?])\s/)[0] ?? "";
+  text = text.replace(/[.!?]+$/, "").trim();
+  let previous: string;
+  do {
+    previous = text;
+    for (const lead of CAPTION_LEADS) text = text.replace(lead, (m, article?: string) => (article ? `${article} ` : ""));
+    text = text.trim();
+  } while (text !== previous);
+  text = text.replace(CAPTION_TAILS, "").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || isUnsafe(text)) return "";
+  // Long captions read badly in "Is that …?": keep the first ten words, ending before a dangling "and"/"with".
+  let kept = words.slice(0, 10);
+  while (kept.length > 2 && /^(?:and|with|of|in|on|the|a|an)$/i.test(kept[kept.length - 1])) kept = kept.slice(0, -1);
+  const phrase = kept.join(" ").replace(/,$/, "");
+  return withArticle(phrase.charAt(0).toLowerCase() + phrase.slice(1));
+}
+
 /** A spoken character line: drops "Tala:" prefixes the model may add. */
 export function cleanLine(raw: string, name: string): string {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

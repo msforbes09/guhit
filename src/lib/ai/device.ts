@@ -1,4 +1,4 @@
-import { LLM_MODELS, STT_MODELS, type STTDevice } from "./models";
+import { LLM_MODELS, STT_MODELS, VISION_MODELS, type STTDevice } from "./models";
 
 export interface DeviceSupport {
   webgpu: boolean;
@@ -12,6 +12,8 @@ export interface ModelChoice {
   llm: string;
   stt: string;
   sttDevice: STTDevice;
+  vision: string;
+  visionDevice: STTDevice;
   /** Where model files come from: null for Hugging Face, or this site's own /models mirror. */
   modelHost: string | null;
 }
@@ -101,6 +103,11 @@ export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
   const deviceOverride = params.get("sttDevice");
   if (deviceOverride === "wasm" || deviceOverride === "webgpu") sttDevice = deviceOverride;
 
+  let vision = VISION_MODELS[0].id;
+  const visionOverride = params.get("vision");
+  if (visionOverride && VISION_MODELS.some((m) => m.id === visionOverride)) vision = visionOverride;
+  const visionDevice: STTDevice = support.webgpu && params.get("visionDevice") !== "wasm" ? "webgpu" : "wasm";
+
   const modelHost = wantsLocalMirror(params) ? `${window.location.origin}/models` : null;
-  return { llm, stt, sttDevice, modelHost };
+  return { llm, stt, sttDevice, vision, visionDevice, modelHost };
 }

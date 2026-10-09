@@ -23,7 +23,6 @@ export function ServiceWorkerRegister() {
   return (
     <>
       <link rel="manifest" href="/manifest.webmanifest" />
-      <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       <meta name="theme-color" content="#ff8a3d" />
     </>
   );

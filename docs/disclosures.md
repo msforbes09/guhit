@@ -15,7 +15,7 @@ the network switched off.
 | The Guhit web app's own host | The app (pages, scripts, icons, ONNX Runtime wasm) | Service worker cache (`guhit-pages-v1`, `guhit-assets-v1`) |
 | `huggingface.co` (mlc-ai repos) | Language model weights, tokenizer, config | WebLLM's Cache Storage (`webllm/model`, `webllm/config`) |
 | `raw.githubusercontent.com` (mlc-ai/binary-mlc-llm-libs) | The compiled WebGPU kernels for the language model | WebLLM's Cache Storage (`webllm/wasm`) |
-| `huggingface.co` (onnx-community repo) | Speech-recognition model (Whisper) | Transformers.js Cache Storage (`transformers-cache`) |
+| `huggingface.co` (onnx-community repos) | Speech-recognition model (Whisper) and drawing-recognition model (Florence-2) | Transformers.js Cache Storage (`transformers-cache`) |
 
 The service worker does not store model weights a second time; each library
 caches its own files. The app asks the browser to keep this storage
@@ -26,6 +26,7 @@ caches its own files. The app asks the browser to keep this storage
 | Task | How |
 | --- | --- |
 | The character's replies, interview questions, story pages, book titles | Language model through WebLLM on the device's GPU (WebGPU), inside a Web Worker |
+| Guessing what the drawing shows (a short caption the child confirms or corrects) | Florence-2 through Transformers.js / ONNX Runtime Web, WebGPU (CPU wasm fallback), inside a Web Worker |
 | Understanding the child's speech (push-to-talk) | Whisper through Transformers.js / ONNX Runtime Web, WebGPU (CPU wasm fallback), inside a Web Worker |
 | Reading aloud (narrator and character voices) | The browser's Web Speech API with voices installed on the operating system |
 | Safety filtering of model output | Plain code in the app (word filter, markdown and `<think>` stripping) |
@@ -39,6 +40,7 @@ caches its own files. The app asks the browser to keep this storage
 | Qwen3.5-2B / Qwen3.5-0.8B (MLC builds) | Alternatives, only when chosen in `/lab` | Apache-2.0 (Qwen) | huggingface.co/Qwen, huggingface.co/mlc-ai |
 | Whisper base.en (ONNX, ~207 MB on WebGPU / ~77 MB on CPU) | Speech to text, English | Apache-2.0 (model card); OpenAI Whisper code is MIT | huggingface.co/openai/whisper-base.en, ONNX build huggingface.co/onnx-community/whisper-base.en |
 | Whisper tiny.en (ONNX) | Alternative, only when chosen in `/lab` | Apache-2.0 (model card) | huggingface.co/onnx-community/whisper-tiny.en |
+| Florence-2-base-ft (ONNX, 4-bit vision encoder, encoder and decoder, 8-bit embeddings, ~217 MB) | Guessing what the child drew ("Is that a purple dragon?"); the drawing itself is never changed | MIT (Microsoft) | huggingface.co/microsoft/Florence-2-base-ft, ONNX build huggingface.co/onnx-community/Florence-2-base-ft |
 
 Models considered and **not** used because their licences are not permissive
 open source: Gemma 3 (Gemma Terms of Use), Qwen2.5-3B-Instruct (Qwen Research

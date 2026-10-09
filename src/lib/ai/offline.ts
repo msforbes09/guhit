@@ -1,4 +1,4 @@
-import { STT_DTYPES, type STTDevice } from "./models";
+import { findVision, STT_DTYPES, type STTDevice } from "./models";
 
 /** Set once every model is on the device; kid screens only auto-load when it is present. */
 export const READY_FLAG = "guhit:ready";
@@ -87,15 +87,22 @@ const onnxFile = (part: string, dtype: string) => {
   return `onnx/${part}${suffix[dtype] ?? `_${dtype}`}.onnx`;
 };
 
-export async function isSTTCached(modelId: string, device: STTDevice): Promise<boolean> {
+/** True when every ONNX file of the given precisions is already in Transformers.js's cache. */
+export async function isTransformersModelCached(modelId: string, dtype: Record<string, string>): Promise<boolean> {
   if (typeof caches === "undefined") return false;
   try {
     const cache = await caches.open(TRANSFORMERS_CACHE);
     const keys = (await cache.keys()).map((r) => r.url);
-    return Object.entries(STT_DTYPES[device]).every(([part, dtype]) =>
-      keys.some((url) => url.includes(modelId) && url.endsWith(onnxFile(part, dtype))),
+    return Object.entries(dtype).every(([part, precision]) =>
+      keys.some((url) => url.includes(modelId) && url.endsWith(onnxFile(part, precision))),
     );
   } catch {
     return false;
   }
 }
+
+export const isSTTCached = (modelId: string, device: STTDevice) =>
+  isTransformersModelCached(modelId, STT_DTYPES[device]);
+
+export const isVisionCached = (modelId: string) =>
+  isTransformersModelCached(modelId, findVision(modelId)?.dtype ?? {});
