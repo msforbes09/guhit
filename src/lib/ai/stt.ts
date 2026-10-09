@@ -61,6 +61,12 @@ export class STTClient {
     return this.worker.load({ type: "load", model, device, dtype, modelHost, source } satisfies STTRequest, onProgress);
   }
 
+  /** Frees the model's memory; load() again to use it. */
+  terminate() {
+    this.worker?.terminate();
+    this.worker = null;
+  }
+
   async transcribe(blob: Blob): Promise<Transcription> {
     if (!this.worker) throw new Error("Speech recognition is not loaded yet.");
     const audio = await decodeTo16kMono(blob);

@@ -8,7 +8,7 @@ import { kindOf } from "@/lib/story/kind";
 import { NotThisOne } from "./BringToLife";
 import { FriendStage } from "./FriendStage";
 import { greetingMotion } from "./moves";
-import { speechLevel, useAIReady, usePushToTalk, useSpeakingVoice } from "./hooks";
+import { speechLevel, usePart, usePushToTalk, useSpeakingVoice } from "./hooks";
 import { ArrowsClockwise, Check, Keyboard, PaperPlaneRight, X } from "./icons";
 import { MicButton } from "./MicButton";
 import { ReadyCard } from "./ReadyCard";
@@ -38,7 +38,12 @@ const LINES: Record<Exclude<Step, "looking" | "guess" | "confirm" | "flagged">, 
 
 /** First meeting: the drawing guesses what it is, the child corrects it and names it. */
 export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: Friend) => void }) {
-  const ready = useAIReady();
+  // Each step waits only for its own part: the guess for the eyes, the spoken
+  // line for the voice, the microphone for talking.
+  const eyes = usePart("eyes");
+  const voice = usePart("voice");
+  const talk = usePart("talk");
+  const voiceSettled = voice !== "checking" && voice !== "waking";
   const speaking = useSpeakingVoice() === "character";
   const [step, setStep] = useState<Step>("looking");
   const stepRef = useRef<Step>("looking");
@@ -70,7 +75,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
   useEffect(() => {
     // Already looked at while it was being cut out: no second call, same moment on screen.
     const known = friend.seenAs;
-    if (known === undefined && (ready === "checking" || ready === "waking")) return;
+    if (known === undefined && (eyes === "checking" || eyes === "waking")) return;
     let alive = true;
     const settle = (label: string) => {
       const wait = Math.max(0, LOOK_MIN_MS - (performance.now() - mountedAt.current));
@@ -84,7 +89,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
       }, wait);
     };
     if (known !== undefined) settle(known);
-    else if (ready !== "ready") settle("");
+    else if (eyes !== "ready") settle("");
     else {
       getAI()
         // The original photo cropped to the cut-out carries more detail than the cut-out.
@@ -104,7 +109,7 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     return () => {
       alive = false;
     };
-  }, [ready, friend, go]);
+  }, [eyes, friend, go]);
 
   const line =
     step === "flagged"
@@ -113,11 +118,12 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
 
   // The character says its question out loud when it can.
   useEffect(() => {
-    if (!line || step === "confirm" || ready !== "ready") return;
+    // Waits for the storytelling voice only while it is starting; without it the device's voice speaks.
+    if (!line || step === "confirm" || !voiceSettled) return;
     getAI()
       .speak(line, "character")
       .catch(() => {});
-  }, [line, step, ready]);
+  }, [line, step, voiceSettled]);
 
   useEffect(() => () => getAI().stopSpeaking(), []);
 
@@ -190,14 +196,14 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     }
   };
 
-  const canHear = ready !== "needs-setup" && ready !== "error";
+  const canHear = talk !== "not-installed" && talk !== "setting-up" && talk !== "error";
   const micBlock = (label: string) =>
     canHear ? (
       <MicButton
         label={label}
         state={mic.state}
         level={mic.level}
-        busy={hearing || ready !== "ready"}
+        busy={hearing || talk !== "ready"}
         busyLabel={hearing ? "Listening hard…" : "Waking up…"}
         onStart={() => {
           getAI().stopSpeaking();
@@ -207,7 +213,11 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
         onStop={mic.stop}
       />
     ) : (
-      <ReadyCard name="your friend" failed={ready === "error"} />
+      <ReadyCard
+        name="your friend"
+        failed={talk === "error"}
+        reason={talk === "not-installed" ? "not-installed" : "setting-up"}
+      />
     );
 
   const typeBlock = (label: string, placeholder: string) => (

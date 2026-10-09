@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { getAI, isMarkedReady } from "@/lib/ai";
+import { getAI, installedParts } from "@/lib/ai";
 // Loaded on every page so the browser's one-time install offer is never missed.
 import "./install";
 
@@ -15,7 +15,7 @@ export function EarlyWake() {
   useEffect(() => {
     // A moment's grace so the first frame and the splash paint before the work starts.
     const id = setTimeout(() => {
-      if (!isMarkedReady()) return;
+      if (installedParts().length === 0) return;
       const ai = getAI();
       if (ai.status() !== "idle") return;
       ai.load(() => {}).catch(() => {

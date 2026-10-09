@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { InstallNudge } from "@/components/kid/InstallNudge";
-import { getAI, isMarkedReady, RealAI } from "@/lib/ai";
+import { getAI, RealAI } from "@/lib/ai";
 import { Speaker, type SentenceMetric } from "@/lib/ai/tts";
 import {
   canDownloadInBackground,
@@ -14,8 +14,20 @@ import {
 import { chooseModels, detectSupport, isAppleMobile, type DeviceSupport, type ModelChoice } from "@/lib/ai/device";
 import { explainLoadError } from "@/lib/ai/friendly-errors";
 import { R2_BASE, type ModelSource } from "@/lib/ai/model-fetch";
-import { listModelFiles, readTensorIndex, savedFiles, type ModelFile } from "@/lib/ai/model-files";
+import { CUTOUT_MB, listModelFiles, readTensorIndex, savedFiles, type ModelFile } from "@/lib/ai/model-files";
 import { findLLM, findSTT, findVision } from "@/lib/ai/models";
+import {
+  chosenParts,
+  installedParts,
+  isPartInstalled,
+  PART_STAGES,
+  partOf,
+  PARTS,
+  recommendParts,
+  REQUIRED_PARTS,
+  setChosenParts,
+  type Part,
+} from "@/lib/ai/parts";
 import { isSetupInProgress, markSetupInProgress, shouldAutoContinue } from "@/lib/ai/setup-resume";
 import {
   isLLMCached,
@@ -52,12 +64,25 @@ function turnOffTestMode() {
   window.location.replace("/setup?mock=0");
 }
 
-const STAGES: { stage: Stage; label: string; detail: string }[] = [
-  { stage: "llm", label: "Story helper", detail: "talks and writes with your child" },
-  { stage: "stt", label: "Listening ears", detail: "understands what your child says" },
-  { stage: "vision", label: "Seeing eyes", detail: "guesses what your child drew" },
-  { stage: "tts", label: "Voice", detail: "a warm storytelling voice that reads everything aloud" },
-];
+/** The parts a parent can have, in the order setup gets them. */
+const PART_INFO: Record<Part, { label: string; detail: string }> = {
+  eyes: { label: "Seeing eyes", detail: "Needed for Guhit to see the drawing: it guesses what your child drew." },
+  voice: {
+    label: "Storytelling voice",
+    detail: "A warm voice that reads everything aloud. Without it, the device's own voice speaks.",
+  },
+  talk: {
+    label: "Talking",
+    detail: "Listening ears and a story helper, so your child can talk with their drawings and make stories.",
+  },
+};
+
+const STAGE_LABEL: Record<Stage, string> = {
+  vision: "Seeing eyes",
+  tts: "Voice",
+  stt: "Listening ears",
+  llm: "Story helper",
+};
 
 const size = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
 
@@ -103,7 +128,7 @@ function useScreenAwake(active: boolean): boolean {
 }
 
 /** The files this device's models need, as the libraries store them. */
-async function filesForThisDevice(): Promise<{ files: ModelFile[]; source: ModelSource }> {
+async function filesForThisDevice(): Promise<{ files: ModelFile[]; source: ModelSource; modelHost: string | null }> {
   const search = window.location.search;
   const support = await detectSupport();
   const choice = chooseModels(support, search);
@@ -111,7 +136,7 @@ async function filesForThisDevice(): Promise<{ files: ModelFile[]; source: Model
   const files = await listModelFiles(choice, { dtype, voices: PRELOADED_VOICES }, (url) =>
     readTensorIndex(url, choice.source),
   );
-  return { files, source: choice.source };
+  return { files, source: choice.source, modelHost: choice.modelHost };
 }
 
 /** Bytes already saved per stage, so a resumed setup shows what it kept. */
@@ -124,19 +149,23 @@ async function savedPerStage(): Promise<Partial<Record<Stage, number>>> {
 }
 
 /**
- * Chrome (Android and desktop): the browser downloads whatever is missing,
- * even with the screen off or the page closed, and the service worker stores
- * it where the libraries look. False when this browser cannot, or nothing is missing.
+ * Chrome (Android and desktop): the browser downloads whatever the chosen parts
+ * still miss, even with the screen off or the page closed, and the service
+ * worker stores it where the libraries look. False when this browser cannot,
+ * or nothing is missing.
  */
-async function downloadInBackground(onProgress: (downloaded: number, total: number) => void): Promise<boolean> {
+async function downloadInBackground(
+  parts: Part[],
+  onProgress: (downloaded: number, total: number) => void,
+): Promise<boolean> {
   if (!canDownloadInBackground()) return false;
   let download = await runningBackgroundDownload();
   if (!download) {
-    const { files, source } = await filesForThisDevice();
+    const { files, source, modelHost } = await filesForThisDevice();
     const saved = new Set((await savedFiles(files)).map(({ file }) => file.key));
-    const missing = files.filter((file) => !saved.has(file.key));
+    const missing = files.filter((file) => parts.includes(partOf(file.stage)) && !saved.has(file.key));
     if (missing.length === 0) return false;
-    download = await startBackgroundDownload(missing, source);
+    download = await startBackgroundDownload(missing, source, modelHost);
   }
   if (!download) return false;
   await waitForBackgroundDownload(download, onProgress);
@@ -183,6 +212,9 @@ export function SetupClient() {
   /** Chrome's own background download, while it runs. */
   const [background, setBackground] = useState<{ downloaded: number; total: number } | null>(null);
   const autoTries = useRef(0);
+  /** The parts ticked on screen, and the parts already on this device. */
+  const [selected, setSelected] = useState<Part[]>([...REQUIRED_PARTS]);
+  const [installed, setInstalled] = useState<Part[]>([]);
 
   // A parent who follows the install tip gets the storage protection asked for again.
   useEffect(() => {
@@ -195,10 +227,17 @@ export function SetupClient() {
   }, []);
 
   /**
-   * `onDevice`: everything was downloaded before, so this only wakes the models
-   * up. `visionCached`: drawing recognition is already stored for offline use.
+   * Gets the parts the parent chose (saved with setChosenParts): parts taken
+   * away leave the device first, then the chosen ones download and start, in
+   * order of importance. Parts already on the device only wake up.
    */
-  const getReady = useCallback(async (onDevice: boolean, visionCached: boolean) => {
+  const getReady = useCallback(async () => {
+    const ai = getAI();
+    if (!(ai instanceof RealAI)) return;
+    const parts = chosenParts() ?? [...REQUIRED_PARTS];
+    for (const part of installedParts()) if (!parts.includes(part)) await ai.removePart(part);
+    setInstalled(installedParts());
+    const onDevice = parts.every((part) => isPartInstalled(part));
     setPhase("loading");
     setError(null);
     setAlreadyLoaded(onDevice);
@@ -207,19 +246,15 @@ export function SetupClient() {
     const started = performance.now();
     try {
       if (!onDevice) {
-        await downloadInBackground((downloaded, total) => setBackground({ downloaded, total }));
+        await downloadInBackground(parts, (downloaded, total) => setBackground({ downloaded, total }));
         setBackground(null);
       }
-      const ai = getAI();
       const report = (p: LoadProgress) => setProgress((previous) => ({ ...previous, [p.stage]: p }));
-      await ai.load(report);
+      await ai.load(report, parts);
       // The story helper may have moved to the CPU when the GPU refused it.
       setChoice(chooseModels(await detectSupport(), window.location.search));
-      // Drawing recognition is not part of load() (it is loaded per guess and
-      // freed after); download it now so guesses work offline later.
-      if (ai instanceof RealAI && !visionCached) await ai.prepareVision(report);
       setSeconds((performance.now() - started) / 1000);
-      setCached({ llm: true, stt: true, vision: true, tts: true });
+      setInstalled(installedParts());
       markSetupInProgress(false);
       autoTries.current = 0;
       setPhase("ready");
@@ -227,11 +262,18 @@ export function SetupClient() {
       setOffline({ persisted, precache, usage: await storageUsage() });
     } catch (e) {
       setBackground(null);
+      setInstalled(installedParts());
       setError(e instanceof Error ? e.message : String(e));
       setPhase("error");
       void savedPerStage().then(setSaved, () => undefined);
     }
   }, []);
+
+  /** The parent's ticks become the plan, then setup runs it. */
+  function applyChoice() {
+    setChosenParts(selected);
+    void getReady();
+  }
 
   useEffect(() => {
     let alive = true;
@@ -257,16 +299,20 @@ export function SetupClient() {
       if (!alive) return;
       setCached({ llm, stt, vision, tts });
       if (!(llm && stt && vision && tts)) void savedPerStage().then((s) => alive && setSaved(s), () => undefined);
-      // Every page wakes the models when they are on the device (EarlyWake), so
-      // on a revisit they are already awake or waking: show that, not a button.
+      const onDevice = installedParts();
+      setInstalled(onDevice);
+      const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+      setSelected(chosenParts() ?? (onDevice.length ? onDevice : recommendParts({ ...found, deviceMemory: memory })));
+      // Every page wakes the parts on the device (EarlyWake), so on a revisit
+      // they are already awake or waking: show that, not a button.
       const status = getAI().status();
-      if (status === "ready") {
+      if (status === "ready" && !isSetupInProgress()) {
         setAlreadyLoaded(true);
         setPhase("ready");
-      } else if (status === "loading" || isMarkedReady() || isSetupInProgress()) {
-        // Joins (or starts) the same wake-up EarlyWake does; load() runs only once.
+      } else if (status === "loading" || isSetupInProgress() || (onDevice.length > 0 && chosenParts() !== null)) {
+        // Joins (or starts) the same wake-up EarlyWake does; each part loads only once.
         // An interrupted first download (app closed, phone slept) carries on by itself.
-        void getReady(llm && stt && vision && tts, vision);
+        void getReady();
       } else {
         setPhase("idle");
       }
@@ -279,13 +325,19 @@ export function SetupClient() {
   const bytes: Record<Stage, number> = {
     llm: choice ? (findLLM(choice.llm)?.downloadMB ?? 0) * 1e6 : 0,
     stt: choice ? (findSTT(choice.stt)?.downloadMB[choice.sttDevice] ?? 0) * 1e6 : 0,
-    vision: choice ? (findVision(choice.vision)?.downloadMB ?? 0) * 1e6 : 0,
+    // Drawing recognition plus the AI cut-out model.
+    vision: choice ? ((findVision(choice.vision)?.downloadMB ?? 0) + CUTOUT_MB) * 1e6 : 0,
     // Kokoro for this device plus the voices /lab can switch between.
     tts: choice ? (KOKORO.modelMB[ttsDevice] + KOKORO.voiceMB * PRELOADED_VOICES.length) * 1e6 : 0,
   };
-  const totalBytes = STAGES.reduce((sum, { stage }) => sum + bytes[stage], 0);
-  const toDownload = STAGES.reduce((sum, { stage }) => sum + (cached?.[stage] ? 0 : bytes[stage]), 0);
-  const allCached = !!cached && STAGES.every(({ stage }) => cached[stage]);
+  const partBytes = (part: Part) => PART_STAGES[part].reduce((sum, stage) => sum + bytes[stage], 0);
+  const totalBytes = selected.reduce((sum, part) => sum + partBytes(part), 0);
+  const toDownload = selected.reduce(
+    (sum, part) => sum + PART_STAGES[part].reduce((s, stage) => s + (cached?.[stage] ? 0 : bytes[stage]), 0),
+    0,
+  );
+  const changed = PARTS.some((part) => selected.includes(part) !== installed.includes(part));
+  const removing = installed.filter((part) => !selected.includes(part));
   const friendly = phase === "error" && error ? explainLoadError(error) : null;
   const awake = useScreenAwake(phase === "loading");
   const iPhone = typeof navigator !== "undefined" && isAppleMobile();
@@ -293,7 +345,6 @@ export function SetupClient() {
   // A download cut off by sleep, a lost connection or leaving the app carries
   // on by itself once the page is back on screen and online: no tap needed.
   const errorKind = friendly?.kind ?? null;
-  const visionCached = !!cached?.vision;
   useEffect(() => {
     const tryNow = () => {
       const state = {
@@ -306,7 +357,7 @@ export function SetupClient() {
       };
       if (!shouldAutoContinue(state)) return;
       autoTries.current++;
-      void getReady(false, visionCached);
+      void getReady();
     };
     // Coming back is a fresh chance: the tries count again from zero.
     const back = () => {
@@ -325,7 +376,7 @@ export function SetupClient() {
       window.removeEventListener("online", back);
       clearTimeout(timer);
     };
-  }, [phase, errorKind, visionCached, getReady]);
+  }, [phase, errorKind, getReady]);
 
   /** `onDevice`: everything was downloaded before, so this only wakes the models up. */
   /** Says a narrator line, then a character line, and reports which voice actually spoke. */
@@ -401,56 +452,98 @@ export function SetupClient() {
             </p>
           )}
           <p className="text-sm text-stone-500">
-            {support?.mobile ? "Phone" : "Laptop"} setup · {totalBytes ? `${size(totalBytes)} in total` : ""}
+            {support?.mobile ? "Phone" : "Laptop"} setup · {totalBytes ? `${size(totalBytes)} for what is ticked` : ""}
             {cached && toDownload < totalBytes && toDownload > 0 ? ` · ${size(toDownload)} left to download` : ""}
             {` · ${sourceLabel(choice.source)}`}
           </p>
 
           <ul className="flex flex-col gap-3">
-            {STAGES.map(({ stage, label, detail }) => {
-              const p = progress[stage];
-              const isCached = cached?.[stage];
-              // Ready only when the engine says so: a full bar can still be starting up.
-              const done = phase === "ready" || !!p?.done;
-              const live = p && p.total > 0 ? Math.min(1, p.loaded / p.total) : 0;
-              // What an interrupted setup already saved stays on the bar while loading catches up.
-              const kept = !isCached && saved[stage] && bytes[stage] ? Math.min(0.99, saved[stage] / bytes[stage]) : 0;
-              const fraction = done ? 1 : Math.max(live, kept);
-              const keptText = kept && !p ? `${size(saved[stage] ?? 0)} of ${size(bytes[stage])} already saved` : null;
+            {PARTS.map((part) => {
+              const info = PART_INFO[part];
+              const required = REQUIRED_PARTS.includes(part);
+              const ticked = selected.includes(part);
+              const leaving = removing.includes(part);
               return (
-                <li key={stage} className="rounded-2xl border border-stone-200 bg-white p-4">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="font-semibold">{label}</span>
-                    <span className="text-sm text-stone-500">
-                      {done
-                        ? "Ready"
-                        : !bytes[stage]
-                          ? "Built in"
-                          : isCached
-                            ? phase === "loading"
-                              ? p
-                                ? "Downloaded, starting"
-                                : "Downloaded, starting next"
-                              : "Downloaded"
-                            : size(bytes[stage])}
+                <li
+                  key={part}
+                  className={`rounded-2xl border p-4 ${ticked ? "border-stone-200 bg-white" : "border-dashed border-stone-300 bg-stone-50"}`}
+                >
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-5 w-5 shrink-0 accent-orange-500"
+                      checked={ticked}
+                      disabled={required || phase === "loading"}
+                      onChange={(event) => {
+                        const on = event.target.checked;
+                        setSelected((previous) => (on ? [...previous, part] : previous.filter((p) => p !== part)));
+                      }}
+                    />
+                    <span className="flex flex-1 flex-col gap-1">
+                      <span className="flex items-baseline justify-between gap-3">
+                        <span className="font-semibold">{info.label}</span>
+                        <span className="shrink-0 text-sm text-stone-500">{size(partBytes(part))}</span>
+                      </span>
+                      <span className="text-sm text-stone-600">{info.detail}</span>
+                      {required && <span className="text-xs font-semibold text-stone-500">Always included</span>}
+                      {leaving && (
+                        <span className="text-sm font-semibold text-amber-800">
+                          Will be removed from this device, freeing about {size(partBytes(part))}.
+                        </span>
+                      )}
                     </span>
-                  </div>
-                  <p className="text-sm text-stone-500">{p?.text ?? keptText ?? detail}</p>
-                  {(phase === "loading" || done || kept > 0) && (
-                    <div
-                      className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100"
-                      role="progressbar"
-                      aria-label={label}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={Math.round(fraction * 100)}
-                    >
-                      <div
-                        className="h-full rounded-full bg-orange-400 transition-[width] duration-300"
-                        style={{ width: `${fraction * 100}%` }}
-                      />
-                    </div>
-                  )}
+                  </label>
+                  {ticked &&
+                    PART_STAGES[part].map((stage) => {
+                      const p = progress[stage];
+                      const isCached = cached?.[stage];
+                      // Ready only when the engine says so: a full bar can still be starting up.
+                      const done = !!p?.done || (phase === "ready" && installed.includes(part));
+                      const live = p && p.total > 0 ? Math.min(1, p.loaded / p.total) : 0;
+                      // What an interrupted setup already saved stays on the bar while loading catches up.
+                      const kept =
+                        !isCached && saved[stage] && bytes[stage] ? Math.min(0.99, saved[stage] / bytes[stage]) : 0;
+                      const fraction = done ? 1 : Math.max(live, kept);
+                      const keptText =
+                        kept && !p ? `${size(saved[stage] ?? 0)} of ${size(bytes[stage])} already saved` : null;
+                      const state = done
+                        ? "Ready"
+                        : isCached
+                          ? phase === "loading"
+                            ? p
+                              ? "Downloaded, starting"
+                              : "Downloaded, starting next"
+                            : "Downloaded"
+                          : phase === "loading" && !p
+                            ? "Waiting its turn"
+                            : null;
+                      const showBar = phase === "loading" || done || kept > 0;
+                      if (!state && !showBar && !keptText) return null;
+                      return (
+                        <div key={stage} className="mt-3 border-t border-stone-100 pt-3">
+                          <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="font-medium text-stone-700">{STAGE_LABEL[stage]}</span>
+                            {state && <span className="text-stone-500">{state}</span>}
+                          </div>
+                          {(p?.text ?? keptText) && <p className="text-sm text-stone-500">{p?.text ?? keptText}</p>}
+                          {showBar && (
+                            <div
+                              className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100"
+                              role="progressbar"
+                              aria-label={STAGE_LABEL[stage]}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={Math.round(fraction * 100)}
+                            >
+                              <div
+                                className="h-full rounded-full bg-orange-400 transition-[width] duration-300"
+                                style={{ width: `${fraction * 100}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </li>
               );
             })}
@@ -466,18 +559,24 @@ export function SetupClient() {
               </details>
             </div>
           )}
-          {(phase === "idle" || phase === "error") && (
+          {(phase === "idle" || phase === "error" || (phase === "ready" && changed)) && (
             <button
               type="button"
               onClick={() =>
                 // The graphics chip failed: start over in the CPU tier (a fresh page re-checks the device).
-                friendly?.kind === "gpu"
-                  ? window.location.replace("/setup?gpu=off")
-                  : void getReady(allCached || getAI().status() === "ready", !!cached?.vision)
+                friendly?.kind === "gpu" ? window.location.replace("/setup?gpu=off") : applyChoice()
               }
               className="rounded-full bg-orange-500 px-6 py-4 text-lg font-bold text-white shadow-sm hover:bg-orange-600 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-orange-600"
             >
-              {friendly ? friendly.button : allCached ? "Start Guhit" : "Get Guhit ready"}
+              {friendly
+                ? friendly.button
+                : phase === "ready"
+                  ? selected.some((part) => !installed.includes(part))
+                    ? "Get the added parts"
+                    : "Save changes"
+                  : toDownload > 0
+                    ? "Get Guhit ready"
+                    : "Start Guhit"}
             </button>
           )}
           {background && (
@@ -527,6 +626,10 @@ export function SetupClient() {
           {phase === "ready" && (
             <div className="flex flex-col gap-3 rounded-2xl bg-green-50 p-4 text-green-900">
               <p className="text-lg font-semibold">Guhit is ready. It now works without internet.</p>
+              <p className="text-sm">
+                On this device: {installed.map((part) => PART_INFO[part].label).join(", ")}.
+                {!installed.includes("talk") && " Your child can still snap, cut out and move their drawings."}
+              </p>
               <p className="text-sm">
                 {alreadyLoaded || seconds === null
                   ? "Already on this device and awake."

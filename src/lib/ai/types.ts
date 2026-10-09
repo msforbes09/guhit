@@ -52,9 +52,18 @@ export interface DrawingPhoto {
   crop: PixelRect;
 }
 
+/** The parts a parent sets up: "eyes" (always), "voice" and "talk" (ears + story helper). */
+export type Part = "eyes" | "voice" | "talk";
+/** A part's state; "not-installed" when it was not chosen at setup (or was removed). */
+export type PartStatus = AIStatus | "not-installed";
+
 export interface LocalAI {
+  /** "ready" once every part on this device is ready. */
   status(): AIStatus;
-  load(onProgress: (p: LoadProgress) => void): Promise<void>;
+  /** Loads parts: by default those already on this device (never a download from a kid screen). */
+  load(onProgress: (p: LoadProgress) => void, parts?: Part[]): Promise<void>;
+  /** Each feature waits only for its own part: guesses for "eyes", the neural voice for "voice", talking for "talk". */
+  partStatus(part: Part): PartStatus;
   transcribe(audio: Blob): Promise<string>;
   /**
    * Guesses what the child drew. `png` is the cut-out (data URL, transparent

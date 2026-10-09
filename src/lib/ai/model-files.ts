@@ -6,7 +6,7 @@
 import type { ModelChoice } from "./device";
 import { createModelFetch, r2Url, type ModelSource } from "./model-fetch";
 import { findLLM, findVision, STT_DTYPES } from "./models";
-import type { LoadProgress } from "./types";
+import type { LoadProgress, Part } from "./types";
 import { KOKORO, VOICE_CACHE, type KokoroDtype } from "./voice/voices";
 
 type Stage = LoadProgress["stage"];
@@ -60,12 +60,29 @@ export function webllmFiles(model: string, modelLib: string, index: TensorCacheI
   ];
 }
 
-/** Where to download a file from: Guhit's R2 copy when that is the source, else the key itself. */
-export function fetchUrlFor(key: string, source: ModelSource): string {
+/**
+ * Where to download a file from: Guhit's R2 copy when that is the source, this
+ * computer's mirror for a Hugging Face key (the cut-out) when that is, else the key itself.
+ */
+export function fetchUrlFor(key: string, source: ModelSource, modelHost: string | null = null): string {
+  if (source === "local" && modelHost && key.startsWith(HUGGING_FACE)) return `${modelHost}/${key.slice(HUGGING_FACE.length)}`;
   return (source === "r2" && r2Url(key)) || key;
 }
 
 const HUGGING_FACE = "https://huggingface.co/";
+
+/**
+ * The AI cut-out model as src/lib/alive/ai-segment.ts loads it (same id and
+ * pinned revision; a test keeps them equal). It is fetched by the cut-out
+ * code itself, always from Hugging Face, so its keys are Hugging Face URLs.
+ */
+const CUTOUT_MODEL = { id: "xrds/isnet-general-onnx-int8", revision: "71eff2372ec9c8edbc6ca637ded591423d23b65a" };
+const CUTOUT_FILES = ["config.json", "preprocessor_config.json", "onnx/model_quantized.onnx"];
+
+/** The cut-out model's Hugging Face repo id, for deleting its files with the eyes. */
+export const CUTOUT_MODEL_ID = CUTOUT_MODEL.id;
+/** Its download size (the 8-bit model; the two JSON files are tiny). */
+export const CUTOUT_MB = 44;
 
 /**
  * Every file the chosen models load. `readIndex` returns WebLLM's
@@ -95,11 +112,55 @@ export async function listModelFiles(
 
   files.push(...transformersFiles("stt", choice.stt, STT_DTYPES[choice.sttDevice], host));
   files.push(...transformersFiles("vision", choice.vision, findVision(choice.vision)?.dtype ?? {}, host));
+  const cutout = `${HUGGING_FACE}${CUTOUT_MODEL.id}/resolve/${CUTOUT_MODEL.revision}/`;
+  for (const file of CUTOUT_FILES) files.push({ stage: "vision", cache: "transformers-cache", key: cutout + file });
   files.push(...transformersFiles("tts", KOKORO.id, { model: tts.dtype }, host));
   for (const voice of tts.voices) {
     files.push({ stage: "tts", cache: VOICE_CACHE, key: `${host}${KOKORO.id}/resolve/main/voices/${voice}.bin` });
   }
   return files;
+}
+
+/** The model ids whose cached files belong to a part (matched against cache keys). */
+export function partModelIds(part: Part, choice: Pick<ModelChoice, "llm" | "stt" | "vision">): string[] {
+  if (part === "eyes") return [choice.vision, CUTOUT_MODEL_ID];
+  if (part === "voice") return [KOKORO.id];
+  // WebLLM's library file is named after the model without "-MLC".
+  return [choice.stt, choice.llm, choice.llm.replace(/-MLC$/, "")];
+}
+
+const MODEL_CACHES = ["transformers-cache", "webllm/model", "webllm/config", "webllm/wasm", VOICE_CACHE];
+
+/** Deletes every cached file of these models (any precision), freeing their storage. */
+export async function deleteModelFiles(modelIds: string[]): Promise<number> {
+  if (typeof caches === "undefined") return 0;
+  let deleted = 0;
+  for (const name of MODEL_CACHES) {
+    if (!(await caches.has(name))) continue;
+    const cache = await caches.open(name);
+    for (const request of await cache.keys()) {
+      if (modelIds.some((id) => request.url.includes(id)) && (await cache.delete(request))) deleted++;
+    }
+  }
+  return deleted;
+}
+
+/**
+ * Stores the AI cut-out model where the cut-out code looks for it, so it works
+ * offline without ever having been tried online. Files already there are kept.
+ */
+export async function storeCutoutModel(source: ModelSource, modelHost: string | null): Promise<void> {
+  const cache = await caches.open("transformers-cache");
+  const path = `${CUTOUT_MODEL.id}/resolve/${CUTOUT_MODEL.revision}/`;
+  const download = createModelFetch({ source });
+  for (const file of CUTOUT_FILES) {
+    const key = HUGGING_FACE + path + file;
+    if (await cache.match(key)) continue;
+    // This computer's mirror serves it too; the key stays the Hugging Face URL the cut-out code reads.
+    const response = await download(source === "local" && modelHost ? `${modelHost}/${path}${file}` : key);
+    if (!response.ok) throw new Error(`${file}: ${response.status}`);
+    await cache.put(key, response);
+  }
 }
 
 /** WebLLM's shard list: from its cache when it was saved before, else downloaded (it is a few KB). */

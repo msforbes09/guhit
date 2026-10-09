@@ -10,7 +10,7 @@ import { JointPicker, loadCutout, type AliveCharacterHandle, type Cutout, type J
 import { FriendBooks } from "./FriendBooks";
 import { FriendStage } from "./FriendStage";
 import { movesFor, type Move } from "./moves";
-import { speechLevel, useAIReady, usePushToTalk } from "./hooks";
+import { speechLevel, usePart, usePushToTalk } from "./hooks";
 import {
   ArrowsClockwise,
   BookOpen,
@@ -38,7 +38,8 @@ const MEMORY_TURNS = 16;
 
 /** The demo's heart: hold the mic, talk, and the drawing answers out loud. */
 export function TalkToFriend({ friend: initial }: { friend: Friend }) {
-  const ready = useAIReady();
+  // Talking needs only its own part (ears and story helper), not the eyes or the voice.
+  const ready = usePart("talk");
   const [friend, setFriend] = useState(initial);
   const friendRef = useRef(initial);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -294,8 +295,8 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
         )}
 
         <section className="flex flex-col gap-5" aria-label={`Talk to ${name}`}>
-          {ready === "needs-setup" || ready === "error" ? (
-            <ReadyCard name={name} failed={ready === "error"} />
+          {ready === "not-installed" || ready === "setting-up" || ready === "error" ? (
+            <ReadyCard name={name} failed={ready === "error"} reason={ready === "not-installed" ? "not-installed" : "setting-up"} />
           ) : (
             <div className="flex flex-col items-center gap-3 pt-1">
               <MicButton

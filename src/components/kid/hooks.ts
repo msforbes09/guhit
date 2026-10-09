@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getAI, isMarkedReady, RealAI } from "@/lib/ai";
-import type { AIStatus } from "@/lib/ai";
+import { getAI, installedParts, isSetupInProgress, RealAI } from "@/lib/ai";
+import type { AIStatus, Part, PartStatus } from "@/lib/ai";
 
 /**
- * Models are on this device: /setup finished once, or the canned engine
- * (?mock=1) is in use, which needs no download at all.
+ * Models are on this device: /setup put at least one part here, or the canned
+ * engine (?mock=1) is in use, which needs no download at all.
  */
 function onThisDevice(): boolean {
-  return isMarkedReady() || !(getAI() instanceof RealAI);
+  return installedParts().length > 0 || !(getAI() instanceof RealAI);
 }
 
 // getAI().status() is a plain getter, so watch it with a light poll.
@@ -55,6 +55,45 @@ export function useAIReady(): Readiness {
   if (status === "error") return onDevice ? "error" : "needs-setup";
   return onDevice ? "waking" : "needs-setup";
 }
+
+/**
+ * One part of the AI, as a screen needs it: "eyes" (guessing the drawing),
+ * "voice" (the storytelling voice; without it the device's own voice speaks)
+ * or "talk" (listening ears and story helper).
+ * - "ready": use it; "waking": it is on the device and starting;
+ * - "not-installed": the parent did not choose it, so the screen simply does without;
+ * - "setting-up": a setup is still running or was interrupted; /setup finishes it;
+ * - "error": it failed to start.
+ */
+export type PartReadiness = "checking" | "ready" | "waking" | "not-installed" | "setting-up" | "error";
+
+export function usePart(part: Part): PartReadiness {
+  const status = useSyncExternalStore<PartStatus | "unknown">(
+    subscribeStatus,
+    () => getAI().partStatus(part),
+    () => "unknown",
+  );
+
+  useEffect(() => {
+    // A part on the device wakes quietly; a missing one is never downloaded from a kid screen.
+    if (status === "idle") {
+      getAI()
+        .load(() => {}, [part])
+        .catch(() => {
+          // partStatus() turns to "error".
+        });
+    }
+  }, [status, part]);
+
+  if (status === "unknown") return "checking";
+  if (status === "ready") return "ready";
+  if (status === "loading" || status === "idle") return "waking";
+  if (status === "error") return "error";
+  return isSetupInProgress() ? "setting-up" : "not-installed";
+}
+
+/** True once the storytelling voice (Kokoro) is on this device and started. */
+export const useVoiceReady = () => usePart("voice") === "ready";
 
 export type MicState = "idle" | "starting" | "recording" | "denied" | "unsupported";
 

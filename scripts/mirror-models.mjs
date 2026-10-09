@@ -58,6 +58,12 @@ const onnxRepos = [
       "onnx/decoder_model_merged_q4.onnx",
     ],
   },
+  {
+    // The AI cut-out (src/lib/alive/ai-segment.ts), at the revision it pins.
+    repo: "xrds/isnet-general-onnx-int8",
+    revision: "71eff2372ec9c8edbc6ca637ded591423d23b65a",
+    onnx: ["onnx/model_quantized.onnx"],
+  },
   // Kokoro voice (src/lib/ai/voice/voices.ts): fp32 for WebGPU, 8-bit for
   // phones, and only the voices the app offers (PRELOADED_VOICES).
   {
@@ -97,20 +103,21 @@ async function download(url, target, expectedSize) {
   throw new Error(`Gave up on ${url}`);
 }
 
-async function repoFiles(repo) {
-  const response = await fetch(`https://huggingface.co/api/models/${repo}?blobs=true`);
+async function repoFiles(repo, revision) {
+  const at = revision === "main" ? "" : `/revision/${revision}`;
+  const response = await fetch(`https://huggingface.co/api/models/${repo}${at}?blobs=true`);
   if (!response.ok) throw new Error(`${repo}: HTTP ${response.status}`);
   return (await response.json()).siblings.map((s) => ({ name: s.rfilename, size: s.size }));
 }
 
 // "onnxruntime/" holds builds for ONNX Runtime GenAI, which the browser never loads.
 const wanted = (name) => !name.startsWith(".") && name !== "README.md" && !name.startsWith("onnxruntime/");
-const filesOf = async (repo, keep) =>
-  (await repoFiles(repo))
+const filesOf = async (repo, keep, revision = "main") =>
+  (await repoFiles(repo, revision))
     .filter((f) => keep(f.name))
     .map((f) => ({
-      url: `https://huggingface.co/${repo}/resolve/main/${f.name}`,
-      target: join(root, repo, "resolve", "main", f.name),
+      url: `https://huggingface.co/${repo}/resolve/${revision}/${f.name}`,
+      target: join(root, repo, "resolve", revision, f.name),
       size: f.size,
     }));
 
@@ -123,14 +130,14 @@ for (const id of llmIds) {
   queue.push({ url: record.model_lib, target: join(root, "libs", record.model_lib.split("/").pop()) });
   queue.push(...(await filesOf(`mlc-ai/${id}`, wanted)));
 }
-for (const { repo, onnx, voices } of onnxRepos) {
+for (const { repo, revision, onnx, voices } of onnxRepos) {
   const keep = (name) =>
     name.startsWith("onnx/")
       ? onnx.includes(name)
       : name.startsWith("voices/") && voices
         ? voices.includes(name.slice("voices/".length, -".bin".length))
         : wanted(name);
-  queue.push(...(await filesOf(repo, keep)));
+  queue.push(...(await filesOf(repo, keep, revision)));
 }
 
 const total = queue.length;

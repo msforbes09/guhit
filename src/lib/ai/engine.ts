@@ -9,7 +9,9 @@ import {
 } from "./device";
 import type { LLMClient, TextGenerator } from "./llm";
 import { CPU_LLM, findLLM, findSTT, findVision, STT_DTYPES } from "./models";
-import { isMarkedReady, markReady, requestPersistence } from "./offline";
+import { deleteModelFiles, partModelIds, storeCutoutModel } from "./model-files";
+import { isVisionCached, markReady, requestPersistence } from "./offline";
+import { installedParts, isPartInstalled, markInstalled, PARTS } from "./parts";
 import {
   firstQuestionMessages,
   nextQuestionMessages,
@@ -34,7 +36,7 @@ import { sharedAttempt } from "./shared-attempt";
 import type { STTClient } from "./stt";
 import type { VisionClient } from "./vision";
 import { Speaker, type VoiceInfo } from "./tts";
-import type { AIStatus, ChatTurn, DrawingDescription, DrawingPhoto, LoadProgress, LocalAI } from "./types";
+import type { AIStatus, ChatTurn, DrawingDescription, DrawingPhoto, LoadProgress, LocalAI, Part, PartStatus } from "./types";
 
 export type CallKind =
   | "reply"
@@ -138,7 +140,8 @@ export class RealAI implements LocalAI {
   onMetric: ((metric: CallMetric) => void) | null = null;
 
   private state: AIStatus = "idle";
-  private loading: Promise<void> | null = null;
+  /** Each part's own state: a screen needs only the parts it uses. */
+  private partState: Record<Part, AIStatus> = { eyes: "idle", voice: "idle", talk: "idle" };
   private listeners = new Set<(p: LoadProgress) => void>();
   private lastText: Partial<Record<LoadProgress["stage"], string>> = {};
   private llm: TextGenerator | null = null;
@@ -171,25 +174,49 @@ export class RealAI implements LocalAI {
     }
   });
   private llmWarm = sharedAttempt(() => this.warmUpLLM());
-  private sttLoad = sharedAttempt(async () => {
-    const { STTClient } = await import("./stt");
-    await this.loadSTT(new STTClient(), this.choice!);
+  private sttLoad = this.sttAttempt();
+  /** Device and model choice, worked out once. */
+  private prepared = sharedAttempt(async () => {
+    const support = await detectSupport();
+    this.support = support;
+    this.choice = chooseModels(support, window.location.search);
+    void requestPersistence();
   });
+  private partRuns: Record<Part, () => Promise<void>> = {
+    eyes: sharedAttempt(() => this.loadEyes()),
+    voice: sharedAttempt(() => this.loadVoicePart()),
+    talk: sharedAttempt(() => this.loadTalk()),
+  };
 
+  private sttAttempt() {
+    return sharedAttempt(async () => {
+      const { STTClient } = await import("./stt");
+      await this.loadSTT(new STTClient(), this.choice!);
+    });
+  }
+
+  /** "ready" once every part on this device is; parts not set up do not count. */
   status(): AIStatus {
     return this.state;
   }
 
-  load(onProgress: (p: LoadProgress) => void): Promise<void> {
-    if (this.state === "ready") return Promise.resolve();
+  /** One part: "not-installed" when it was not chosen at setup (or was removed). */
+  partStatus(part: Part): PartStatus {
+    const state = this.partState[part];
+    return state === "idle" && !isPartInstalled(part) ? "not-installed" : state;
+  }
+
+  /**
+   * Loads the given parts, by default the ones already on this device (kid
+   * screens never start a download). /setup passes the parts the parent chose.
+   */
+  async load(onProgress: (p: LoadProgress) => void, parts: Part[] = installedParts()): Promise<void> {
     this.listeners.add(onProgress);
-    if (!this.loading) {
-      this.loading = this.loadAll().finally(() => {
-        this.loading = null;
-        this.listeners.clear();
-      });
+    try {
+      await this.loadParts(parts);
+    } finally {
+      this.listeners.delete(onProgress);
     }
-    return this.loading;
   }
 
   private emit(progress: LoadProgress) {
@@ -197,67 +224,118 @@ export class RealAI implements LocalAI {
     for (const listener of this.listeners) listener(progress);
   }
 
-  private async loadAll() {
-    this.state = "loading";
+  private updateState() {
+    const installed = installedParts();
+    const states = PARTS.map((part) => this.partState[part]);
+    if (states.includes("loading")) this.state = "loading";
+    else if (states.includes("error")) this.state = "error";
+    else if (installed.length > 0 && installed.every((part) => this.partState[part] === "ready")) this.state = "ready";
+    else this.state = "idle";
+    markReady(this.state === "ready");
+  }
+
+  /**
+   * In order of importance (eyes, voice, talk), each part on its own: one that
+   * fails leaves the others working. Phones take one at a time (WebKit closes
+   * a tab past ~1–1.5 GB, and downloads share a weaker connection).
+   */
+  private async loadParts(parts: Part[]) {
+    const pending = PARTS.filter((part) => parts.includes(part) && this.partState[part] !== "ready");
+    if (pending.length === 0) return;
     this.error = null;
     const started = performance.now();
+    let failure: unknown = null;
     try {
-      const support = await detectSupport();
-      this.support = support;
-      const choice = chooseModels(support, window.location.search);
-      this.choice = choice;
-      void requestPersistence();
-
-      // Downloads run side by side: the first visit is bound by network, not GPU.
-      // Drawing recognition is not loaded here: it is loaded for each guess and
-      // freed straight after, so it never holds GPU memory during the talk loop.
-      const loadVoice = () =>
-        this.speaker.load(support, choice.modelHost, choice.source, (loaded, total, text) =>
-          this.emit({ stage: "tts", loaded, total, text }),
-        );
-      let voices: VoiceInfo;
-      if (support.mobile) {
-        // One download at a time on phones: WebKit closes a tab past ~1–1.5 GB,
-        // and the downloads share a weaker connection. The voice last, as the
-        // optional one. The story helper's first start (GPU) runs meanwhile, so a
-        // slow one does not hold up the listening ears and the voice (CPU).
-        await this.llmLoad();
-        const warming = this.llmWarm();
-        warming.catch(() => undefined);
-        await this.sttLoad();
-        voices = await loadVoice();
-        await warming;
-      } else {
-        [, , voices] = await Promise.all([
-          this.llmLoad().then(() => this.llmWarm()),
-          this.sttLoad(),
-          // Never fails the load: without the neural voice, the built-in one speaks.
-          loadVoice(),
-        ]);
-      }
-      // A first, cold load can fail while the other models are filling the GPU;
-      // on its own it usually succeeds, so try once more before settling.
-      if (voices.engine === "builtin" && voices.reason?.startsWith("Kokoro failed to load")) {
-        voices = await loadVoice();
-      }
-      this.voices = voices;
-      this.emit({ stage: "tts", loaded: 1, total: 1, text: this.lastText.tts ?? "Voice ready", done: true });
-      this.timings.ttsMs = voices.loadMs;
-
-      this.timings.totalMs = performance.now() - started;
-      this.state = "ready";
-      markReady(true);
-      // The voice's own warm-up ran while the other models were still loading;
-      // one more throwaway word now that they are all on the GPU.
-      this.speaker.rewarm();
-      this.prefetchVision();
+      await this.prepared();
+      const run = (part: Part) => this.runPart(part).catch((error) => void (failure ??= error));
+      if (this.support!.mobile) for (const part of pending) await run(part);
+      else await Promise.all(pending.map(run));
     } catch (error) {
-      this.state = "error";
-      this.error = error instanceof Error ? error.message : String(error);
-      // Most often the cache was cleared while offline: send the parent back to setup.
-      markReady(false);
-      throw error;
+      failure ??= error;
     }
+    this.timings.totalMs = performance.now() - started;
+    this.updateState();
+    if (this.state === "ready") {
+      // One more throwaway word now that the voice shares the GPU with the rest.
+      this.speaker.rewarm();
+      // Phones keep the eyes' model only while a guess needs it (see acquireVision).
+      if (!this.support?.mobile && this.partState.eyes === "ready") this.prefetchVision();
+    }
+    if (failure) {
+      this.error = failure instanceof Error ? failure.message : String(failure);
+      throw failure;
+    }
+  }
+
+  private async runPart(part: Part) {
+    this.partState[part] = "loading";
+    this.updateState();
+    try {
+      await this.partRuns[part]();
+      this.partState[part] = "ready";
+      markInstalled(part, true);
+    } catch (error) {
+      this.partState[part] = "error";
+      throw error;
+    } finally {
+      this.updateState();
+    }
+  }
+
+  /**
+   * The eyes: drawing recognition is downloaded and checked once here, then
+   * loaded for each guess and freed after. The AI cut-out model is stored too,
+   * so "Try AI cut-out" works offline later (best effort).
+   */
+  private async loadEyes() {
+    const choice = this.choice!;
+    if (!(await isVisionCached(choice.vision))) {
+      const vision = await this.acquireVision((p) => this.emit(p));
+      this.releaseVision();
+      if (!vision) throw new Error(this.visionError ?? "Drawing recognition could not start.");
+    }
+    this.emit({ stage: "vision", loaded: 1, total: 1, text: "Seeing eyes ready", done: true });
+    // In the background: an optional extra must never hold up the parts after it.
+    void storeCutoutModel(choice.source, choice.modelHost).catch(() => undefined);
+  }
+
+  /** Never fails: without the neural voice, the device's own voice speaks. */
+  private async loadVoicePart() {
+    const support = this.support!;
+    const choice = this.choice!;
+    const loadVoice = () =>
+      this.speaker.load(support, choice.modelHost, choice.source, (loaded, total, text) =>
+        this.emit({ stage: "tts", loaded, total, text }),
+      );
+    let voices = await loadVoice();
+    // A first, cold load can fail while other models fill the GPU; on its own it usually succeeds.
+    if (voices.engine === "builtin" && voices.reason?.startsWith("Kokoro failed to load")) voices = await loadVoice();
+    this.voices = voices;
+    this.timings.ttsMs = voices.loadMs;
+    this.emit({ stage: "tts", loaded: 1, total: 1, text: this.lastText.tts ?? "Voice ready", done: true });
+  }
+
+  /** Talking: the listening ears, then the story helper (its slow first start last). */
+  private async loadTalk() {
+    if (this.support!.mobile) {
+      await this.sttLoad();
+      await this.llmLoad();
+    } else {
+      await Promise.all([this.sttLoad(), this.llmLoad()]);
+    }
+    await this.llmWarm();
+  }
+
+  /**
+   * Removes a part from this device: its models leave the browser's storage.
+   * The page should reload afterwards, which also frees what is in memory.
+   */
+  async removePart(part: Part): Promise<void> {
+    await this.prepared();
+    markInstalled(part, false);
+    this.partState[part] = "idle";
+    this.updateState();
+    await deleteModelFiles(partModelIds(part, this.choice!));
   }
 
   private async loadLLM(llm: LLMClient, choice: ModelChoice) {
@@ -420,6 +498,9 @@ export class RealAI implements LocalAI {
     this.visionUsers++;
     if (this.vision) return Promise.resolve(this.vision);
     if (!this.visionLoading) {
+      // Phones never hold all four models: the ears step aside while the eyes look
+      // (they come back from the cache in a second or two, on the next listen).
+      if (this.support?.mobile) this.unloadEars();
       this.visionLoading = this.loadVision(onProgress).finally(() => {
         this.visionLoading = null;
       });
@@ -506,29 +587,35 @@ export class RealAI implements LocalAI {
     }
   }
 
-  /**
-   * For /setup: downloads drawing recognition into the browser cache so later
-   * guesses work offline, then frees it again. Returns false if it failed.
-   */
-  async prepareVision(onProgress: (p: LoadProgress) => void): Promise<boolean> {
-    await this.ready();
-    const vision = await this.acquireVision(onProgress);
-    this.releaseVision();
-    return vision !== null;
+  private unloadEars() {
+    if (!this.stt) return;
+    this.stt.terminate();
+    this.stt = null;
+    this.sttLoad = this.sttAttempt();
   }
 
   /**
-   * Methods load the models on demand, but only once a parent has run setup:
-   * a 1 GB download must never start from a kid screen by surprise.
+   * Methods load their part on demand, but only once a parent has set it up:
+   * a download must never start from a kid screen by surprise.
    */
-  private async ready(): Promise<{ llm: TextGenerator; stt: STTClient }> {
-    if (this.state !== "ready") {
-      if (!this.loading && !isMarkedReady()) {
-        throw new Error("Guhit is not set up on this device yet. Open the setup page first.");
-      }
-      await this.load(() => {});
+  private async needPart(part: Part) {
+    if (this.partState[part] === "ready") return;
+    if (this.partState[part] !== "loading" && !isPartInstalled(part)) {
+      throw new Error(`This part of Guhit (${part}) is not set up on this device. Open the setup page to add it.`);
     }
-    return { llm: this.llm!, stt: this.stt! };
+    await this.load(() => {}, [part]);
+  }
+
+  private async storyHelper(): Promise<TextGenerator> {
+    await this.needPart("talk");
+    return this.llm!;
+  }
+
+  /** The listening ears, back from the cache if a guess sent them away (phones). */
+  private async ears(): Promise<STTClient> {
+    await this.needPart("talk");
+    await this.sttLoad();
+    return this.stt!;
   }
 
   private record(metric: CallMetric): CallMetric {
@@ -554,8 +641,10 @@ export class RealAI implements LocalAI {
 
   /** An empty label means "no guess": the screen asks the child instead of "Is that …?". */
   async describeDrawing(png: string, photo?: DrawingPhoto): Promise<DrawingDescription> {
-    await this.ready();
     if (!png && !photo) return { label: "" };
+    // Without the eyes the screens simply ask the child what it is.
+    if (this.partStatus("eyes") === "not-installed") return { label: "" };
+    await this.needPart("eyes");
     const started = performance.now();
     const vision = await this.acquireVision();
     this.takeOverPrefetch();
@@ -587,7 +676,7 @@ export class RealAI implements LocalAI {
   }
 
   async transcribe(audio: Blob): Promise<string> {
-    const { stt } = await this.ready();
+    const stt = await this.ears();
     const started = performance.now();
     const result = await stt.transcribe(audio);
     this.record({
@@ -600,7 +689,7 @@ export class RealAI implements LocalAI {
   }
 
   async reply(character: Character, history: ChatTurn[], childSays: string): Promise<string> {
-    const { llm } = await this.ready();
+    const llm = await this.storyHelper();
     const started = performance.now();
     const playback = this.autoSpeakReplies ? this.speaker.stream("character") : null;
 
@@ -705,7 +794,7 @@ export class RealAI implements LocalAI {
     fallback: () => string,
     temperatures = [0.7, 0.3],
   ): Promise<string> {
-    const { llm } = await this.ready();
+    const llm = await this.storyHelper();
     const started = performance.now();
     for (const temperature of temperatures) {
       const text = clean(await llm.generate(messages, { maxTokens, temperature }));

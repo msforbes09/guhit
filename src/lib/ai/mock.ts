@@ -1,5 +1,5 @@
 import type { Character, Story } from "@/lib/story/types";
-import type { AIStatus, ChatTurn, DrawingDescription, LoadProgress, LocalAI } from "./types";
+import type { AIStatus, ChatTurn, DrawingDescription, LoadProgress, LocalAI, PartStatus } from "./types";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -34,6 +34,11 @@ export class MockAI implements LocalAI {
   private startListeners = new Set<(voice: "narrator" | "character") => void>();
 
   status(): AIStatus {
+    return this.state;
+  }
+
+  /** The pretend engine has every part, once "loaded". */
+  partStatus(): PartStatus {
     return this.state;
   }
 

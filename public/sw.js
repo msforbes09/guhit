@@ -195,7 +195,12 @@ self.addEventListener("backgroundfetchfail", (event) => {
 });
 
 self.addEventListener("backgroundfetchabort", (event) => {
-  event.waitUntil(tellPages({ state: "aborted" }));
+  // Cancelled (by the parent, or by setup when it never moved): keep the files that did arrive.
+  event.waitUntil(
+    storeBackgroundDownload(event.registration)
+      .catch(() => ({ stored: 0, missing: 0 }))
+      .then((result) => tellPages({ state: "aborted", ...result })),
+  );
 });
 
 self.addEventListener("backgroundfetchclick", (event) => {

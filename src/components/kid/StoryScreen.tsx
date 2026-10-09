@@ -9,7 +9,7 @@ import type { Character, Story } from "@/lib/story/types";
 import { sceneFor } from "./Backdrop";
 import { FriendSkeleton } from "./FriendScreen";
 import { FriendStage } from "./FriendStage";
-import { speechLevel, useAIReady, usePushToTalk, useSpeakingVoice } from "./hooks";
+import { speechLevel, usePart, usePushToTalk, useSpeakingVoice } from "./hooks";
 import { ArrowRight, ArrowsClockwise, BookOpen, PaperPlaneRight, SpeakerHigh } from "./icons";
 import { MicButton } from "./MicButton";
 import { ReadyCard } from "./ReadyCard";
@@ -67,7 +67,8 @@ export function StoryScreen() {
 
 function MakeStory({ friend }: { friend: Friend }) {
   const router = useRouter();
-  const ready = useAIReady();
+  // Talking needs only its own part (ears and story helper), not the eyes or the voice.
+  const ready = usePart("talk");
   const voice = useSpeakingVoice();
   const name = friend.name;
   const [phase, setPhase] = useState<Phase>("asking");
@@ -217,9 +218,9 @@ function MakeStory({ friend }: { friend: Friend }) {
           ))}
         </ol>
 
-        {ready === "needs-setup" || ready === "error" ? (
+        {ready === "not-installed" || ready === "setting-up" || ready === "error" ? (
           <div className="mx-auto w-full max-w-md py-8">
-            <ReadyCard name={name} failed={ready === "error"} />
+            <ReadyCard name={name} failed={ready === "error"} reason={ready === "not-installed" ? "not-installed" : "setting-up"} />
           </div>
         ) : phase === "page" && last ? (
           <div className="anim-float-in grid gap-5 lg:grid-cols-[1.4fr_1fr] lg:items-start">

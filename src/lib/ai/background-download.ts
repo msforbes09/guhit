@@ -51,9 +51,14 @@ async function mapLimited<T, R>(items: T[], limit: number, run: (item: T) => Pro
 }
 
 /** Picks each file's download URL: R2 when it holds the file, else Hugging Face. */
-export async function planDownload(files: ModelFile[], source: ModelSource, head: Head = headRequest): Promise<DownloadPlan> {
+export async function planDownload(
+  files: ModelFile[],
+  source: ModelSource,
+  head: Head = headRequest,
+  modelHost: string | null = null,
+): Promise<DownloadPlan> {
   const sized = await mapLimited(files, 8, async (file) => {
-    const mirror = fetchUrlFor(file.key, source);
+    const mirror = fetchUrlFor(file.key, source, modelHost);
     if (mirror !== file.key) {
       const r2 = await head(mirror);
       if (r2.ok) return { file: { ...file, url: mirror }, size: r2.size || file.bytes || 0 };
@@ -118,13 +123,17 @@ async function backgroundDownloadExists(): Promise<boolean> {
  * Hands the files to the browser to download in the background. Null when the
  * browser cannot (no Background Fetch, no service worker, or it refused).
  */
-export async function startBackgroundDownload(files: ModelFile[], source: ModelSource): Promise<BackgroundDownload | null> {
+export async function startBackgroundDownload(
+  files: ModelFile[],
+  source: ModelSource,
+  modelHost: string | null = null,
+): Promise<BackgroundDownload | null> {
   try {
     const bg = await manager();
     if (!bg) return null;
     const running = await runningBackgroundDownload();
     if (running) return running;
-    const plan = await planDownload(files, source);
+    const plan = await planDownload(files, source, headRequest, modelHost);
     await (await caches.open(DOWNLOADS_CACHE)).put(PLAN_KEY, new Response(JSON.stringify(plan.files)));
     const started = bg.fetch(
       BACKGROUND_ID,
@@ -162,7 +171,7 @@ type DownloadEnd = "stored" | "failed" | "aborted" | "gone" | "stalled";
 export function waitForBackgroundDownload(
   download: BackgroundDownload,
   onProgress: (downloaded: number, total: number) => void,
-  { stallMs = 30_000, checkMs = 5_000 } = {},
+  { stallMs = 60_000, checkMs = 5_000 } = {},
 ): Promise<DownloadEnd> {
   return new Promise((resolve) => {
     let bytes = download.downloaded;

@@ -10,11 +10,15 @@ export type {
   SafetyCategory,
   LoadProgress,
   LocalAI,
+  Part,
+  PartStatus,
   PixelRect,
 } from "./types";
 export { detectSupport } from "./device";
 export { photoCropFromCutout } from "./photo";
 export { isMarkedReady, READY_FLAG } from "./offline";
+/** Which parts (eyes, voice, talk) are on this device; getAI().partStatus(part) says whether one is ready. */
+export { installedParts, isPartInstalled } from "./parts";
 /** True while a started setup has not finished (it carries on when /setup is opened again). */
 export { isSetupInProgress } from "./setup-resume";
 export { RealAI };
