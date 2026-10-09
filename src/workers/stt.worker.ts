@@ -31,7 +31,7 @@ self.onmessage = async (event: MessageEvent<STTRequest>) => {
   const request = event.data;
   try {
     if (request.type === "load") {
-      configureTransformers(request.modelHost);
+      await configureTransformers(request.modelHost);
       const asr = await pipeline("automatic-speech-recognition", request.model, {
         device: request.device,
         dtype: request.dtype as never,

@@ -47,4 +47,5 @@ next-env.d.ts
 /public/ort/
 /public/precache-manifest.json
 /public/samples/
-/public/models/
+# model mirror moved to /mirror/ (static export copies all of public/)
+/mirror/

@@ -8,9 +8,10 @@
     "prebuild": "node scripts/copy-ort.mjs",
     "build": "next build",
     "postbuild": "node scripts/precache-manifest.mjs",
-    "start": "next start",
+    "start": "node scripts/serve-static.mjs",
     "lint": "eslint",
-    "lab:sample": "mkdir -p public/samples && say -v Samantha -o public/samples/tala-answer.wav --data-format=LEI16@16000 \"Tala lives in a big purple castle on a cloud, and she eats pancakes every morning.\""
+    "lab:sample": "mkdir -p public/samples && say -v Samantha -o public/samples/tala-answer.wav --data-format=LEI16@16000 \"Tala lives in a big purple castle on a cloud, and she eats pancakes every morning.\"",
+    "serve": "node scripts/serve-static.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.1",
