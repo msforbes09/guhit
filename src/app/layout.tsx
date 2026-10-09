@@ -22,11 +22,40 @@ const andika = Andika({
   weight: ["400", "700"],
 });
 
+const TITLE = "Guhit — Every drawing has a friend inside.";
+const DESCRIPTION =
+  "Kids draw a friend on paper, snap it, and it comes alive and talks back. All the AI runs on the device: no cloud, no account, nothing leaves the device.";
+const SHARE_IMAGE = {
+  url: "/og/og-image.png",
+  width: 1200,
+  height: 630,
+  alt: "The Guhit logo and a child's crayon drawing of a purple dragon, with the words: Every drawing has a friend inside.",
+};
+
 export const metadata: Metadata = {
-  title: "Guhit",
-  description:
-    "Your child's drawing comes alive and talks back, and nothing ever leaves the device.",
+  // Link previews need absolute image URLs; this is where the app is published.
+  metadataBase: new URL("https://guhit.iam4bs.dev"),
+  title: TITLE,
+  description: DESCRIPTION,
   applicationName: "Guhit",
+  openGraph: {
+    type: "website",
+    siteName: "Guhit",
+    url: "/",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [
+      SHARE_IMAGE,
+      // Square version for apps that crop previews to a square.
+      { ...SHARE_IMAGE, url: "/og/og-image-1200x1200.png", height: 1200 },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [SHARE_IMAGE],
+  },
   appleWebApp: { capable: true, title: "Guhit", statusBarStyle: "default" },
   icons: {
     icon: [
