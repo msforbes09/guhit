@@ -63,6 +63,13 @@ export const VISION_MODELS: VisionModel[] = [
     downloadMB: 217,
     dtype: { vision_encoder: "q4", embed_tokens: "q8", encoder_model: "q4", decoder_model_merged: "q4" },
   },
+  {
+    // Apache-2.0. A chat model that sees images, so it can be asked exactly what was drawn.
+    id: "HuggingFaceTB/SmolVLM-256M-Instruct",
+    label: "SmolVLM 256M",
+    downloadMB: 182,
+    dtype: { vision_encoder: "q4", embed_tokens: "q8", decoder_model_merged: "q4" },
+  },
 ];
 
 export const findLLM = (id: string) => LLM_MODELS.find((m) => m.id === id);

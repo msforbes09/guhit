@@ -81,6 +81,13 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** Compares questions ignoring case, punctuation and spacing. */
 const sameText = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 
+const WARMUP_CHARACTER: Character = {
+  id: "warmup",
+  name: "Pip",
+  description: "a small green turtle who likes to sing",
+  drawing: "",
+};
+
 /** Said instead of a model sentence that failed the safety screen. */
 const SAFE_SENTENCE = "Let's think about something happy instead!";
 
@@ -203,8 +210,9 @@ export class RealAI implements LocalAI {
           : `Getting the story helper ready… ${percent}%`;
       this.emit({ stage: "llm", loaded: Math.round(report.progress * total), total, text });
     });
-    // A one-token run compiles the remaining GPU kernels before the child is waiting.
-    await llm.generate([{ role: "user", content: "Hi" }], { maxTokens: 1 });
+    // A short run on a reply-sized prompt compiles the GPU kernels for prompts of
+    // that length now, so the character's first real answer is not the slow one.
+    await llm.generate(replyMessages(WARMUP_CHARACTER, [], ""), { maxTokens: 4 });
     this.llm = llm;
     this.timings.llmMs = performance.now() - started;
     this.emit({ stage: "llm", loaded: total, total, text: "Story helper ready" });
@@ -310,7 +318,10 @@ export class RealAI implements LocalAI {
     const started = performance.now();
     try {
       // The original photo reads better than the cut-out on white (tested in /lab).
-      const { caption } = photo ? await vision.describe(photo.image, photo.crop) : await vision.describe(png);
+      const task = this.choice?.visionTask;
+      const { caption } = photo
+        ? await vision.describe(photo.image, photo.crop, task)
+        : await vision.describe(png, undefined, task);
       const verdict = screen(caption, "drawing");
       if (!verdict.ok) {
         const ms = performance.now() - started;
