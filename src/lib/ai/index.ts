@@ -1,7 +1,7 @@
 import { MockAI } from "./mock";
 import type { LocalAI } from "./types";
 
-export type { AIStatus, LoadProgress, LocalAI } from "./types";
+export type { AIStatus, ChatTurn, LoadProgress, LocalAI } from "./types";
 
 let instance: LocalAI | null = null;
 

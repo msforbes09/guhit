@@ -12,14 +12,21 @@ export interface LoadProgress {
   text: string;
 }
 
+export interface ChatTurn {
+  who: "child" | "character";
+  text: string;
+}
+
 export interface LocalAI {
   status(): AIStatus;
   load(onProgress: (p: LoadProgress) => void): Promise<void>;
   transcribe(audio: Blob): Promise<string>;
+  /** The drawn character answers the child in first person. */
+  reply(character: Character, history: ChatTurn[], childSays: string): Promise<string>;
   firstQuestion(character: Character): Promise<string>;
   nextQuestion(story: Story): Promise<string>;
   writePage(story: Story, question: string, answer: string): Promise<string>;
   titleFor(story: Story): Promise<string>;
-  speak(text: string): Promise<void>;
+  speak(text: string, voice?: "narrator" | "character"): Promise<void>;
   stopSpeaking(): void;
 }

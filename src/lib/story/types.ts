@@ -4,6 +4,8 @@ export interface Character {
   description: string;
   /** Data URL of the child's drawing (PNG). Never altered by AI. */
   drawing: string;
+  /** Data URL of the drawing cut out on a transparent background (PNG). */
+  cutout?: string;
 }
 
 export interface StoryPage {

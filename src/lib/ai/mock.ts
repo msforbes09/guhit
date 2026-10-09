@@ -1,5 +1,5 @@
 import type { Character, Story } from "@/lib/story/types";
-import type { AIStatus, LoadProgress, LocalAI } from "./types";
+import type { AIStatus, ChatTurn, LoadProgress, LocalAI } from "./types";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -11,6 +11,13 @@ const FOLLOW_UPS = [
   (name: string) => `What makes ${name} laugh the most?`,
   (name: string) => `Where does ${name} go on a sunny day?`,
   (name: string) => `What is ${name} a little bit afraid of?`,
+];
+
+const CHARACTER_QUESTIONS = [
+  "Do you want to play with me?",
+  "What's your favorite color?",
+  "Can you draw me a friend?",
+  "Where should we go today?",
 ];
 
 /**
@@ -47,6 +54,17 @@ export class MockAI implements LocalAI {
   async transcribe(audio: Blob): Promise<string> {
     await wait(400);
     return audio.size > 0 ? "He lives in a big tree house by the river." : "";
+  }
+
+  async reply(character: Character, history: ChatTurn[], childSays: string): Promise<string> {
+    await wait(600);
+    const heard = childSays.trim().replace(/[.!?]+$/, "");
+    if (history.length === 0) {
+      return `Hi! I'm ${character.name}! I'm so happy you drew me. What's your name?`;
+    }
+    return heard
+      ? `Wow, ${heard.toLowerCase()}? That sounds fun! ${pick(CHARACTER_QUESTIONS, history.length)}`
+      : `Hee hee! ${pick(CHARACTER_QUESTIONS, history.length)}`;
   }
 
   async firstQuestion(character: Character): Promise<string> {
