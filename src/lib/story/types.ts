@@ -1,3 +1,5 @@
+import type { Kind } from "./kind";
+
 export interface Character {
   id: string;
   name: string;
@@ -6,6 +8,8 @@ export interface Character {
   drawing: string;
   /** Data URL of the drawing cut out on a transparent background (PNG). */
   cutout?: string;
+  /** What sort of thing it is (see kind.ts); the character moves and talks like one. */
+  kind?: Kind;
 }
 
 export interface StoryPage {

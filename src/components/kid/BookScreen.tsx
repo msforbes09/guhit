@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAI } from "@/lib/ai";
 import { getStory } from "@/lib/story/db";
+import { kindOf } from "@/lib/story/kind";
 import type { Story } from "@/lib/story/types";
 import { sceneFor } from "./Backdrop";
 import { CaretLeft, CaretRight, House, Play, Stop } from "./icons";
@@ -150,7 +151,12 @@ function Book({ story }: { story: Story }) {
                 </p>
               </StoryPage>
             ) : at >= last ? (
-              <StoryPage cutout={cutout} scene="night" motion="wave" label="The End">
+              <StoryPage
+                cutout={cutout}
+                scene="night"
+                motion={kindOf(story.character.description) === "creature" ? "wave" : "bounce"}
+                label="The End"
+              >
                 <p className="text-center font-display text-5xl font-black text-ink">The End</p>
                 <div className="mt-3 flex flex-col justify-center gap-3 sm:flex-row">
                   <Button tone="sun" size="md" onClick={() => go(-1)}>
