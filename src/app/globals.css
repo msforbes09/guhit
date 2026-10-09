@@ -11,7 +11,7 @@
   --paper-edge: #e8d6b5;
   --ink: #2a2238;
   --ink-soft: #594c6b;
-  --ink-faint: #8a7d99;
+  --ink-faint: #6f6385;
 
   --crayon-red: #e5533c;
   --crayon-red-deep: #b73a26;
@@ -20,8 +20,8 @@
   --crayon-grass: #5cb85c;
   --crayon-grass-deep: #2f7d3b;
   --crayon-sky: #5aaee8;
-  --crayon-sky-deep: #2b78b8;
-  --crayon-grape: #8f5fd6;
+  --crayon-sky-deep: #236aa3;
+  --crayon-grape: #7c4cc8;
   --crayon-grape-deep: #6537ad;
   --crayon-pink: #f585ae;
   --crayon-orange: #ff8c42;
@@ -280,4 +280,22 @@
     transition-duration: 1ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* The alive engine's tools (touch-up brush, joint picker) bring their own
+   small buttons. Inside kid screens they get child-sized targets; this sits
+   outside the layers on purpose so it wins over their utility classes. */
+.kid-tools button {
+  min-height: 3.5rem;
+  padding-inline: 1.25rem;
+  font-family: var(--font-grandstander), ui-rounded, system-ui, sans-serif;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+.kid-tools p {
+  font-family: var(--font-grandstander), ui-rounded, system-ui, sans-serif;
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: center;
 }

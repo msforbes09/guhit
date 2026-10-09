@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { canvasToBlob } from "@/lib/story/image";
-import { CutError, CutoutPreview, CuttingView, useBringToLife } from "./BringToLife";
+import { CutError, CutoutPreview, CuttingView, NotThisOne, useBringToLife } from "./BringToLife";
 import { useFriends } from "./FriendsGrid";
 import { ShelfFull } from "./ShelfFull";
 import { ArrowCounterClockwise, Eraser, PaintBrush, Sparkle, Trash } from "./icons";
@@ -173,6 +173,14 @@ export function DrawScreen() {
     redraw();
   };
 
+  /** A clean sheet with no undo history: the last drawing is not coming back. */
+  const freshPaper = () => {
+    strokes.current = [];
+    setInkCount(0);
+    setCanUndo(false);
+    redraw();
+  };
+
   const clear = () => {
     if (!inkCount) return;
     strokes.current.push({ kind: "clear" });
@@ -192,7 +200,17 @@ export function DrawScreen() {
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col">
       <TopBar
-        title={shelfFullNow ? "Make room" : drawing ? "Draw your friend" : life.phase === "cutting" ? "Snip snip…" : "Ta-da!"}
+        title={
+          shelfFullNow
+            ? "Make room"
+            : drawing
+              ? "Draw your friend"
+              : life.phase === "cutting"
+                ? "Snip snip…"
+                : life.phase === "flagged"
+                  ? "Let's try another"
+                  : "Ta-da!"
+        }
       />
 
       <div className={`${drawing ? "flex" : "hidden"} flex-1 flex-col gap-4 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6 lg:flex-row`}>
@@ -317,7 +335,23 @@ export function DrawScreen() {
             }}
           />
         )}
-        {life.phase === "cutting" && <CuttingView photo={life.photo} />}
+        {life.phase === "cutting" && <CuttingView photo={life.photo} working={life.working} />}
+        {life.phase === "flagged" && life.result && (
+          <NotThisOne
+            png={life.result.cut.png}
+            actions={[
+              {
+                label: "Draw a new one",
+                icon: "draw",
+                onClick: () => {
+                  freshPaper();
+                  life.reset();
+                },
+              },
+              { label: "Take another photo", icon: "photo", href: "/snap" },
+            ]}
+          />
+        )}
         {(life.phase === "preview" || life.phase === "saving") && life.result && (
           <CutoutPreview
             cut={life.result.cut}
@@ -325,6 +359,7 @@ export function DrawScreen() {
             retakeLabel="Keep drawing"
             onRetake={life.reset}
             onAccept={life.accept}
+            onFixed={life.fixEdges}
           />
         )}
         {life.phase === "error" && <CutError onRetry={life.reset} />}

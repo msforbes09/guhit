@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { canvasToBlob } from "@/lib/story/image";
-import { CutError, CutoutPreview, CuttingView, useBringToLife } from "./BringToLife";
+import { CutError, CutoutPreview, CuttingView, NotThisOne, useBringToLife } from "./BringToLife";
 import { useFriends } from "./FriendsGrid";
 import { Camera, ImageIcon } from "./icons";
 import { ShelfFull } from "./ShelfFull";
@@ -130,7 +130,9 @@ export function SnapScreen() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col">
       <TopBar
-        title={shelfFullNow ? "Make room" : life.phase === "preview" || life.phase === "saving" ? "Ta-da!" : "Snap your drawing"}
+        title={
+          shelfFullNow ? "Make room" : life.phase === "preview" || life.phase === "saving" ? "Ta-da!" : life.phase === "flagged" ? "Let's try another" : "Snap your drawing"
+        }
       />
       <input
         ref={fileInput}
@@ -241,7 +243,16 @@ export function SnapScreen() {
             }}
           />
         )}
-        {life.phase === "cutting" && <CuttingView photo={life.photo} />}
+        {life.phase === "cutting" && <CuttingView photo={life.photo} working={life.working} />}
+        {life.phase === "flagged" && life.result && (
+          <NotThisOne
+            png={life.result.cut.png}
+            actions={[
+              { label: "Draw a new one", icon: "draw", href: "/draw" },
+              { label: "Take another photo", icon: "photo", onClick: life.reset },
+            ]}
+          />
+        )}
         {(life.phase === "preview" || life.phase === "saving") && life.result && (
           <CutoutPreview
             cut={life.result.cut}
@@ -249,6 +260,7 @@ export function SnapScreen() {
             retakeLabel="Take it again"
             onRetake={life.reset}
             onAccept={life.accept}
+            onFixed={life.fixEdges}
           />
         )}
         {life.phase === "error" && <CutError onRetry={life.reset} />}

@@ -19,7 +19,7 @@ export function ShelfFull({ friends, onChange }: { friends: Friend[]; onChange: 
           {MAX_FRIENDS} friends live here already. Let one go to make room for a new friend.
         </p>
       </div>
-      <FriendsGrid friends={friends} onChange={onChange} letGoLabel="Let go to make room" linked={false} showEmptySlots={false} />
+      <FriendsGrid friends={friends} onChange={onChange} letGoLabel="Let go" linked={false} showEmptySlots={false} />
     </section>
   );
 }

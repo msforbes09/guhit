@@ -1,19 +1,32 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { photoCropFromCutout } from "@/lib/ai";
-import type { PixelRect } from "@/lib/ai";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getAI, photoCropFromCutout } from "@/lib/ai";
+import type { DrawingDescription, PixelRect } from "@/lib/ai";
 import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { shrinkPhoto } from "@/lib/story/image";
-import { cutout, type Cutout } from "./alive";
+import { cutout, CutoutTouchUp, type Cutout } from "./alive";
 import { FriendStage } from "./FriendStage";
-import { ArrowsClockwise, Check, Scissors } from "./icons";
-import { Button } from "./ui";
+import { useAIReady } from "./hooks";
+import { ArrowsClockwise, Camera, Check, PaintBrush, Scissors, Sparkle } from "./icons";
+import { Button, LinkButton } from "./ui";
 
-type Phase = "idle" | "cutting" | "preview" | "saving" | "full" | "error";
+type Phase = "idle" | "cutting" | "preview" | "saving" | "full" | "flagged" | "error";
+type Working = "cutting" | "closer" | "looking";
+/**
+ * What the drawing reader saw. `flagged` (the engine's safety category)
+ * marks a drawing it judged not right for a child's friend; the category is
+ * never shown.
+ */
+type Seen = DrawingDescription;
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The AI cut-out may need its model the first time; never keep a child waiting longer. */
+const AI_RETRY_MS = 12000;
+/** Reading the drawing must never hold the child up. */
+const LOOK_TIMEOUT_MS = 8000;
 
 /** The crop is in the original photo's pixels; the kept photo may be smaller. */
 const scaleRect = (r: PixelRect, s: number): PixelRect => ({
@@ -24,14 +37,29 @@ const scaleRect = (r: PixelRect, s: number): PixelRect => ({
 });
 
 /**
- * Photo or canvas in, friend out: cuts the character from the picture, lets
- * the child confirm it, then keeps it on the device and opens it.
+ * Photo or canvas in, friend out: cuts the character from the picture, has
+ * the engine look at it (a drawing it flags is never saved or animated),
+ * lets the child confirm it, then keeps it on the device and opens it.
  */
 export function useBringToLife() {
   const router = useRouter();
+  // Wakes the engine quietly when its models are already on this device.
+  const ready = useAIReady();
+  const readyRef = useRef(ready);
+  useEffect(() => {
+    readyRef.current = ready;
+  }, [ready]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [photo, setPhoto] = useState<string | null>(null);
-  const [result, setResult] = useState<{ drawing: string; cut: Cutout; photoCrop?: PixelRect } | null>(null);
+  const [working, setWorking] = useState<Working>("cutting");
+  const [result, setResult] = useState<{
+    drawing: string;
+    /** How much the kept photo was shrunk from the original. */
+    scale: number;
+    cut: Cutout;
+    photoCrop?: PixelRect;
+    seen: Seen | null;
+  } | null>(null);
 
   useEffect(
     () => () => {
@@ -40,25 +68,63 @@ export function useBringToLife() {
     [photo],
   );
 
-  const start = useCallback(async (image: Blob) => {
-    setResult(null);
-    setPhoto(URL.createObjectURL(image));
-    setPhase("cutting");
-    try {
-      // Hold the scissors moment briefly even when cutting is instant, so the
-      // child sees something happen to their drawing.
-      const [cut, photo] = await Promise.all([cutout(image), shrinkPhoto(image), wait(1100)]);
-      setResult({ drawing: photo.dataUrl, cut, photoCrop: cut.meta ? scaleRect(photoCropFromCutout(cut.meta), photo.scale) : undefined });
-      setPhase("preview");
-    } catch {
-      setPhase("error");
+  /** Asks the engine what the drawing is, once it is awake; null when it can't say in time. */
+  const look = useCallback(async (png: string, picture?: { image: string; crop: PixelRect }): Promise<Seen | null> => {
+    const deadline = performance.now() + LOOK_TIMEOUT_MS;
+    while (readyRef.current === "checking" || readyRef.current === "waking") {
+      if (performance.now() > deadline) return null;
+      await wait(200);
     }
+    if (readyRef.current !== "ready") return null;
+    const answer = getAI()
+      .describeDrawing(png, picture)
+      .catch(() => null);
+    return Promise.race([answer, wait(Math.max(0, deadline - performance.now())).then(() => null)]);
   }, []);
+
+  const start = useCallback(
+    async (image: Blob) => {
+      setResult(null);
+      setPhoto(URL.createObjectURL(image));
+      setWorking("cutting");
+      setPhase("cutting");
+      try {
+        // Hold the scissors moment briefly even when cutting is instant, so the
+        // child sees something happen to their drawing.
+        // Editable keeps the full frame so "Fix the edges" can brush parts in or out.
+        const [first, picture] = await Promise.all([cutout(image, { editable: true }), shrinkPhoto(image), wait(1100)]);
+        let cut = first;
+        if (first.meta?.quality === "poor") {
+          // A messy cut-out gets one closer look with the on-device AI model
+          // before the child is asked to take the photo again.
+          setWorking("closer");
+          const better = await Promise.race([cutout(image, { method: "ai", editable: true }).catch(() => null), wait(AI_RETRY_MS).then(() => null)]);
+          if (better && better.meta?.quality !== "poor") cut = better;
+        }
+        const photoCrop = cut.meta ? scaleRect(photoCropFromCutout(cut.meta), picture.scale) : undefined;
+        // The engine looks before anything comes alive or is saved.
+        setWorking("looking");
+        const seen = await look(cut.png, photoCrop ? { image: picture.dataUrl, crop: photoCrop } : undefined);
+        setResult({ drawing: picture.dataUrl, scale: picture.scale, cut, photoCrop, seen });
+        setPhase(seen?.flagged ? "flagged" : "preview");
+      } catch {
+        setPhase("error");
+      }
+    },
+    [look],
+  );
 
   const reset = useCallback(() => {
     setResult(null);
     setPhoto(null);
     setPhase("idle");
+  }, []);
+
+  /** The child brushed the edges: same drawing, cleaner cut-out. */
+  const fixEdges = useCallback((fixed: Cutout) => {
+    setResult((r) =>
+      r ? { ...r, cut: fixed, photoCrop: fixed.meta ? scaleRect(photoCropFromCutout(fixed.meta), r.scale) : r.photoCrop } : r,
+    );
   }, []);
 
   // After making room on a full shelf, keep the friend the child just confirmed.
@@ -76,6 +142,8 @@ export function useBringToLife() {
         drawing: result.drawing,
         cutout: result.cut.png,
         photoCrop: result.photoCrop,
+        // Unknown (the engine could not look in time) stays unset so the meet screen asks again.
+        seenAs: result.seen ? result.seen.label.trim() : undefined,
         chat: [],
         createdAt: now,
         updatedAt: now,
@@ -86,10 +154,16 @@ export function useBringToLife() {
     }
   }, [result, router]);
 
-  return { phase, photo, result, start, reset, accept, backToPreview };
+  return { phase, photo, working, result, start, reset, accept, backToPreview, fixEdges };
 }
 
-export function CuttingView({ photo }: { photo: string | null }) {
+const WORKING_TEXT: Record<Working, string> = {
+  cutting: "Cutting out your friend…",
+  closer: "Looking closer…",
+  looking: "Taking a good look…",
+};
+
+export function CuttingView({ photo, working = "cutting" }: { photo: string | null; working?: Working }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 py-6" role="status" aria-live="polite">
       <div className="crayon-edge relative w-full max-w-md overflow-hidden rounded-cut-lg bg-white p-3 shadow-soft">
@@ -108,7 +182,7 @@ export function CuttingView({ photo }: { photo: string | null }) {
           <Scissors size={44} weight="fill" className="[animation:wiggle_0.6s_ease-in-out_infinite]" />
         </span>
       </div>
-      <p className="font-display text-3xl font-extrabold text-ink">Cutting out your friend…</p>
+      <p className="font-display text-3xl font-extrabold text-ink">{WORKING_TEXT[working]}</p>
     </div>
   );
 }
@@ -119,13 +193,38 @@ export function CutoutPreview({
   retakeLabel,
   onRetake,
   onAccept,
+  onFixed,
 }: {
   cut: Cutout;
   saving: boolean;
   retakeLabel: string;
   onRetake: () => void;
   onAccept: () => void;
+  onFixed: (fixed: Cutout) => void;
 }) {
+  const [fixing, setFixing] = useState(false);
+
+  if (fixing && cut.edit) {
+    return (
+      <div className="anim-float-in flex flex-1 flex-col items-center gap-4 py-2">
+        <h2 className="text-center text-4xl font-black text-ink sm:text-5xl">Fix the edges</h2>
+        <p className="max-w-xl text-center text-xl text-ink-soft">
+          Paint <strong className="text-ink">Keep</strong> over bits of your drawing that went missing, and <strong className="text-ink">Remove</strong> over bits of paper.
+        </p>
+        <div className="kid-tools crayon-edge w-full max-w-2xl rounded-cut-lg bg-white p-4 shadow-soft">
+          <CutoutTouchUp
+            cutout={cut}
+            onDone={(fixed) => {
+              onFixed(fixed);
+              setFixing(false);
+            }}
+            onCancel={() => setFixing(false)}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col items-center gap-5 py-2 sm:gap-6">
       <h2 className="anim-float-in text-center text-4xl font-black text-ink sm:text-5xl">Is this your friend?</h2>
@@ -146,6 +245,18 @@ export function CutoutPreview({
         >
           {retakeLabel}
         </Button>
+        {cut.edit && (
+          <Button
+            tone="paper"
+            size="lg"
+            onClick={() => setFixing(true)}
+            disabled={saving}
+            icon={<Sparkle size={28} weight="fill" aria-hidden="true" />}
+            className="sm:flex-1"
+          >
+            Fix the edges
+          </Button>
+        )}
         <Button
           tone="grass"
           size="lg"
@@ -169,6 +280,43 @@ export function CutError({ onRetry }: { onRetry: () => void }) {
       <Button tone="sun" size="lg" onClick={onRetry} icon={<ArrowsClockwise size={30} weight="bold" aria-hidden="true" />}>
         Try again
       </Button>
+    </div>
+  );
+}
+
+type NotThisOneAction = { label: string; icon: "draw" | "photo"; href?: string; onClick?: () => void };
+
+/**
+ * The engine judged this drawing not right for a friend: it stays still,
+ * nothing is kept, and the child is gently invited to make another. No
+ * reason or category is ever shown.
+ */
+export function NotThisOne({ png, actions }: { png: string; actions: [NotThisOneAction, NotThisOneAction] }) {
+  return (
+    <div className="anim-float-in flex flex-1 flex-col items-center gap-6 py-6 text-center" role="status">
+      <div className="crayon-edge grid w-full max-w-sm place-items-center rounded-cut-lg bg-white p-6 shadow-soft">
+        {/* eslint-disable-next-line @next/next/no-img-element -- the still cut-out, from this device */}
+        <img src={png} alt="" className="max-h-[30vh] w-auto object-contain opacity-70 grayscale-[30%]" />
+      </div>
+      <p className="max-w-lg font-display text-3xl font-extrabold leading-snug text-ink sm:text-4xl">
+        Hmm, that one looks a bit scary for me. Can you draw me a friend instead?
+      </p>
+      <div className="flex w-full max-w-2xl flex-col gap-4 sm:flex-row">
+        {actions.map((action, i) => {
+          const icon =
+            action.icon === "draw" ? <PaintBrush size={30} weight="fill" aria-hidden="true" /> : <Camera size={30} weight="fill" aria-hidden="true" />;
+          const tone = i === 0 ? "sun" : "sky";
+          return action.href ? (
+            <LinkButton key={action.label} href={action.href} tone={tone} size="lg" icon={icon} className="sm:flex-1">
+              {action.label}
+            </LinkButton>
+          ) : (
+            <Button key={action.label} tone={tone} size="lg" onClick={action.onClick} icon={icon} className="sm:flex-1">
+              {action.label}
+            </Button>
+          );
+        })}
+      </div>
     </div>
   );
 }

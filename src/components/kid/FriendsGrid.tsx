@@ -105,7 +105,7 @@ function FriendCard({
             onClick={() => setAsking(true)}
             className="inline-flex min-h-14 items-center justify-center gap-2 rounded-[18px] bg-paper-deep px-3 font-display text-lg font-bold text-ink-soft hover:bg-pink/40 hover:text-ink"
           >
-            <Trash size={24} weight="bold" aria-hidden="true" />
+            <Trash size={24} weight="bold" aria-hidden="true" className="shrink-0" />
             {letGoLabel}
           </button>
         </>

@@ -1,4 +1,5 @@
 import type { ChatTurn, PixelRect } from "@/lib/ai/types";
+import type { Joints } from "@/lib/alive";
 import type { Character, Story } from "./types";
 
 /** A character the child made, plus everything they have said to each other. */
@@ -6,6 +7,10 @@ export interface Friend extends Character {
   chat: ChatTurn[];
   /** Where the cut-out sits in `drawing`, so recognition can read the original pixels. */
   photoCrop?: PixelRect;
+  /** What the drawing reader thought it was when it was made ("" = no guess). */
+  seenAs?: string;
+  /** Head, hands and feet the child tapped ("Make it move more"). */
+  joints?: Joints;
   createdAt: number;
   updatedAt: number;
 }

@@ -76,6 +76,16 @@ The OS's own voices through the Web Speech API (offline-safe). On macOS:
 narrator "Samantha"; character "Tessa" at a higher pitch. The first `speak()`
 needs a user gesture on the page (a tap) because of browser autoplay rules.
 
+To move a mouth with the voice, poll `speechLevel()` (0..1, smoothed, 0 when
+silent) every animation frame, and use `onSpeechStart(cb)` (returns its
+unsubscribe) to know when sound actually starts rather than when `speak()`
+was called:
+
+```ts
+const off = ai.onSpeechStart((voice) => setTalking(voice));
+const tick = () => { mouth.style.scale = `1 ${1 + ai.speechLevel()}`; raf = requestAnimationFrame(tick); };
+```
+
 ## Offline
 
 A service worker (production builds only) stores the app pages (`/`, `/snap`,

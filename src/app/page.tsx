@@ -59,7 +59,7 @@ export default function Home() {
         <p>Everything stays on this device. No internet needed.</p>
         <Link
           href="/setup"
-          className="inline-flex min-h-12 items-center gap-2 font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
+          className="inline-flex min-h-14 items-center gap-2 font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
         >
           <DownloadSimple size={20} weight="bold" aria-hidden="true" />
           Grown-ups: get ready (download)
