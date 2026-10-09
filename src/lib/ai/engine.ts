@@ -76,6 +76,8 @@ const FALLBACK_QUESTIONS = [
 ];
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** Compares questions ignoring case, punctuation and spacing. */
+const sameText = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
 
 /** The on-device engine: WebLLM for words, Whisper for listening, the OS voice for speaking. */
 export class RealAI implements LocalAI {
@@ -343,7 +345,8 @@ export class RealAI implements LocalAI {
 
     await llm.generate(replyMessages(character, history, childSays), {
       maxTokens: 60,
-      temperature: 0.8,
+      // Lower than the default: small models drift into nonsense at higher temperatures.
+      temperature: 0.6,
       onText: (delta) => {
         for (const sentence of splitter.push(delta)) if (!accept(sentence)) return false;
       },
@@ -361,17 +364,21 @@ export class RealAI implements LocalAI {
     return text;
   }
 
-  /** Runs a prompt, cleans the output, and retries once with a cooler temperature before falling back. */
+  /**
+   * Runs a prompt, cleans the output, and retries once before falling back.
+   * The retry is cooler by default (fixes format slips); repeats need a warmer one.
+   */
   private async complete(
     kind: CallKind,
     messages: Message[],
     maxTokens: number,
     clean: (raw: string) => string | null,
     fallback: () => string,
+    temperatures = [0.7, 0.3],
   ): Promise<string> {
     const { llm } = await this.ready();
     const started = performance.now();
-    for (const temperature of [0.7, 0.3]) {
+    for (const temperature of temperatures) {
       const text = clean(await llm.generate(messages, { maxTokens, temperature }));
       if (text) {
         this.llmMetric(kind, text, started, llm);
@@ -390,9 +397,17 @@ export class RealAI implements LocalAI {
   }
 
   nextQuestion(story: Story): Promise<string> {
-    return this.complete("nextQuestion", nextQuestionMessages(story), 40, cleanQuestion, () =>
-      FALLBACK_QUESTIONS[(story.pages.length + 1) % FALLBACK_QUESTIONS.length](story.character.name),
-    );
+    const name = story.character.name;
+    // Small models happily ask the same question again despite being told not to.
+    const asked = new Set(story.pages.map((p) => sameText(p.question)));
+    const fresh = (raw: string) => {
+      const question = cleanQuestion(raw);
+      return question && !asked.has(sameText(question)) ? question : null;
+    };
+    const unasked = () =>
+      FALLBACK_QUESTIONS.map((q) => q(name)).find((q) => !asked.has(sameText(q))) ??
+      `What happens to ${name} next?`;
+    return this.complete("nextQuestion", nextQuestionMessages(story), 40, fresh, unasked, [0.8, 1.1]);
   }
 
   writePage(story: Story, question: string, answer: string): Promise<string> {
