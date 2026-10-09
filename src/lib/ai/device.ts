@@ -52,13 +52,17 @@ interface GPULike {
 
 let cached: Promise<DeviceSupport> | null = null;
 
+/** iPhone or iPad: every browser there is WebKit, which cannot download in the background. */
+export function isAppleMobile(): boolean {
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
 function isMobile(): boolean {
   const nav = navigator as Navigator & { userAgentData?: { mobile?: boolean } };
   if (nav.userAgentData?.mobile) return true;
-  const ua = navigator.userAgent;
-  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
-  // iPadOS reports itself as a Mac; touch support gives it away.
-  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  // iPadOS reports itself as a Mac; isAppleMobile tells it by its touch support.
+  return /Android|Mobile/i.test(navigator.userAgent) || isAppleMobile();
 }
 
 export function detectSupport(): Promise<DeviceSupport> {

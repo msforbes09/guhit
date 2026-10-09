@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getAI, isMarkedReady, RealAI } from "@/lib/ai";
 import { Speaker, type SentenceMetric } from "@/lib/ai/tts";
-import { chooseModels, detectSupport, type DeviceSupport, type ModelChoice } from "@/lib/ai/device";
+import {
+  canDownloadInBackground,
+  runningBackgroundDownload,
+  startBackgroundDownload,
+  waitForBackgroundDownload,
+} from "@/lib/ai/background-download";
+import { chooseModels, detectSupport, isAppleMobile, type DeviceSupport, type ModelChoice } from "@/lib/ai/device";
 import { explainLoadError } from "@/lib/ai/friendly-errors";
 import { R2_BASE, type ModelSource } from "@/lib/ai/model-fetch";
+import { listModelFiles, readTensorIndex, savedFiles, type ModelFile } from "@/lib/ai/model-files";
 import { findLLM, findSTT, findVision } from "@/lib/ai/models";
+import { isSetupInProgress, markSetupInProgress, shouldAutoContinue } from "@/lib/ai/setup-resume";
 import {
   isLLMCached,
   isSTTCached,
@@ -19,10 +27,29 @@ import {
 } from "@/lib/ai/offline";
 import type { LoadProgress } from "@/lib/ai/types";
 import { isKokoroCached } from "@/lib/ai/voice/kokoro";
-import { chooseTTSDevice, findVoice, KOKORO, PRELOADED_VOICES, type TTSDevice } from "@/lib/ai/voice/voices";
+import {
+  chooseTTSDevice,
+  chooseTTSDtype,
+  findVoice,
+  KOKORO,
+  PRELOADED_VOICES,
+  type TTSDevice,
+} from "@/lib/ai/voice/voices";
 
 type Stage = LoadProgress["stage"];
-type Phase = "checking" | "unsupported" | "idle" | "loading" | "ready" | "error";
+type Phase = "checking" | "unsupported" | "test" | "idle" | "loading" | "ready" | "error";
+
+/** Leaves test mode ("?mock=1", pretend answers) for the real engine, wherever the flag was kept. */
+function turnOffTestMode() {
+  for (const storage of [localStorage, sessionStorage]) {
+    try {
+      storage.removeItem("guhit:mock");
+    } catch {
+      // Blocked storage: "?mock=0" below still switches back.
+    }
+  }
+  window.location.replace("/setup?mock=0");
+}
 
 const STAGES: { stage: Stage; label: string; detail: string }[] = [
   { stage: "llm", label: "Story helper", detail: "talks and writes with your child" },
@@ -39,8 +66,12 @@ function sourceLabel(source: ModelSource): string {
   return "from Hugging Face";
 }
 
-/** Phones dim and lock mid-download, which cuts it off: keep the screen on while setting up. */
-function useScreenAwake(active: boolean) {
+/**
+ * Phones dim and lock mid-download, which cuts it off: keep the screen on while
+ * setting up. True while the screen is actually being kept awake.
+ */
+function useScreenAwake(active: boolean): boolean {
+  const [held, setHeld] = useState(false);
   useEffect(() => {
     if (!active || !("wakeLock" in navigator)) return;
     let lock: WakeLockSentinel | null = null;
@@ -48,7 +79,9 @@ function useScreenAwake(active: boolean) {
     const request = async () => {
       try {
         lock = await navigator.wakeLock.request("screen");
-        if (stopped) void lock.release();
+        if (stopped) return void lock.release();
+        setHeld(true);
+        lock.addEventListener("release", () => setHeld(false));
       } catch {
         // Not allowed here (low battery mode, no gesture yet): the download still runs.
       }
@@ -65,6 +98,48 @@ function useScreenAwake(active: boolean) {
       void lock?.release();
     };
   }, [active]);
+  return active && held;
+}
+
+/** The files this device's models need, as the libraries store them. */
+async function filesForThisDevice(): Promise<{ files: ModelFile[]; source: ModelSource }> {
+  const search = window.location.search;
+  const support = await detectSupport();
+  const choice = chooseModels(support, search);
+  const dtype = chooseTTSDtype(chooseTTSDevice(support, search), search);
+  const files = await listModelFiles(choice, { dtype, voices: PRELOADED_VOICES }, (url) =>
+    readTensorIndex(url, choice.source),
+  );
+  return { files, source: choice.source };
+}
+
+/** Bytes already saved per stage, so a resumed setup shows what it kept. */
+async function savedPerStage(): Promise<Partial<Record<Stage, number>>> {
+  const totals: Partial<Record<Stage, number>> = {};
+  for (const { file, bytes } of await savedFiles((await filesForThisDevice()).files)) {
+    totals[file.stage] = (totals[file.stage] ?? 0) + bytes;
+  }
+  return totals;
+}
+
+/**
+ * Chrome (Android and desktop): the browser downloads whatever is missing,
+ * even with the screen off or the page closed, and the service worker stores
+ * it where the libraries look. False when this browser cannot, or nothing is missing.
+ */
+async function downloadInBackground(onProgress: (downloaded: number, total: number) => void): Promise<boolean> {
+  if (!canDownloadInBackground()) return false;
+  let download = await runningBackgroundDownload();
+  if (!download) {
+    const { files, source } = await filesForThisDevice();
+    const saved = new Set((await savedFiles(files)).map(({ file }) => file.key));
+    const missing = files.filter((file) => !saved.has(file.key));
+    if (missing.length === 0) return false;
+    download = await startBackgroundDownload(missing, source);
+  }
+  if (!download) return false;
+  await waitForBackgroundDownload(download, onProgress);
+  return true;
 }
 
 /** Which voice was really heard in the voice test (a sentence counts once its sound started). */
@@ -102,6 +177,11 @@ export function SetupClient() {
   const [alreadyLoaded, setAlreadyLoaded] = useState(false);
   const [offline, setOffline] = useState<OfflineReport | null>(null);
   const [voiceTest, setVoiceTest] = useState<string | null>(null);
+  /** Bytes each stage already has on the device from an earlier, interrupted setup. */
+  const [saved, setSaved] = useState<Partial<Record<Stage, number>>>({});
+  /** Chrome's own background download, while it runs. */
+  const [background, setBackground] = useState<{ downloaded: number; total: number } | null>(null);
+  const autoTries = useRef(0);
 
   // A parent who follows the install tip gets the storage protection asked for again.
   useEffect(() => {
@@ -121,8 +201,14 @@ export function SetupClient() {
     setPhase("loading");
     setError(null);
     setAlreadyLoaded(onDevice);
+    // Until "ready", leaving or sleeping only pauses setup: it carries on by itself on return.
+    if (!onDevice) markSetupInProgress(true);
     const started = performance.now();
     try {
+      if (!onDevice) {
+        await downloadInBackground((downloaded, total) => setBackground({ downloaded, total }));
+        setBackground(null);
+      }
       const ai = getAI();
       const report = (p: LoadProgress) => setProgress((previous) => ({ ...previous, [p.stage]: p }));
       await ai.load(report);
@@ -131,18 +217,27 @@ export function SetupClient() {
       if (ai instanceof RealAI && !visionCached) await ai.prepareVision(report);
       setSeconds((performance.now() - started) / 1000);
       setCached({ llm: true, stt: true, vision: true, tts: true });
+      markSetupInProgress(false);
+      autoTries.current = 0;
       setPhase("ready");
       const [persisted, precache] = await Promise.all([requestPersistence(), precacheApp()]);
       setOffline({ persisted, precache, usage: await storageUsage() });
     } catch (e) {
+      setBackground(null);
       setError(e instanceof Error ? e.message : String(e));
       setPhase("error");
+      void savedPerStage().then(setSaved, () => undefined);
     }
   }, []);
 
   useEffect(() => {
     let alive = true;
     (async () => {
+      // Test mode ("?mock=1"): the pretend engine needs nothing set up.
+      if (!(getAI() instanceof RealAI)) {
+        setPhase("test");
+        return;
+      }
       const found = await detectSupport();
       if (!alive) return;
       setSupport(found);
@@ -162,14 +257,16 @@ export function SetupClient() {
       ]);
       if (!alive) return;
       setCached({ llm, stt, vision, tts });
+      if (!(llm && stt && vision && tts)) void savedPerStage().then((s) => alive && setSaved(s), () => undefined);
       // Every page wakes the models when they are on the device (EarlyWake), so
       // on a revisit they are already awake or waking: show that, not a button.
       const status = getAI().status();
       if (status === "ready") {
         setAlreadyLoaded(true);
         setPhase("ready");
-      } else if (status === "loading" || isMarkedReady()) {
+      } else if (status === "loading" || isMarkedReady() || isSetupInProgress()) {
         // Joins (or starts) the same wake-up EarlyWake does; load() runs only once.
+        // An interrupted first download (app closed, phone slept) carries on by itself.
         void getReady(llm && stt && vision && tts, vision);
       } else {
         setPhase("idle");
@@ -191,7 +288,45 @@ export function SetupClient() {
   const toDownload = STAGES.reduce((sum, { stage }) => sum + (cached?.[stage] ? 0 : bytes[stage]), 0);
   const allCached = !!cached && STAGES.every(({ stage }) => cached[stage]);
   const friendly = phase === "error" && error ? explainLoadError(error) : null;
-  useScreenAwake(phase === "loading");
+  const awake = useScreenAwake(phase === "loading");
+  const iPhone = typeof navigator !== "undefined" && isAppleMobile();
+
+  // A download cut off by sleep, a lost connection or leaving the app carries
+  // on by itself once the page is back on screen and online: no tap needed.
+  const errorKind = friendly?.kind ?? null;
+  const visionCached = !!cached?.vision;
+  useEffect(() => {
+    const tryNow = () => {
+      const state = {
+        inProgress: isSetupInProgress(),
+        phase,
+        errorKind,
+        visible: document.visibilityState === "visible",
+        online: navigator.onLine,
+        autoTries: autoTries.current,
+      };
+      if (!shouldAutoContinue(state)) return;
+      autoTries.current++;
+      void getReady(false, visionCached);
+    };
+    // Coming back is a fresh chance: the tries count again from zero.
+    const back = () => {
+      if (document.visibilityState !== "visible") return;
+      autoTries.current = 0;
+      tryNow();
+    };
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("pageshow", back);
+    window.addEventListener("online", back);
+    // Failed while on screen (a dropped connection): try again shortly.
+    const timer = phase === "error" ? setTimeout(tryNow, 3000) : undefined;
+    return () => {
+      document.removeEventListener("visibilitychange", back);
+      window.removeEventListener("pageshow", back);
+      window.removeEventListener("online", back);
+      clearTimeout(timer);
+    };
+  }, [phase, errorKind, visionCached, getReady]);
 
   /** `onDevice`: everything was downloaded before, so this only wakes the models up. */
   /** Says a narrator line, then a character line, and reports which voice actually spoke. */
@@ -225,12 +360,15 @@ export function SetupClient() {
     <div className="flex flex-1 flex-col bg-[#fff8ec]">
     <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-5 py-10 text-stone-800">
       <header className="flex flex-col gap-2">
-        <Link
-          href="/"
-          className="self-start rounded-full px-1 py-2 font-semibold text-orange-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600"
-        >
-          ← Back to Guhit
-        </Link>
+        {/* Leaving mid-download only pauses it, but a parent should not wander off by accident. */}
+        {phase !== "loading" && (
+          <Link
+            href="/"
+            className="self-start rounded-full px-1 py-2 font-semibold text-orange-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-600"
+          >
+            ← Back to Guhit
+          </Link>
+        )}
         <h1 className="text-3xl font-bold">Get Guhit ready</h1>
         <p className="text-stone-600">
           Guhit&apos;s AI runs on this device. Download it once and it keeps working with no internet. Nothing your
@@ -239,6 +377,22 @@ export function SetupClient() {
       </header>
 
       {phase === "checking" && <p className="text-stone-500">Checking this device…</p>}
+
+      {phase === "test" && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sky-950">
+          <p>
+            Test mode: Guhit uses pretend answers and your device&apos;s voice, nothing to download. Turn off test mode
+            to set up the real AI.
+          </p>
+          <button
+            type="button"
+            onClick={turnOffTestMode}
+            className="self-start rounded-full bg-sky-700 px-5 py-3 font-semibold text-white hover:bg-sky-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700"
+          >
+            Turn off test mode
+          </button>
+        </div>
+      )}
 
       {phase === "unsupported" && (
         <div role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
@@ -260,7 +414,11 @@ export function SetupClient() {
               const p = progress[stage];
               const isCached = cached?.[stage];
               const done = phase === "ready" || (p && p.total > 0 && p.loaded >= p.total);
-              const fraction = done ? 1 : p && p.total > 0 ? Math.min(1, p.loaded / p.total) : 0;
+              const live = p && p.total > 0 ? Math.min(1, p.loaded / p.total) : 0;
+              // What an interrupted setup already saved stays on the bar while loading catches up.
+              const kept = !isCached && saved[stage] && bytes[stage] ? Math.min(0.99, saved[stage] / bytes[stage]) : 0;
+              const fraction = done ? 1 : Math.max(live, kept);
+              const keptText = kept && !p ? `${size(saved[stage] ?? 0)} of ${size(bytes[stage])} already saved` : null;
               return (
                 <li key={stage} className="rounded-2xl border border-stone-200 bg-white p-4">
                   <div className="flex items-baseline justify-between gap-3">
@@ -269,8 +427,8 @@ export function SetupClient() {
                       {done ? "Ready" : !bytes[stage] ? "Built in" : isCached ? "On this device" : size(bytes[stage])}
                     </span>
                   </div>
-                  <p className="text-sm text-stone-500">{p?.text ?? detail}</p>
-                  {(phase === "loading" || done) && (
+                  <p className="text-sm text-stone-500">{p?.text ?? keptText ?? detail}</p>
+                  {(phase === "loading" || done || kept > 0) && (
                     <div
                       className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100"
                       role="progressbar"
@@ -309,10 +467,47 @@ export function SetupClient() {
               {friendly ? friendly.button : allCached ? "Start Guhit" : "Get Guhit ready"}
             </button>
           )}
-          {phase === "loading" && (
+          {background && (
+            <div className="flex flex-col gap-2 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-orange-950">
+              <p className="font-semibold">
+                Downloading in the background
+                {background.total > 0
+                  ? `: ${size(background.downloaded)} of ${size(background.total)}`
+                  : background.downloaded > 0
+                    ? `: ${size(background.downloaded)} so far`
+                    : ""}
+              </p>
+              <div
+                className="h-2 overflow-hidden rounded-full bg-orange-100"
+                role="progressbar"
+                aria-label="Background download"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={background.total > 0 ? Math.round((background.downloaded / background.total) * 100) : 0}
+              >
+                <div
+                  className="h-full rounded-full bg-orange-400 transition-[width] duration-300"
+                  style={{ width: `${background.total > 0 ? (background.downloaded / background.total) * 100 : 0}%` }}
+                />
+              </div>
+              <p className="text-sm">
+                You can leave this screen or let the device sleep: the browser keeps downloading and shows its
+                progress in a notification. Come back here when it&apos;s done.
+              </p>
+            </div>
+          )}
+          {iPhone && (phase === "idle" || phase === "loading" || phase === "error") && (
+            <p className="text-center text-stone-600">
+              Keep Guhit open until it says ready; if you leave, it picks up where it stopped.
+            </p>
+          )}
+          {phase === "loading" && awake && (
+            <p className="text-center text-sm text-stone-500">Keeping your screen awake while Guhit downloads.</p>
+          )}
+          {phase === "loading" && !iPhone && !background && (
             <p className="text-center text-stone-500">
-              Keep this screen open and awake. The first download can take a few minutes on slow Wi-Fi; if it stops,
-              what&apos;s already downloaded is kept.
+              The first download can take a few minutes on slow Wi-Fi. If it stops, what&apos;s already downloaded is
+              kept and it carries on when you come back.
             </p>
           )}
 

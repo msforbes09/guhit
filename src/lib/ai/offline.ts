@@ -1,3 +1,4 @@
+import { onnxFile } from "./model-files";
 import { findVision, STT_DTYPES, type STTDevice } from "./models";
 
 /** Set once every model is on the device; kid screens only auto-load when it is present. */
@@ -81,11 +82,6 @@ export async function isLLMCached(modelId: string, modelHost: string | null): Pr
 
 /** Transformers.js keeps downloaded model files in this Cache Storage bucket. */
 const TRANSFORMERS_CACHE = "transformers-cache";
-
-const onnxFile = (part: string, dtype: string) => {
-  const suffix: Record<string, string> = { fp32: "", fp16: "_fp16", q8: "_quantized", q4: "_q4", int8: "_int8" };
-  return `onnx/${part}${suffix[dtype] ?? `_${dtype}`}.onnx`;
-};
 
 /** True when every ONNX file of the given precisions is already in Transformers.js's cache. */
 export async function isTransformersModelCached(modelId: string, dtype: Record<string, string>): Promise<boolean> {

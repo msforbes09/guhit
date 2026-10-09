@@ -4,11 +4,16 @@
  * It stores the pages, the Next.js build output, the ONNX Runtime wasm and the
  * icons. Model weights are deliberately NOT stored here: WebLLM and
  * Transformers.js already keep them in their own Cache Storage buckets, and a
- * second copy would cost another ~1.2 GB of the device's storage.
+ * second copy would cost another ~1.2 GB of the device's storage. A Background
+ * Fetch of the models is stored straight into those buckets (see below).
  */
 
 const PAGES = "guhit-pages-v1";
 const ASSETS = "guhit-assets-v1";
+// Background Fetch of the models (src/lib/ai/background-download.ts writes the plan).
+const DOWNLOADS = "guhit-downloads";
+const DOWNLOAD_PLAN = "/__guhit-background-download";
+const DOWNLOAD_MESSAGE = "guhit-background-download";
 
 // Kid routes keep ids in the query string, so one cached page serves every id.
 const ROUTES = ["/", "/snap", "/draw", "/friend", "/friends", "/story", "/book", "/setup", "/lab"];
@@ -111,7 +116,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      const keep = new Set([PAGES, ASSETS]);
+      const keep = new Set([PAGES, ASSETS, DOWNLOADS]);
       for (const key of await caches.keys()) {
         if (key.startsWith("guhit-") && !keep.has(key)) await caches.delete(key);
       }
@@ -134,6 +139,67 @@ self.addEventListener("message", (event) => {
       (error) => port?.postMessage({ ok: false, error: String(error) }),
     ),
   );
+});
+
+/**
+ * The browser finished (or gave up on) a background download of the models:
+ * each file that arrived goes into the cache and under the key its library
+ * reads (WebLLM or Transformers.js), exactly as if the library had fetched it.
+ * The model weights then live only in the libraries' caches, as before.
+ */
+async function storeBackgroundDownload(registration) {
+  const planResponse = await (await caches.open(DOWNLOADS)).match(DOWNLOAD_PLAN);
+  const plan = planResponse ? await planResponse.json() : [];
+  const byUrl = new Map(plan.map((file) => [file.url, file]));
+  let stored = 0;
+  let missing = 0;
+  for (const record of await registration.matchAll()) {
+    const file = byUrl.get(record.request.url);
+    try {
+      const response = await record.responseReady;
+      if (!file || !response.ok) throw new Error(`${record.request.url}: ${response.status}`);
+      await (await caches.open(file.cache)).put(file.key, response);
+      stored++;
+    } catch {
+      // Not downloaded: setup fetches it itself when it loads the models.
+      missing++;
+    }
+  }
+  return { stored, missing };
+}
+
+async function tellPages(message) {
+  for (const client of await self.clients.matchAll({ type: "window", includeUncontrolled: true })) {
+    client.postMessage({ type: DOWNLOAD_MESSAGE, ...message });
+  }
+}
+
+self.addEventListener("backgroundfetchsuccess", (event) => {
+  event.waitUntil(
+    (async () => {
+      const result = await storeBackgroundDownload(event.registration);
+      await event.updateUI({ title: "Guhit's helpers are downloaded" });
+      await tellPages({ state: "stored", ...result });
+    })(),
+  );
+});
+
+self.addEventListener("backgroundfetchfail", (event) => {
+  event.waitUntil(
+    (async () => {
+      const result = await storeBackgroundDownload(event.registration);
+      await event.updateUI({ title: "Guhit's download stopped. Open Guhit to continue." });
+      await tellPages({ state: "failed", reason: event.registration.failureReason, ...result });
+    })(),
+  );
+});
+
+self.addEventListener("backgroundfetchabort", (event) => {
+  event.waitUntil(tellPages({ state: "aborted" }));
+});
+
+self.addEventListener("backgroundfetchclick", (event) => {
+  event.waitUntil(self.clients.openWindow("/setup"));
 });
 
 function offlinePage() {

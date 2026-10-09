@@ -10,6 +10,8 @@ export interface LLMModel {
   downloadMB: number;
   /** Qwen3-family chat templates accept the no-think switch. */
   thinking: boolean;
+  /** Runs on the CPU through Transformers.js (devices without WebGPU) instead of WebLLM. */
+  cpu?: { dtype: string };
 }
 
 export const LLM_MODELS: LLMModel[] = [
@@ -19,7 +21,17 @@ export const LLM_MODELS: LLMModel[] = [
   { id: "Qwen3-0.6B-q4f16_1-MLC", label: "Qwen3 0.6B (phone)", downloadMB: 352, thinking: true },
   { id: "Qwen3-0.6B-q4f32_1-MLC", label: "Qwen3 0.6B f32 (phone, no f16 GPU)", downloadMB: 352, thinking: true },
   { id: "Qwen3.5-0.8B-q4f16_1-MLC", label: "Qwen3.5 0.8B (phone, alt)", downloadMB: 447, thinking: true },
+  // The same Qwen3-0.6B as phones, as ONNX for the CPU: 8-bit is ONNX Runtime's fastest there.
+  {
+    id: "onnx-community/Qwen3-0.6B-ONNX",
+    label: "Qwen3 0.6B (CPU, no WebGPU)",
+    downloadMB: 620,
+    thinking: true,
+    cpu: { dtype: "q8" },
+  },
 ];
+
+export const CPU_LLM = "onnx-community/Qwen3-0.6B-ONNX";
 
 export type STTDevice = "webgpu" | "wasm";
 
