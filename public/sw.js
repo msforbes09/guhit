@@ -14,10 +14,12 @@ const ASSETS = "guhit-assets-v1";
 const ROUTES = ["/", "/snap", "/draw", "/friend", "/friends", "/story", "/book", "/setup", "/lab"];
 const FILES = [
   "/manifest.webmanifest",
-  "/favicon.ico",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/icon-maskable-512.png",
+  "/icons/favicon.svg",
+  "/icons/favicon-32.png",
+  "/icons/apple-touch-icon-180.png",
+  "/icons/guhit-icon-192.png",
+  "/icons/guhit-icon-512.png",
+  "/icons/guhit-icon-maskable-512.png",
   "/ort/ort-wasm-simd-threaded.asyncify.mjs",
   "/ort/ort-wasm-simd-threaded.asyncify.wasm",
 ];
