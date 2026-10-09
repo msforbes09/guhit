@@ -196,3 +196,35 @@ export function usePushToTalk(onAudio: (audio: Blob) => void) {
 
   return { state, level, start, stop, cancel };
 }
+
+/** The engine's voice loudness, read by the character every animation frame. */
+export const speechLevel = () => getAI().speechLevel();
+
+/** How long the voice may stay silent before a speaker counts as finished. */
+const QUIET_MS = 1500;
+
+/**
+ * Which voice is audible right now. Starts when sound actually starts (not
+ * when speak() was called) and ends after a stretch of silence.
+ */
+export function useSpeakingVoice(): "narrator" | "character" | null {
+  const [voice, setVoice] = useState<"narrator" | "character" | null>(null);
+  useEffect(() => {
+    const ai = getAI();
+    let quietSince = 0;
+    const off = ai.onSpeechStart((v) => {
+      quietSince = 0;
+      setVoice(v);
+    });
+    const check = setInterval(() => {
+      if (ai.speechLevel() > 0.01) quietSince = 0;
+      else if (!quietSince) quietSince = performance.now();
+      else if (performance.now() - quietSince > QUIET_MS) setVoice(null);
+    }, 150);
+    return () => {
+      off();
+      clearInterval(check);
+    };
+  }, []);
+  return voice;
+}

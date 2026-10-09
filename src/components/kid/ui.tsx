@@ -12,7 +12,8 @@ const TONES: Record<Tone, string> = {
   sky: "bg-sky text-ink",
   grass: "bg-grass text-ink",
   grape: "bg-grape text-white",
-  red: "bg-red text-white",
+  // The deeper red keeps white words readable (5.8:1).
+  red: "bg-red-deep text-white",
   pink: "bg-pink text-ink",
   paper: "bg-paper text-ink",
 };
