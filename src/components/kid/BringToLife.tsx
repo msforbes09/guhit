@@ -118,12 +118,12 @@ export function CutoutPreview({
   return (
     <div className="flex flex-1 flex-col items-center gap-5 py-2 sm:gap-6">
       <h2 className="anim-float-in text-center text-4xl font-black text-ink sm:text-5xl">Is this your friend?</h2>
-      <FriendStage
-        cutout={cut.png}
-        name="your friend"
-        motion="bounce"
-        className="anim-pop-in h-[48vh] min-h-72 w-full max-w-2xl"
-      />
+      <FriendStage cutout={cut} name="your friend" motion="bounce" size={0.74} className="anim-pop-in h-[48vh] min-h-72 w-full max-w-2xl" />
+      {cut.meta?.quality === "poor" && (
+        <p className="max-w-2xl rounded-2xl bg-sun/40 px-4 py-3 text-center text-lg font-bold text-ink" role="status">
+          Hmm, some bits may be missing. A brighter spot and a flat paper can help, if you want to try again.
+        </p>
+      )}
       <div className="flex w-full max-w-2xl flex-col-reverse gap-4 sm:flex-row">
         <Button
           tone="paper"

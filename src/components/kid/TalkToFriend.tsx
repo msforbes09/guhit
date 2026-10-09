@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { getAI } from "@/lib/ai";
 import type { ChatTurn } from "@/lib/ai";
 import { saveFriend, type Friend } from "@/lib/story/db";
-import type { Motion } from "./alive";
+import type { AliveCharacterHandle, Motion } from "./alive";
 import { FriendStage } from "./FriendStage";
 import { useAIReady, usePushToTalk } from "./hooks";
 import {
@@ -58,6 +58,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   const [showChat, setShowChat] = useState(false);
   const moveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greeted = useRef(false);
+  const character = useRef<AliveCharacterHandle>(null);
   const name = friend.name;
 
   const busy = phase === "hearing" || phase === "thinking";
@@ -106,6 +107,8 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
       const text = words.trim();
       if (!text) return;
       setSaid(text);
+      // A happy wiggle the moment the child is heard, before the reply is ready.
+      character.current?.poke();
       const history = friendRef.current.chat;
       await remember([...history, { who: "child", text }]);
       await answer(text, history);
@@ -230,7 +233,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
           motion={phase === "thinking" || phase === "hearing" ? "idle" : motion}
           talking={phase === "speaking"}
           thinking={phase === "thinking" || phase === "hearing"}
-          onTap={() => move(MOVES[0])}
+          characterRef={character}
           bubble={bubble}
           className="h-[50vh] min-h-80 lg:h-auto lg:min-h-[72vh]"
         />
