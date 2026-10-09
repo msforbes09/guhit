@@ -1,3 +1,4 @@
+import { AI_MODEL, AI_PATH_TEMPLATE, isAiCutoutCached } from "./ai-model";
 import { cutoutFromMask } from "./cutout-core";
 import { alphaToMaskRgba, decodeToPixels, encodeRgba, round1, type RunResult } from "./cutout-run";
 
@@ -7,12 +8,7 @@ import { alphaToMaskRgba, decodeToPixels, encodeRgba, round1, type RunResult } f
  * Model and runtime files land in the browser's Cache Storage
  * ("transformers-cache"), so after one online run it works with the network off.
  */
-export const AI_MODEL = {
-  id: "xrds/isnet-general-onnx-int8",
-  // Pinned: a community repack, so a later push cannot change what we ship.
-  revision: "71eff2372ec9c8edbc6ca637ded591423d23b65a",
-  licence: "MIT (ONNX repack of imgly/isnet-general-onnx, MIT); IS-Net code by xuebinqin/DIS, Apache-2.0",
-};
+export { AI_MODEL };
 
 type Transformers = typeof import("@huggingface/transformers");
 type Pipe = (image: unknown) => Promise<unknown>;
@@ -34,6 +30,10 @@ interface ProgressInfo {
 export function loadSegmenter(onProgress?: (text: string) => void): Promise<Segmenter> {
   if (!loading) {
     loading = (async () => {
+      // With no network, a model that is not on the device is never fetched.
+      if (typeof navigator !== "undefined" && navigator.onLine === false && !(await isAiCutoutCached())) {
+        throw new Error("The AI cut-out model is not on this device.");
+      }
       const [tf, { configureTransformers }] = await Promise.all([
         import("@huggingface/transformers"),
         import("@/workers/ort-env"),
@@ -43,6 +43,8 @@ export function loadSegmenter(onProgress?: (text: string) => void): Promise<Segm
       // it once and never asks a CDN. The model comes from Guhit's R2 copy, with
       // Hugging Face as the fallback, under the same cache keys as before.
       await configureTransformers(null, "r2");
+      // This worker loads no other model, so pinning every path here is safe.
+      tf.env.remotePathTemplate = AI_PATH_TEMPLATE;
       const progress_callback = (p: ProgressInfo) => {
         if (p.status === "progress" && p.file?.endsWith(".onnx")) {
           onProgress?.(`Downloading the AI model… ${Math.round(p.progress ?? 0)}%`);
