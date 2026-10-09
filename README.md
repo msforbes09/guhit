@@ -158,6 +158,7 @@ where it comes from is listed in [docs/disclosures.md](docs/disclosures.md).
 
 Guhit's code was written with Claude Code, an AI coding tool, under the team's
 direction and review. The promo video's narration is by ElevenLabs, it was
-edited in Remotion, and its footage is the real app plus the owner's own
-iPhone screen recording. Details are in
+edited in Remotion (music and sound effects synthesized in code), Higgsfield
+made three background images, and its footage is the real app plus the
+owner's own iPhone screen recording. Details are in
 [Tools used to build Guhit](docs/disclosures.md#tools-used-to-build-guhit).
