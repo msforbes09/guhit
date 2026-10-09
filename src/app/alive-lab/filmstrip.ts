@@ -1,6 +1,7 @@
 import { MotionController } from "@/lib/alive/motion";
 import { createRenderer } from "@/lib/alive/renderer";
 import { analyzeMask, buildMesh } from "@/lib/alive/rig";
+import { buildSkeleton, computeSkin, type Joints } from "@/lib/alive/skeleton";
 import type { AliveMotion, Cutout } from "@/lib/alive/types";
 
 /**
@@ -19,7 +20,7 @@ export interface StripRow {
 export async function filmstrip(
   cut: Cutout,
   rows: StripRow[],
-  opts: { frames?: number; duration?: number; size?: number } = {},
+  opts: { frames?: number; duration?: number; size?: number; joints?: Joints } = {},
 ): Promise<{ url: string; msPerFrame: number; renderer: string }> {
   const frames = opts.frames ?? 10;
   const duration = opts.duration ?? 2.4;
@@ -31,7 +32,13 @@ export async function filmstrip(
   image.src = cut.png;
   await image.decode();
   const rig = analyzeMask(cut.mask);
-  renderer.setCharacter(image, buildMesh(cut.mask, rig), rig);
+  if (opts.joints) {
+    const mesh = buildMesh(cut.mask, rig, 64);
+    const skeleton = buildSkeleton(opts.joints, rig);
+    renderer.setCharacter(image, mesh, rig, { skeleton, skin: computeSkin(mesh, skeleton) });
+  } else {
+    renderer.setCharacter(image, buildMesh(cut.mask, rig), rig);
+  }
 
   const place = { centerX: size / 2, groundY: size * 0.9, scale: size * 0.48 };
   const out = document.createElement("canvas");

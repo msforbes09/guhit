@@ -28,6 +28,13 @@ export interface Pose {
   arm: number;
   /** 0..1 how much the character is "in the air", for the shadow. */
   air: number;
+  /** Joint mode only: arm raise and leg swing, radians. */
+  armL: number;
+  armR: number;
+  legL: number;
+  legR: number;
+  waveR: number;
+  waveSwing: number;
 }
 
 const ZERO: Pose = {
@@ -41,6 +48,12 @@ const ZERO: Pose = {
   head: 0,
   arm: 0,
   air: 0,
+  armL: 0,
+  armR: 0,
+  legL: 0,
+  legR: 0,
+  waveR: 0,
+  waveSwing: 0,
 };
 
 interface Spring {
@@ -145,6 +158,8 @@ export class MotionController {
     pose.squash += 0.1 * l;
     pose.head += 0.09 * l * Math.sin(now * 9.0) + 0.03 * l;
     pose.bend += 0.02 * l * Math.sin(now * 5.0);
+    pose.armR += 0.35 * l * (0.5 + 0.5 * Math.sin(now * 3.1));
+    pose.armL += 0.2 * l * (0.5 + 0.5 * Math.sin(now * 2.3 + 1));
 
     // Tap reaction layer.
     const tr = now - this.reactAt;
@@ -155,6 +170,8 @@ export class MotionController {
       if (q > 0 && q < 1) {
         pose.lift += 0.32 * 4 * q * (1 - q);
         pose.air = Math.max(pose.air, 4 * q * (1 - q));
+        pose.armL += 1.1 * Math.sin(q * Math.PI);
+        pose.armR += 1.1 * Math.sin(q * Math.PI);
         pose.squash += 0.1 * (1 - 2 * q) * (q < 0.5 ? 1 : 0.6);
       }
       if (!this.reactLanded && q >= 1) {
@@ -227,6 +244,8 @@ export class MotionController {
     p.bend = 0.05 * Math.sin((TAU * now) / 4.3 + 1);
     p.lean = 0.022 * Math.sin((TAU * now) / 5.7);
     p.head += 0.06 * Math.sin((TAU * now) / 3.9 + 0.5);
+    p.armL = 0.08 * Math.sin((TAU * now) / 3.4);
+    p.armR = 0.08 * Math.sin((TAU * now) / 3.4 + 1.2);
 
     // Every few seconds a small fidget: a hop, a look around, or a wiggle.
     if (now > this.fidgetAt) {
@@ -269,6 +288,9 @@ export class MotionController {
     p.head = 0.05 * (1 - 2 * q);
     p.wiggleAmp = 0.02;
     p.wigglePhase = t * 6;
+    p.armL = p.armR = 0.7 * p.air;
+    p.legL = 0.18 * p.air;
+    p.legR = -0.18 * p.air;
     if (k !== this.bounceIndex) {
       if (this.bounceIndex >= 0) this.squash.v -= 4.2;
       this.bounceIndex = k;
@@ -288,6 +310,11 @@ export class MotionController {
     p.lean = 0.075 * Math.sin(s * Math.PI) * moving - this.dir * 0.05 * moving;
     p.head = -0.04 * Math.sin(s * Math.PI) * moving;
     p.squash += 0.03 * Math.sin(q * Math.PI) * moving;
+    const swing = Math.sin(s * Math.PI) * moving;
+    p.legL = 0.38 * swing;
+    p.legR = -0.38 * swing;
+    p.armL = (0.12 + 0.3 * swing) * moving;
+    p.armR = (0.12 - 0.3 * swing) * moving;
     if (stepIndex !== this.lastStepIndex) {
       this.lastStepIndex = stepIndex;
       if (moving > 0.3) this.squash.v -= 1.6 * moving;
@@ -306,6 +333,7 @@ export class MotionController {
       const e = ease(c / crouchEnd);
       p.squash = -0.17 * e;
       p.head = 0.06 * e;
+      p.armL = p.armR = -0.25 * e;
     } else if (c < airEnd) {
       const q = (c - crouchEnd) / (airEnd - crouchEnd);
       p.lift = 0.62 * 4 * q * (1 - q);
@@ -314,6 +342,9 @@ export class MotionController {
       p.squash = -0.17 * (1 - launch) + launch * (0.15 * Math.abs(1 - 2 * q) - 0.02);
       p.head = -0.08 * (1 - 2 * q);
       p.lean = 0.03 * Math.sin(q * TAU);
+      p.armL = p.armR = 1.5 * p.air;
+      p.legL = 0.25 * p.air;
+      p.legR = -0.25 * p.air;
     } else if (this.jumpLanded !== k) {
       this.jumpLanded = k;
       this.squash.v -= 5.2;
@@ -344,6 +375,10 @@ function dance(t: number): Pose {
   p.wigglePhase = 2 * b;
   p.arm = 0.45 + 0.4 * Math.sin(2 * b);
   p.bend = 0.04 * Math.sin(b + 0.6);
+  p.armL = 0.7 + 0.7 * Math.sin(b);
+  p.armR = 0.7 - 0.7 * Math.sin(b);
+  p.legL = 0.22 * Math.max(0, Math.sin(b));
+  p.legR = -0.22 * Math.max(0, -Math.sin(b));
   return p;
 }
 
@@ -355,6 +390,7 @@ function sleep(t: number): Pose {
   p.lean = 0.1 * settle;
   p.head = 0.18 * settle + 0.025 * b;
   p.bend = (0.03 * b + 0.02) * settle;
+  p.armL = p.armR = -0.12 * settle;
   return p;
 }
 
@@ -366,6 +402,9 @@ function wave(t: number, now: number): Pose {
   p.head = 0.06 * Math.sin(t * TAU * 0.8) * up;
   p.wiggleAmp = 0.012 * up;
   p.wigglePhase = t * 10;
+  p.waveR = up;
+  p.waveSwing = Math.sin(t * TAU * 1.6);
+  p.armL = 0.1 * up;
   return p;
 }
 

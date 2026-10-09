@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type Ref } from "react";
 import { loadCutout } from "@/lib/alive/cutout";
 import { MotionController, type Pose } from "@/lib/alive/motion";
-import { createRenderer, type Placement, type Renderer } from "@/lib/alive/renderer";
-import { analyzeMask, buildMesh, hitMask, type RigInfo } from "@/lib/alive/rig";
+import { createRenderer, type Placement, type Renderer, type Rigging } from "@/lib/alive/renderer";
+import { buildSkeleton, computeSkin, type Joints } from "@/lib/alive/skeleton";
+import { analyzeMask, buildMesh, hitMask, type Mesh, type RigInfo } from "@/lib/alive/rig";
 import type { AliveMotion, Cutout } from "@/lib/alive/types";
 import { ALIVE_CSS, cls } from "./styles";
 
@@ -32,6 +33,11 @@ export interface AliveCharacterProps {
    */
   level?: number | (() => number);
   onTap?: () => void;
+  /**
+   * "Make it move more": head/hands/feet tapped on the cut-out (PNG pixels).
+   * Arms and legs then move on their own bones.
+   */
+  joints?: Joints;
   /** Where the feet rest, as a fraction of the height from the top. */
   groundY?: number;
   /** Character height as a fraction of the container height. */
@@ -48,6 +54,8 @@ interface Loaded {
   cutout: Cutout;
   rig: RigInfo;
   image: HTMLImageElement;
+  mesh: Mesh;
+  rigging?: Rigging;
   triangles: number;
 }
 
@@ -65,6 +73,7 @@ export function AliveCharacter({
   talking = false,
   level,
   onTap,
+  joints,
   groundY = 0.9,
   size = 0.6,
   shadow = true,
@@ -103,15 +112,24 @@ export function AliveCharacter({
       await image.decode();
       if (cancelled) return;
       const rig = analyzeMask(c.mask);
-      const mesh = buildMesh(c.mask, rig);
-      loadedRef.current = { cutout: c, rig, image, triangles: mesh.indices.length / 3 };
-      rendererRef.current?.setCharacter(image, mesh, rig);
+      let mesh: Mesh;
+      let rigging: Rigging | undefined;
+      if (joints) {
+        // Thin limbs need a finer grid so an arm can swing without dragging the body.
+        mesh = buildMesh(c.mask, rig, 64);
+        const skeleton = buildSkeleton(joints, rig);
+        rigging = { skeleton, skin: computeSkin(mesh, skeleton) };
+      } else {
+        mesh = buildMesh(c.mask, rig);
+      }
+      loadedRef.current = { cutout: c, rig, image, mesh, rigging, triangles: mesh.indices.length / 3 };
+      rendererRef.current?.setCharacter(image, mesh, rig, rigging);
       setReady(true);
     })().catch((err) => console.error("[alive] could not load character", err));
     return () => {
       cancelled = true;
     };
-  }, [cutout]);
+  }, [cutout, joints]);
 
   // Renderer and frame loop live for the component's lifetime.
   useEffect(() => {
@@ -120,9 +138,7 @@ export function AliveCharacter({
     const renderer = createRenderer(canvas);
     rendererRef.current = renderer;
     const loaded = loadedRef.current;
-    if (loaded) {
-      renderer.setCharacter(loaded.image, buildMesh(loaded.cutout.mask, loaded.rig), loaded.rig);
-    }
+    if (loaded) renderer.setCharacter(loaded.image, loaded.mesh, loaded.rig, loaded.rigging);
 
     let dpr = 1;
     const resize = () => {

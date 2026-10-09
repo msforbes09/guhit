@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { AliveStage } from "@/components/alive/AliveStage";
 import type { AliveCharacterHandle, AliveStats } from "@/components/alive/AliveCharacter";
 import { CutoutTouchUp } from "@/components/alive/CutoutTouchUp";
+import { JointPicker } from "@/components/alive/JointPicker";
+import type { Joints } from "@/lib/alive/skeleton";
 import { cutout, cutoutFromCanvas, maskToCanvas } from "@/lib/alive/cutout";
 import { ALIVE_MOTIONS, type AliveMotion, type CutoutWithDebug } from "@/lib/alive/types";
 import { filmstrip } from "./filmstrip";
@@ -24,6 +26,8 @@ export function AliveLab() {
   const [drawing, setDrawing] = useState(false);
   const [strip, setStrip] = useState<{ url: string; label: string } | null>(null);
   const [touching, setTouching] = useState(false);
+  const [joints, setJoints] = useState<Joints | undefined>(undefined);
+  const [picking, setPicking] = useState(false);
   const charRef = useRef<AliveCharacterHandle>(null);
   const [source, setSource] = useState<Blob | null>(null);
 
@@ -37,6 +41,7 @@ export function AliveLab() {
     });
     try {
       setResult(await cutout(blob, { debug: true, editable: true }));
+      setJoints(undefined);
       setTouching(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -56,6 +61,7 @@ export function AliveLab() {
         return URL.createObjectURL(blob);
       });
       setResult(await cutoutFromCanvas(c, { debug: true, editable: true }));
+      setJoints(undefined);
       setTouching(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -114,6 +120,7 @@ export function AliveLab() {
             setError(null);
             try {
               setResult(await cutout(source, { method: "ai", debug: true, editable: true, onProgress: setBusy }));
+              setJoints(undefined);
             } catch (e) {
               setError(e instanceof Error ? e.message : String(e));
             } finally {
@@ -142,6 +149,7 @@ export function AliveLab() {
           onCancel={() => setTouching(false)}
           onDone={(fixed) => {
             setResult({ ...fixed, debug: result.debug && { ...result.debug, fullAlpha: maskToAlpha(fixed.edit!.mask) } });
+            setJoints(undefined);
             setTouching(false);
           }}
         />
@@ -220,6 +228,7 @@ export function AliveLab() {
               talking={talk !== "off"}
               level={talk === "slider" ? level : undefined}
               onTap={() => setTaps((t) => t + 1)}
+              joints={joints}
               onStats={setStats}
               characterRef={charRef}
             />
@@ -243,7 +252,7 @@ export function AliveLab() {
                   { motion: "idle" as const, talking: true },
                   { motion: "idle" as const, pokeAt: 0.2 },
                 ];
-                const f = await filmstrip(result, rows);
+                const f = await filmstrip(result, rows, { joints });
                 setStrip((old) => {
                   if (old) URL.revokeObjectURL(old.url);
                   return {
@@ -255,6 +264,12 @@ export function AliveLab() {
               className="rounded-full border border-violet-300 px-4 py-2 text-sm font-semibold text-violet-900 hover:bg-violet-50"
             >
               Filmstrip (all motions)
+            </button>
+            <button
+              onClick={() => (joints ? setJoints(undefined) : setPicking((p) => !p))}
+              className="rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-200"
+            >
+              {joints ? "Simple mode" : "Make it move more"}
             </button>
             <button
               onClick={() => charRef.current?.poke()}
@@ -285,6 +300,16 @@ export function AliveLab() {
               {stats ? `${stats.fps} fps · ${stats.renderer} · ${stats.triangles} triangles` : "…"} · taps {taps}
             </span>
           </div>
+          {picking && (
+            <JointPicker
+              cutout={result}
+              onCancel={() => setPicking(false)}
+              onDone={(j) => {
+                setJoints(j);
+                setPicking(false);
+              }}
+            />
+          )}
           {strip && (
             <figure className="flex flex-col gap-1">
               {/* eslint-disable-next-line @next/next/no-img-element */}
