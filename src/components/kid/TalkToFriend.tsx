@@ -9,16 +9,12 @@ import { kindOf } from "@/lib/story/kind";
 import { JointPicker, loadCutout, type AliveCharacterHandle, type Cutout, type Joints, type Motion } from "./alive";
 import { FriendBooks } from "./FriendBooks";
 import { FriendStage } from "./FriendStage";
+import { movesFor, type Move } from "./moves";
 import { speechLevel, useAIReady, usePushToTalk } from "./hooks";
 import {
-  ArrowFatLineUp,
   ArrowsClockwise,
   BookOpen,
   ChatCircleDots,
-  Footprints,
-  HandWaving,
-  MoonStars,
-  MusicNotes,
   PaperPlaneRight,
   Sparkle,
   SpeakerHigh,
@@ -36,14 +32,6 @@ const MOVE_TONES: Partial<Record<Tone, string>> = {
   sky: "bg-sky text-ink",
   grape: "bg-grape text-white",
 };
-
-const MOVES: { motion: Motion; label: string; tone: Tone; icon: ReactNode; lasts: number }[] = [
-  { motion: "jump", label: "Jump", tone: "sun", icon: <ArrowFatLineUp size={30} weight="fill" aria-hidden="true" />, lasts: 3300 },
-  { motion: "dance", label: "Dance", tone: "pink", icon: <MusicNotes size={30} weight="fill" aria-hidden="true" />, lasts: 4000 },
-  { motion: "walk", label: "Walk", tone: "grass", icon: <Footprints size={30} weight="fill" aria-hidden="true" />, lasts: 8400 },
-  { motion: "sleep", label: "Sleep", tone: "sky", icon: <MoonStars size={30} weight="fill" aria-hidden="true" />, lasts: 0 },
-  { motion: "wave", label: "Wave", tone: "grape", icon: <HandWaving size={30} weight="fill" aria-hidden="true" />, lasts: 2800 },
-];
 
 /** How much of the conversation the character remembers when replying. */
 const MEMORY_TURNS = 16;
@@ -67,9 +55,10 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   // "Make it move more": the picker needs the cut-out with its mask.
   const [picking, setPicking] = useState<Cutout | null>(null);
   const name = friend.name;
-  // Head, hands and feet (and waving) only make sense for people and animal-like creatures.
-  const creature = (friend.kind ?? kindOf(friend.description, friend.seenAs)) === "creature";
-  const moves = creature ? MOVES : MOVES.filter((m) => m.motion !== "wave");
+  // Each kind moves its own way; only creatures have a head, hands and feet (and wave).
+  const kind = friend.kind ?? kindOf(friend.description, friend.seenAs);
+  const creature = kind === "creature";
+  const moves = movesFor(kind);
 
   const openPicker = async () => {
     if (!friend.cutout) return;
@@ -127,7 +116,9 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
       setOops(null);
       setAwaitingWords(true);
       try {
-        const reply = (await getAI().reply(friendRef.current, history.slice(-MEMORY_TURNS), childSays)).trim();
+        const me = friendRef.current;
+        const character = { ...me, kind: me.kind ?? kindOf(me.description, me.seenAs) };
+        const reply = (await getAI().reply(character, history.slice(-MEMORY_TURNS), childSays)).trim();
         setAwaitingWords(false);
         await remember([...friendRef.current.chat, { who: "character", text: reply }]);
         await speak(reply);
@@ -213,7 +204,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
     mic.start();
   };
 
-  const move = (next: (typeof MOVES)[number]) => {
+  const move = (next: Move) => {
     if (moveTimer.current) clearTimeout(moveTimer.current);
     const toggleOff = next.motion === "sleep" && motion === "sleep";
     setMotion(toggleOff ? "idle" : next.motion);
@@ -290,6 +281,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
           <FriendStage
             cutout={friend.cutout ?? friend.drawing}
             name={name}
+            kind={kind}
             joints={creature ? friend.joints : undefined}
             motion={phase === "thinking" || phase === "hearing" ? "idle" : motion}
             talking={phase === "speaking"}
@@ -382,7 +374,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
 
           <div>
             <h2 className="mb-2 font-display text-xl font-extrabold text-ink">Make {name} move</h2>
-            <div className={`grid gap-2 sm:gap-3 ${moves.length === 5 ? "grid-cols-5" : "grid-cols-4"}`}>
+            <div className={`grid gap-2 sm:gap-3 ${moves.length === 5 ? "grid-cols-5" : moves.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}>
               {moves.map((m) => (
                 <button
                   key={m.motion}
