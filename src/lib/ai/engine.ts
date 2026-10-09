@@ -132,6 +132,7 @@ export class RealAI implements LocalAI {
   private stt: STTClient | null = null;
   private vision: VisionClient | null = null;
   private visionUsers = 0;
+  private prefetchHeld = false;
   private visionLoading: Promise<VisionClient | null> | null = null;
   private speaker = new Speaker();
 
@@ -186,6 +187,7 @@ export class RealAI implements LocalAI {
       this.timings.totalMs = performance.now() - started;
       this.state = "ready";
       markReady(true);
+      this.prefetchVision();
     } catch (error) {
       this.state = "error";
       this.error = error instanceof Error ? error.message : String(error);
@@ -255,6 +257,24 @@ export class RealAI implements LocalAI {
       });
     }
     return this.visionLoading;
+  }
+
+  /**
+   * Once the talk loop is ready, the first guess's model starts loading in the
+   * background, so "Is that …?" does not wait for it. That guess frees it
+   * again; later drawings load it on demand.
+   */
+  private prefetchVision() {
+    if (this.prefetchHeld || this.vision || this.visionLoading) return;
+    this.prefetchHeld = true;
+    void this.acquireVision();
+  }
+
+  /** A guess takes over the background load's hold, so freeing after the guess really frees it. */
+  private takeOverPrefetch() {
+    if (!this.prefetchHeld) return;
+    this.prefetchHeld = false;
+    this.visionUsers = Math.max(0, this.visionUsers - 1);
   }
 
   /** Frees the vision model's GPU memory once no guess is using it. */
@@ -361,6 +381,7 @@ export class RealAI implements LocalAI {
     if (!png && !photo) return { label: "" };
     const started = performance.now();
     const vision = await this.acquireVision();
+    this.takeOverPrefetch();
     const loadMs = performance.now() - started;
     try {
       if (!vision) return { label: "" };
