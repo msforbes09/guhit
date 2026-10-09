@@ -1,0 +1,85 @@
+import { LLM_MODELS, STT_MODELS, type STTDevice } from "./models";
+
+export interface DeviceSupport {
+  webgpu: boolean;
+  shaderF16: boolean;
+  mobile: boolean;
+  /** Friendly explanation when this device cannot run the on-device AI. */
+  problem?: string;
+}
+
+export interface ModelChoice {
+  llm: string;
+  stt: string;
+  sttDevice: STTDevice;
+}
+
+interface GPUAdapterLike {
+  features: { has(feature: string): boolean };
+}
+interface GPULike {
+  requestAdapter(options?: { powerPreference?: string }): Promise<GPUAdapterLike | null>;
+}
+
+let cached: Promise<DeviceSupport> | null = null;
+
+function isMobile(): boolean {
+  const nav = navigator as Navigator & { userAgentData?: { mobile?: boolean } };
+  if (nav.userAgentData?.mobile) return true;
+  const ua = navigator.userAgent;
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+  // iPadOS reports itself as a Mac; touch support gives it away.
+  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+}
+
+export function detectSupport(): Promise<DeviceSupport> {
+  if (!cached) cached = probe();
+  return cached;
+}
+
+async function probe(): Promise<DeviceSupport> {
+  const mobile = isMobile();
+  const gpu = (navigator as Navigator & { gpu?: GPULike }).gpu;
+  const missing = (problem: string): DeviceSupport => ({ webgpu: false, shaderF16: false, mobile, problem });
+  if (!gpu) {
+    return missing(
+      "This browser can't run Guhit's story helper because WebGPU is missing. Please use the latest Chrome or Edge on a laptop, or Chrome on a recent Android phone.",
+    );
+  }
+  try {
+    const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
+    if (!adapter) {
+      return missing(
+        "WebGPU is on, but no graphics chip is available to it. Restart the browser, or check that hardware acceleration is enabled in the browser settings.",
+      );
+    }
+    return { webgpu: true, shaderF16: adapter.features.has("shader-f16"), mobile };
+  } catch {
+    return missing("WebGPU failed to start on this device. Please try the latest Chrome on a laptop.");
+  }
+}
+
+/**
+ * Laptops get the larger model, which writes better; phones get a small one
+ * that fits their memory. GPUs without 16-bit float support need the f32
+ * build. "?llm=", "?stt=" and "?sttDevice=" override the choice so /lab can
+ * compare models without a code change.
+ */
+export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
+  const params = new URLSearchParams(search);
+  const size = support.mobile ? "0.6B" : "1.7B";
+  const precision = support.shaderF16 ? "q4f16_1" : "q4f32_1";
+  let llm = `Qwen3-${size}-${precision}-MLC`;
+  const llmOverride = params.get("llm");
+  if (llmOverride && LLM_MODELS.some((m) => m.id === llmOverride)) llm = llmOverride;
+
+  let stt = STT_MODELS[0].id;
+  const sttOverride = params.get("stt");
+  if (sttOverride && STT_MODELS.some((m) => m.id === sttOverride)) stt = sttOverride;
+
+  let sttDevice: STTDevice = support.webgpu ? "webgpu" : "wasm";
+  const deviceOverride = params.get("sttDevice");
+  if (deviceOverride === "wasm" || deviceOverride === "webgpu") sttDevice = deviceOverride;
+
+  return { llm, stt, sttDevice };
+}

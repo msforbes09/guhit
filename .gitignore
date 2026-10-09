@@ -42,3 +42,8 @@ next-env.d.ts
 
 # local tooling
 /.claude/worktrees/
+
+# generated from node_modules at build time
+/public/ort/
+/public/precache-manifest.json
+/public/samples/
