@@ -217,6 +217,8 @@ export function SetupClient() {
   const [saved, setSaved] = useState<Partial<Record<Stage, number>>>({});
   /** Chrome's own background download, while it runs. */
   const [background, setBackground] = useState<{ downloaded: number; total: number } | null>(null);
+  /** Setup is listing what is saved and planning the background download (before any part starts). */
+  const [preparing, setPreparing] = useState(false);
   const autoTries = useRef(0);
   /** The parts ticked on screen, and the parts already on this device. */
   const [selected, setSelected] = useState<Part[]>([...REQUIRED_PARTS]);
@@ -254,8 +256,14 @@ export function SetupClient() {
     const started = performance.now();
     try {
       if (!onDevice) {
-        await downloadInBackground(parts, (downloaded, total) => setBackground({ downloaded, total }));
-        setBackground(null);
+        // Lists what is already saved and, in Chrome, hands the rest to a background download.
+        setPreparing(true);
+        try {
+          await downloadInBackground(parts, (downloaded, total) => setBackground({ downloaded, total }));
+        } finally {
+          setPreparing(false);
+          setBackground(null);
+        }
       }
       const report = (p: LoadProgress) => setProgress((previous) => ({ ...previous, [p.stage]: p }));
       await ai.load(report, parts);
@@ -533,7 +541,11 @@ export function SetupClient() {
                               : "Downloaded, starting next"
                             : "Downloaded"
                           : phase === "loading" && !p
-                            ? "Waiting its turn"
+                            ? preparing
+                              ? background
+                                ? "Downloading in the background"
+                                : "Checking what's already saved…"
+                              : "Waiting its turn"
                             : null;
                       const showBar = phase === "loading" || done || kept > 0;
                       if (!state && !showBar && !keptText) return null;

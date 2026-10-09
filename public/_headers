@@ -15,3 +15,10 @@
 # ONNX Runtime keeps its name across upgrades, so allow revalidation.
 /ort/*
   Cache-Control: public, max-age=86400
+
+# Cross-origin isolated, so ONNX Runtime can use several CPU cores (SharedArrayBuffer):
+# the CPU voice and story helper run about 2.5x faster. Every cross-origin request the
+# app makes (models on R2 and Hugging Face, WebLLM's libraries) is CORS, which this allows.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
