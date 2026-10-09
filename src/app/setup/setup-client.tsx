@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { InstallNudge } from "@/components/kid/InstallNudge";
 import { getAI, isMarkedReady, RealAI } from "@/lib/ai";
 import { Speaker, type SentenceMetric } from "@/lib/ai/tts";
 import {
@@ -558,6 +559,7 @@ export function SetupClient() {
               </Link>
             </div>
           )}
+          {phase === "ready" && <InstallNudge className="mt-6" />}
         </section>
       )}
     </main>
