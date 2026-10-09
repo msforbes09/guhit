@@ -7,11 +7,14 @@
 //
 // The layout copies Hugging Face's ("<repo>/resolve/main/<file>"), so the
 // libraries only need a different host. The files are large and gitignored.
-import { createWriteStream, existsSync, mkdirSync, statSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
 import { prebuiltAppConfig } from "@mlc-ai/web-llm";
+
+const run = promisify(execFile);
+const PARALLEL = 4;
 
 const root = join(process.cwd(), "public", "models");
 const llmIds = process.argv.slice(2).length ? process.argv.slice(2) : ["Qwen3-1.7B-q4f16_1-MLC"];
@@ -24,12 +27,15 @@ const whisperOnnx = [
   "onnx/decoder_model_merged_quantized.onnx",
 ];
 
+// curl resumes partial files and retries dropped connections, which slow or
+// flaky Wi-Fi to the Hugging Face CDN needs for 1 GB of weights.
 async function download(url, target, expectedSize) {
   if (existsSync(target) && (!expectedSize || statSync(target).size === expectedSize)) return "kept";
   mkdirSync(dirname(target), { recursive: true });
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(target));
+  const args = ["-sSfL", "--retry", "20", "--retry-all-errors", "--retry-delay", "2", "-o", target, url];
+  // "-C -" resumes from the partial file left by an earlier, interrupted run.
+  if (existsSync(target)) args.unshift("-C", "-");
+  await run("curl", args, { maxBuffer: 1024 * 1024 });
   return "downloaded";
 }
 
@@ -40,14 +46,17 @@ async function repoFiles(repo) {
 }
 
 async function mirrorRepo(repo, keep) {
-  const files = (await repoFiles(repo)).filter((f) => keep(f.name));
+  const queue = (await repoFiles(repo)).filter((f) => keep(f.name));
+  const total = queue.length;
   let done = 0;
-  for (const file of files) {
-    const target = join(root, repo, "resolve", "main", file.name);
-    const result = await download(`https://huggingface.co/${repo}/resolve/main/${file.name}`, target, file.size);
-    done++;
-    console.log(`[${repo}] ${done}/${files.length} ${result} ${file.name}`);
-  }
+  const worker = async () => {
+    for (let file = queue.shift(); file; file = queue.shift()) {
+      const target = join(root, repo, "resolve", "main", file.name);
+      const result = await download(`https://huggingface.co/${repo}/resolve/main/${file.name}`, target, file.size);
+      console.log(`[${repo}] ${++done}/${total} ${result} ${file.name}`);
+    }
+  };
+  await Promise.all(Array.from({ length: PARALLEL }, worker));
 }
 
 for (const id of llmIds) {

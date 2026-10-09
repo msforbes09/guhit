@@ -26,11 +26,23 @@ const FILES = [
 const BUILD_MANIFEST = "/precache-manifest.json";
 const STATIC_REF = /\/_next\/static\/[^"'\s\\)]+/g;
 const PAGE_TIMEOUT_MS = 3000;
+const FETCH_TIMEOUT_MS = 60000;
 
 async function fetchOk(url) {
-  const response = await fetch(url, { cache: "no-store", credentials: "same-origin" });
-  if (!response.ok || response.redirected) throw new Error(`${url}: ${response.status}`);
-  return response;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { cache: "no-store", credentials: "same-origin", signal: controller.signal });
+    if (!response.ok || response.redirected) {
+      // An unread body keeps its connection busy; Chrome allows six per host,
+      // so a few 404s for routes that don't exist yet would stall everything else.
+      await response.body?.cancel();
+      throw new Error(`${url}: ${response.status}`);
+    }
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function cacheAsset(cache, url) {
