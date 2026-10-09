@@ -29,7 +29,8 @@ import { Button, SpeechBubble, ThinkingDots, TopBar } from "./ui";
 type Step = "looking" | "guess" | "describe" | "name" | "ask" | "confirm" | "flagged";
 
 /** Recognition must never hold the child up. */
-const LOOK_TIMEOUT_MS = 8000;
+// A phone's first guess loads the eyes' model from storage before it looks.
+const LOOK_TIMEOUT_MS = 20000;
 /** Long enough that the "let me look" moment registers even when recognition is instant. */
 const LOOK_MIN_MS = 1200;
 
@@ -123,10 +124,22 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     };
   }, [eyes, friend, go]);
 
+  // With the eyes on the device but no guess (too slow, or it failed), the character says so honestly.
+  const missedGuess = step === "ask" && eyes !== "not-installed" && eyes !== "setting-up" && !isTestMode();
   const line =
     step === "flagged"
       ? ""
-      : step === "guess" ? `Am I ${guess}?` : step === "confirm" ? (name.trim() ? `I'm ${name.trim()}! Is that right?` : "Hi! Who am I?") : step === "looking" ? "" : LINES[step];
+      : step === "guess"
+        ? `Am I ${guess}?`
+        : step === "confirm"
+          ? name.trim()
+            ? `I'm ${name.trim()}! Is that right?`
+            : "Hi! Who am I?"
+          : step === "looking"
+            ? ""
+            : missedGuess
+              ? "I couldn't guess this time. Who am I?"
+              : LINES[step];
 
   // The character says its question out loud when it can.
   useEffect(() => {

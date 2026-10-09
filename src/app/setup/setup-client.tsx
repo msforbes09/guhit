@@ -28,6 +28,7 @@ import {
   setChosenParts,
   type Part,
 } from "@/lib/ai/parts";
+import { allowGuessesAgain } from "@/lib/ai/guess-guard";
 import { isSetupInProgress, markSetupInProgress, shouldAutoContinue } from "@/lib/ai/setup-resume";
 import {
   isLLMCached,
@@ -288,6 +289,8 @@ export function SetupClient() {
   /** The parent's ticks become the plan, then setup runs it. */
   function applyChoice() {
     setChosenParts(selected);
+    // A guess that once killed the tab (iPhone) turned guessing off; the parent's tap turns it back on.
+    allowGuessesAgain();
     void getReady();
   }
 
