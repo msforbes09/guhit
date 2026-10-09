@@ -29,9 +29,22 @@ const assets = walk(staticDir)
   .map((path) => `/_next/static/${relative(staticDir, path).split(sep).join("/")}`)
   .sort();
 
+// Next's route data (what a link tap fetches to show the next page): each
+// page's "<route>.txt" and its "__next.*.txt" segment files. Stored too, so a
+// tap offline shows the page instead of forcing a full page load.
+const routeData = walk(out)
+  .map((path) => `/${relative(out, path).split(sep).join("/")}`)
+  .filter((url) => {
+    if (url.startsWith("/_next/")) return false;
+    const name = url.split("/").pop();
+    if (name.startsWith("__next.") && name.endsWith(".txt")) return true;
+    return /^\/[^/_][^/]*\.txt$/.test(url) && statSync(join(out, url.replace(/\.txt$/, ".html")), { throwIfNoEntry: false });
+  })
+  .sort();
+
 const buildId = readFileSync(join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim();
-writeFileSync(join(out, "precache-manifest.json"), JSON.stringify({ buildId, assets }, null, 1));
-console.log(`Precache manifest: ${assets.length} static files for build ${buildId}`);
+writeFileSync(join(out, "precache-manifest.json"), JSON.stringify({ buildId, assets, routeData }, null, 1));
+console.log(`Precache manifest: ${assets.length} static files and ${routeData.length} route data files for build ${buildId}`);
 
 const largest = walk(out)
   .map((path) => ({ path: relative(out, path), bytes: statSync(path).size }))

@@ -66,10 +66,12 @@ async function precache() {
   const wanted = new Set(FILES);
 
   let buildId = null;
+  let routeData = [];
   try {
     const manifest = await (await fetchOk(BUILD_MANIFEST)).json();
     buildId = manifest.buildId ?? null;
     for (const url of manifest.assets ?? []) wanted.add(url);
+    routeData = manifest.routeData ?? [];
   } catch {
     // Without the build list, the static files referenced by each page still get cached below.
   }
@@ -86,10 +88,14 @@ async function precache() {
   );
 
   // Files in /_next/static are content-hashed, so a cached copy never goes stale.
-  const results = await Promise.allSettled([...wanted].map((url) => cacheAsset(assets, url)));
+  // Route data is not: it is stored again for every new build, like the pages.
+  const results = await Promise.allSettled([
+    ...[...wanted].map((url) => cacheAsset(assets, url)),
+    ...routeData.map(async (url) => pages.put(url, await fetchOk(url))),
+  ]);
   const failed = results.filter((r) => r.status === "rejected").length;
   if (buildId && failed === 0) await assets.put(BUILD_MARK, new Response(buildId));
-  return { pages: pageCount, assets: wanted.size - failed, failed };
+  return { pages: pageCount, assets: wanted.size + routeData.length - failed, failed };
 }
 
 /**
@@ -241,6 +247,27 @@ async function handlePage(request) {
 }
 
 /**
+ * Next's route data (a link tap, a prefetch, restoring a history entry): from
+ * the network, kept for later; offline, the stored copy. The "_rsc" query only
+ * busts caches, so on this static site the file is the same for a given path.
+ * With no copy the request fails and Next falls back to a full page load.
+ */
+async function handleData(request) {
+  const url = new URL(request.url);
+  const key = url.origin + url.pathname;
+  const pages = await caches.open(PAGES);
+  try {
+    const response = await fetch(request);
+    if (response.ok && !response.redirected) await pages.put(key, response.clone());
+    return response;
+  } catch (error) {
+    const cached = await pages.match(key);
+    if (cached) return cached;
+    throw error;
+  }
+}
+
+/**
  * A copy of a response that carries no URL of its own, so the browser keeps
  * the request's URL. Turbopack starts each Web Worker with its config in the
  * URL ("#params=…", or "?params=" for shared workers); a response carrying its
@@ -295,10 +322,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   // Cross-origin requests are model downloads; their libraries cache them.
   if (url.origin !== self.location.origin) return;
-  // React Server Component fetches vary per navigation; when they fail offline,
-  // Next.js falls back to a full page load, which the page cache answers.
-  if (url.searchParams.has("_rsc") || request.headers.get("RSC")) return;
   if (url.pathname.startsWith("/_next/webpack-hmr") || url.pathname === BUILD_MANIFEST) return;
+  if (url.searchParams.has("_rsc") || request.headers.get("RSC")) {
+    event.respondWith(handleData(request));
+    return;
+  }
   // A local model mirror: the model libraries cache these files themselves,
   // except WebLLM's compiled kernels (a few MB), which it never caches when
   // they come from "localhost"; the service worker keeps those.
