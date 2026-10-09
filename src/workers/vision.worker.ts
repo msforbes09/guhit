@@ -1,0 +1,111 @@
+import { AutoProcessor, AutoTokenizer, Florence2ForConditionalGeneration, RawImage } from "@huggingface/transformers";
+import { configureTransformers, type FileProgress } from "./ort-env";
+
+/** Florence-2's short caption task: one sentence naming the main subject. */
+const TASK = "<CAPTION>";
+/** The model sees 768×768; anything larger only costs decode time. */
+const MAX_SIDE = 768;
+/** White margin around the cut-out, so wings and tails touching the crop edge stay in view. */
+const MARGIN = 0.12;
+
+export type VisionRequest =
+  | {
+      type: "load";
+      model: string;
+      device: "webgpu" | "wasm";
+      dtype: Record<string, string>;
+      modelHost: string | null;
+    }
+  | { type: "describe"; id: number; image: Blob };
+
+export type VisionResponse =
+  | { type: "progress"; file: string; loaded: number; total: number }
+  | { type: "ready"; warmupMs: number }
+  | { type: "result"; id: number; caption: string; ms: number }
+  | { type: "error"; id?: number; message: string };
+
+interface Florence {
+  model: { generate(inputs: Record<string, unknown>): Promise<unknown> };
+  processor: {
+    (image: RawImage): Promise<Record<string, unknown>>;
+    construct_prompts(task: string): string[];
+    post_process_generation(text: string, task: string, size: [number, number]): Record<string, string>;
+  };
+  tokenizer: {
+    (text: string[]): Record<string, unknown>;
+    batch_decode(ids: unknown, options: { skip_special_tokens: boolean }): string[];
+  };
+}
+
+let florence: Florence | null = null;
+
+const post = (message: VisionResponse) => self.postMessage(message);
+
+/** The child's cut-out has a transparent background; the model expects a photo, so it goes onto white paper. */
+async function onWhite(blob: Blob): Promise<RawImage> {
+  const bitmap = await createImageBitmap(blob);
+  const fit = Math.min(1, (MAX_SIDE * (1 - 2 * MARGIN)) / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * fit);
+  const h = Math.round(bitmap.height * fit);
+  const pad = Math.round(Math.max(w, h) * MARGIN);
+  const canvas = new OffscreenCanvas(w + 2 * pad, h + 2 * pad);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("No 2D canvas in this browser's workers.");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, pad, pad, w, h);
+  bitmap.close();
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return new RawImage(data, canvas.width, canvas.height, 4).rgb();
+}
+
+async function caption(image: RawImage): Promise<string> {
+  if (!florence) throw new Error("Drawing recognition is not loaded yet.");
+  const { model, processor, tokenizer } = florence;
+  const visionInputs = await processor(image);
+  const textInputs = tokenizer(processor.construct_prompts(TASK));
+  const ids = await model.generate({ ...textInputs, ...visionInputs, max_new_tokens: 40 });
+  const text = tokenizer.batch_decode(ids, { skip_special_tokens: false })[0];
+  return processor.post_process_generation(text, TASK, image.size)[TASK] ?? "";
+}
+
+self.onmessage = async (event: MessageEvent<VisionRequest>) => {
+  const request = event.data;
+  try {
+    if (request.type === "load") {
+      configureTransformers(request.modelHost);
+      const progress_callback = (p: FileProgress) => {
+        if (p.status === "progress" && p.file) {
+          post({ type: "progress", file: p.file, loaded: p.loaded ?? 0, total: p.total ?? 0 });
+        }
+      };
+      const [model, processor, tokenizer] = await Promise.all([
+        Florence2ForConditionalGeneration.from_pretrained(request.model, {
+          device: request.device,
+          dtype: request.dtype as never,
+          progress_callback,
+        }),
+        AutoProcessor.from_pretrained(request.model, { progress_callback }),
+        AutoTokenizer.from_pretrained(request.model, { progress_callback }),
+      ]);
+      florence = { model, processor, tokenizer } as unknown as Florence;
+      // Compile the GPU kernels on a blank page now, not on the child's first drawing.
+      const started = performance.now();
+      await caption(new RawImage(new Uint8ClampedArray(64 * 64 * 3).fill(255), 64, 64, 3));
+      post({ type: "ready", warmupMs: performance.now() - started });
+      return;
+    }
+
+    if (request.type === "describe") {
+      const started = performance.now();
+      const text = await caption(await onWhite(request.image));
+      post({ type: "result", id: request.id, caption: text, ms: performance.now() - started });
+    }
+  } catch (error) {
+    post({
+      type: "error",
+      id: request.type === "describe" ? request.id : undefined,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+};

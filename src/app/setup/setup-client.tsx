@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { getAI } from "@/lib/ai";
 import { chooseModels, detectSupport, type DeviceSupport, type ModelChoice } from "@/lib/ai/device";
-import { findLLM, findSTT } from "@/lib/ai/models";
+import { findLLM, findSTT, findVision } from "@/lib/ai/models";
 import {
   isLLMCached,
   isSTTCached,
+  isVisionCached,
   precacheApp,
   requestPersistence,
   storageUsage,
@@ -20,6 +21,7 @@ type Phase = "checking" | "unsupported" | "idle" | "loading" | "ready" | "error"
 const STAGES: { stage: Stage; label: string; detail: string }[] = [
   { stage: "llm", label: "Story helper", detail: "talks and writes with your child" },
   { stage: "stt", label: "Listening ears", detail: "understands what your child says" },
+  { stage: "vision", label: "Seeing eyes", detail: "guesses what your child drew" },
   { stage: "tts", label: "Voice", detail: "reads everything aloud" },
 ];
 
@@ -34,7 +36,7 @@ interface OfflineReport {
 export function SetupClient() {
   const [support, setSupport] = useState<DeviceSupport | null>(null);
   const [choice, setChoice] = useState<ModelChoice | null>(null);
-  const [cached, setCached] = useState<{ llm: boolean; stt: boolean } | null>(null);
+  const [cached, setCached] = useState<Record<Stage, boolean> | null>(null);
   const [phase, setPhase] = useState<Phase>("checking");
   const [progress, setProgress] = useState<Partial<Record<Stage, LoadProgress>>>({});
   const [error, setError] = useState<string | null>(null);
@@ -53,12 +55,13 @@ export function SetupClient() {
       }
       const picked = chooseModels(found, window.location.search);
       setChoice(picked);
-      const [llm, stt] = await Promise.all([
+      const [llm, stt, vision] = await Promise.all([
         isLLMCached(picked.llm, picked.modelHost),
         isSTTCached(picked.stt, picked.sttDevice),
+        isVisionCached(picked.vision),
       ]);
       if (!alive) return;
-      setCached({ llm, stt });
+      setCached({ llm, stt, vision, tts: true });
       setPhase(getAI().status() === "ready" ? "ready" : "idle");
     })();
     return () => {
@@ -66,10 +69,16 @@ export function SetupClient() {
     };
   }, []);
 
-  const llmBytes = choice ? (findLLM(choice.llm)?.downloadMB ?? 0) * 1e6 : 0;
-  const sttBytes = choice ? (findSTT(choice.stt)?.downloadMB[choice.sttDevice] ?? 0) * 1e6 : 0;
-  const totalBytes = llmBytes + sttBytes;
-  const toDownload = cached ? (cached.llm ? 0 : llmBytes) + (cached.stt ? 0 : sttBytes) : totalBytes;
+  const bytes: Record<Stage, number> = {
+    llm: choice ? (findLLM(choice.llm)?.downloadMB ?? 0) * 1e6 : 0,
+    stt: choice ? (findSTT(choice.stt)?.downloadMB[choice.sttDevice] ?? 0) * 1e6 : 0,
+    vision: choice ? (findVision(choice.vision)?.downloadMB ?? 0) * 1e6 : 0,
+    // The voices come with the operating system.
+    tts: 0,
+  };
+  const totalBytes = STAGES.reduce((sum, { stage }) => sum + bytes[stage], 0);
+  const toDownload = STAGES.reduce((sum, { stage }) => sum + (cached?.[stage] ? 0 : bytes[stage]), 0);
+  const allCached = !!cached && STAGES.every(({ stage }) => cached[stage]);
 
   async function getReady() {
     setPhase("loading");
@@ -78,7 +87,7 @@ export function SetupClient() {
     try {
       await getAI().load((p) => setProgress((previous) => ({ ...previous, [p.stage]: p })));
       setSeconds((performance.now() - started) / 1000);
-      setCached({ llm: true, stt: true });
+      setCached({ llm: true, stt: true, vision: true, tts: true });
       setPhase("ready");
       const [persisted, precache] = await Promise.all([requestPersistence(), precacheApp()]);
       setOffline({ persisted, precache, usage: await storageUsage() });
@@ -125,8 +134,7 @@ export function SetupClient() {
           <ul className="flex flex-col gap-3">
             {STAGES.map(({ stage, label, detail }) => {
               const p = progress[stage];
-              const isCached = stage === "llm" ? cached?.llm : stage === "stt" ? cached?.stt : true;
-              const bytes = stage === "llm" ? llmBytes : stage === "stt" ? sttBytes : 0;
+              const isCached = cached?.[stage];
               const done = phase === "ready" || (p && p.total > 0 && p.loaded >= p.total);
               const fraction = done ? 1 : p && p.total > 0 ? Math.min(1, p.loaded / p.total) : 0;
               return (
@@ -134,7 +142,7 @@ export function SetupClient() {
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="font-semibold">{label}</span>
                     <span className="text-sm text-stone-500">
-                      {done ? "Ready" : isCached ? "On this device" : bytes ? size(bytes) : "Built in"}
+                      {done ? "Ready" : !bytes[stage] ? "Built in" : isCached ? "On this device" : size(bytes[stage])}
                     </span>
                   </div>
                   <p className="text-sm text-stone-500">{p?.text ?? detail}</p>
@@ -164,7 +172,7 @@ export function SetupClient() {
               onClick={getReady}
               className="rounded-full bg-orange-500 px-6 py-4 text-lg font-bold text-white shadow-sm hover:bg-orange-600 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-orange-600"
             >
-              {cached?.llm && cached?.stt ? "Start Guhit" : "Get Guhit ready"}
+              {allCached ? "Start Guhit" : "Get Guhit ready"}
             </button>
           )}
           {phase === "loading" && (
