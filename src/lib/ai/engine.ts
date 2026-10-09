@@ -263,7 +263,17 @@ export class RealAI implements LocalAI {
     if (this.visionUsers === 0 && this.vision) {
       this.vision.dispose();
       this.vision = null;
+      // After the vision model has used the GPU, the next reply was cold
+      // (7–8 s instead of ~1 s in /lab). Warming the LLM again now hides that
+      // while the child confirms the guess and names the character.
+      void this.warmLLM();
     }
+  }
+
+  private warmLLM(): Promise<unknown> {
+    const llm = this.llm;
+    if (!llm) return Promise.resolve();
+    return llm.generate(replyMessages(WARMUP_CHARACTER, [], ""), { maxTokens: 4 }).catch(() => undefined);
   }
 
   /** Optional: if it fails, describeDrawing() answers "no guess" and the talk loop is unaffected. */
