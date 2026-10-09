@@ -28,7 +28,8 @@ const args = process.argv.slice(2);
 const only = args.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 const forceKokoro = args.includes("--kokoro");
 const key = process.env.ELEVENLABS_API_KEY;
-const voiceId = process.env.ELEVENLABS_VOICE_NARRATOR || "0AqGYCQmBK5Md93Th9nF";
+const voiceId = args.find((a) => a.startsWith("--voice="))?.slice(8) || process.env.ELEVENLABS_VOICE_NARRATOR || "0AqGYCQmBK5Md93Th9nF";
+const modelId = args.find((a) => a.startsWith("--model="))?.slice(8) || "eleven_multilingual_v2";
 const engine = key && !forceKokoro ? "elevenlabs" : "kokoro";
 // ElevenLabs reading pace (0.7–1.2): the brief asks for warm and unhurried.
 const speed = Number(args.find((a) => a.startsWith("--speed="))?.slice(8) ?? 0.85);
@@ -47,10 +48,11 @@ async function elevenlabs(line, i) {
     headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
     body: JSON.stringify({
       text: line.say ?? line.text,
-      model_id: "eleven_multilingual_v2",
+      model_id: modelId,
       // Neighbouring lines keep the read flowing like one take.
-      previous_text: lines[i - 1]?.say ?? lines[i - 1]?.text,
-      next_text: lines[i + 1]?.say ?? lines[i + 1]?.text,
+      // eleven_v3 takes no neighbouring-text context.
+      previous_text: modelId === "eleven_v3" ? undefined : lines[i - 1]?.say ?? lines[i - 1]?.text,
+      next_text: modelId === "eleven_v3" ? undefined : lines[i + 1]?.say ?? lines[i + 1]?.text,
       voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.25, use_speaker_boost: true, speed },
     }),
   });

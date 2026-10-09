@@ -24,7 +24,7 @@ import { Logo, LogoReveal } from "./components/Splash";
 import { Flash, IdeaTag, isPortrait, SoftGradient, Subtitle } from "./components/ui";
 import { CrayonRing, KineticLine, timeWords } from "./Kinetic";
 import { BODY, C, DISPLAY, GRAIN, LONG_SHADOW } from "./theme";
-import { EDIT, f, FPS, HERO, LAG, scene, SETUP, type Cue, type SceneId } from "./timeline";
+import { EDIT, f, FPS, HERO, LAG, scene, SETUP, TOTAL_FRAMES, type Cue, type SceneId } from "./timeline";
 
 // ---------- footage geometry (source pixels) ----------
 const PHONE_SRC = { w: 860, h: 1864 };
@@ -62,6 +62,18 @@ function Split({ screen, idea, ideaTop }: { screen: (p: { x: number; y: number; 
       )}
     </AbsoluteFill>
   );
+}
+
+/** Frames a cut dissolves over (the outgoing shot keeps playing underneath). */
+const DISSOLVE = 7;
+/** Hard cuts kept on purpose: the jump to the problem statement. */
+const HARD_CUT_INTO = new Set<SceneId>(["problemA"]);
+
+/** Fades its children in over the first frames of their Sequence. */
+function FadeIn({ frames, children }: { frames: number; children: ReactNode }) {
+  const frame = useCurrentFrame();
+  const o = frames ? interpolate(frame, [0, frames], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.inOut(Easing.quad) }) : 1;
+  return <AbsoluteFill style={{ opacity: o }}>{children}</AbsoluteFill>;
 }
 
 /** A finger tap on the footage (a soft ring that pulses once). */
@@ -284,11 +296,13 @@ function Cutout() {
       <Split
         screen={({ x, y, height }) => (
           <>
-            <Sequence durationInFrames={half} layout="none">
+            <Sequence durationInFrames={half + DISSOLVE} layout="none">
               <AppScreen src="footage/hero.mp4" from={M.snap + 0.6} source={PHONE_SRC} crop={PHONE_WORKING} height={height * 0.92} x={x} y={y} />
             </Sequence>
             <Sequence from={half} layout="none">
+              <FadeIn frames={DISSOLVE}>
               <AppScreen src="footage/hero.mp4" from={M.preview + 0.15} source={PHONE_SRC} crop={PHONE_PREVIEW} height={height} x={x} y={y} />
+              </FadeIn>
             </Sequence>
           </>
         )}
@@ -385,11 +399,13 @@ function Look() {
       <Split
         screen={({ x, y, height }) => (
           <>
-            <Sequence durationInFrames={half} layout="none">
+            <Sequence durationInFrames={half + DISSOLVE} layout="none">
               <AppScreen src="footage/hero.mp4" from={M.preview - 2.0} source={PHONE_SRC} crop={PHONE_WORKING} height={height * 0.92} x={x} y={y} />
             </Sequence>
             <Sequence from={half} layout="none">
+              <FadeIn frames={DISSOLVE}>
               <AppScreen src="footage/hero.mp4" from={M.meet + 0.05} source={PHONE_SRC} crop={{ x: 0, y: 110, w: 860, h: 1180 }} height={height} x={x} y={y} playbackRate={0.8} />
+              </FadeIn>
             </Sequence>
           </>
         )}
@@ -996,11 +1012,18 @@ export function Promo() {
   const windows = speechWindows();
   return (
     <AbsoluteFill style={{ background: C.cream }}>
-      {EDIT.scenes.map((sc) => {
+      {EDIT.scenes.map((sc, i) => {
         const Comp = SCENES[sc.id];
+        const next = EDIT.scenes[i + 1];
+        // Each shot fades in over the one before, which keeps playing underneath for those frames.
+        const fadeIn = i > 0 && !HARD_CUT_INTO.has(sc.id) ? DISSOLVE : 0;
+        const tail = next && !HARD_CUT_INTO.has(next.id) ? DISSOLVE : 0;
+        const end = Math.min(TOTAL_FRAMES, f(sc.from + sc.dur) + tail);
         return (
-          <Sequence key={sc.id} from={f(sc.from)} durationInFrames={f(sc.from + sc.dur) - f(sc.from)} name={sc.id}>
-            <Comp cues={EDIT.cues} />
+          <Sequence key={sc.id} from={f(sc.from)} durationInFrames={end - f(sc.from)} name={sc.id}>
+            <FadeIn frames={fadeIn}>
+              <Comp cues={EDIT.cues} />
+            </FadeIn>
           </Sequence>
         );
       })}

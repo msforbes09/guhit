@@ -29,8 +29,10 @@ export function SoftGradient({ hue = "sky" }: { hue?: "sky" | "sun" | "grape" | 
 /** Burned-in caption for the narration: big, rounded, always readable. */
 export function Subtitle({ text, style }: { text: string; style?: CSSProperties }) {
   const frame = useCurrentFrame();
-  const { fps, width, height } = useVideoConfig();
+  const { fps, width, height, durationInFrames } = useVideoConfig();
   const pop = spring({ frame, fps, config: { damping: 18, stiffness: 180 } });
+  // Eases out over its last frames instead of vanishing.
+  const out = interpolate(frame, [durationInFrames - 6, durationInFrames - 1], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const portrait = isPortrait(width, height);
   return (
     <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", pointerEvents: "none" }}>
@@ -48,7 +50,7 @@ export function Subtitle({ text, style }: { text: string; style?: CSSProperties 
           fontSize: portrait ? 50 : 46,
           lineHeight: 1.15,
           textAlign: "center",
-          opacity: interpolate(pop, [0, 1], [0, 1]),
+          opacity: interpolate(pop, [0, 1], [0, 1]) * out,
           transform: `translateY(${interpolate(pop, [0, 1], [24, 0])}px)`,
           ...style,
         }}

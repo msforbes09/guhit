@@ -25,3 +25,8 @@ out/.timeline.mjs
 
 # Music and sound effects are rebuilt exactly by `node audio/synth.mjs`
 public/audio/
+
+# Local only
+backup-jeni/
+footage/*.MP4
+out/voice-samples/george.mp3

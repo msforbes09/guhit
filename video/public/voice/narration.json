@@ -4,92 +4,92 @@
       "text": "What if every drawing had a friend inside?",
       "engine": "elevenlabs",
       "file": "voice/narration/hook.mp3",
-      "seconds": 2.496
+      "seconds": 2.832
     },
     "problem-a": {
       "text": "Most AI imagines for kids.",
       "engine": "elevenlabs",
       "file": "voice/narration/problem-a.mp3",
-      "seconds": 2.136
+      "seconds": 2.28
     },
     "problem-b": {
       "text": "Guhit makes kids imagine.",
       "engine": "elevenlabs",
       "file": "voice/narration/problem-b.mp3",
-      "seconds": 2.304
+      "seconds": 2.424
     },
     "snap-a": {
       "text": "Snap your drawing.",
       "engine": "elevenlabs",
       "file": "voice/narration/snap-a.mp3",
-      "seconds": 1.2
+      "seconds": 1.392
     },
     "snap-b": {
       "text": "Guhit cuts it out, and brings it to life.",
       "engine": "elevenlabs",
       "file": "voice/narration/snap-b.mp3",
-      "seconds": 2.256
+      "seconds": 3.24
     },
     "moves": {
       "text": "It moves like what it is.",
       "engine": "elevenlabs",
       "file": "voice/narration/moves.mp3",
-      "seconds": 1.992
+      "seconds": 1.8
     },
     "guess": {
       "text": "It even guesses what you drew.",
       "engine": "elevenlabs",
       "file": "voice/narration/guess.mp3",
-      "seconds": 2.304
+      "seconds": 1.944
     },
     "talk": {
       "text": "Hold to talk, and your friend talks back.",
       "engine": "elevenlabs",
       "file": "voice/narration/talk.mp3",
-      "seconds": 2.304
+      "seconds": 2.592
     },
     "offline-a": {
       "text": "No internet? Still works.",
       "engine": "elevenlabs",
       "file": "voice/narration/offline-a.mp3",
-      "seconds": 2.04
+      "seconds": 2.352
     },
     "offline-b": {
       "text": "All the AI runs right here, on the device.",
       "engine": "elevenlabs",
       "file": "voice/narration/offline-b.mp3",
-      "seconds": 2.88
+      "seconds": 3.144
     },
     "offline-c": {
       "text": "Nothing your child draws or says ever leaves it.",
       "engine": "elevenlabs",
       "file": "voice/narration/offline-c.mp3",
-      "seconds": 3.24
+      "seconds": 3.552
     },
     "title-a": {
       "text": "No cloud.",
       "engine": "elevenlabs",
       "file": "voice/narration/title-a.mp3",
-      "seconds": 0.768
+      "seconds": 1.08
     },
     "title-b": {
       "text": "No account.",
       "engine": "elevenlabs",
       "file": "voice/narration/title-b.mp3",
-      "seconds": 0.864
+      "seconds": 1.08
     },
     "title-c": {
       "text": "Just crayons.",
       "engine": "elevenlabs",
       "file": "voice/narration/title-c.mp3",
-      "seconds": 1.008
+      "seconds": 1.08
     },
     "end": {
       "text": "Every drawing has a friend inside.",
       "engine": "elevenlabs",
       "file": "voice/narration/end.mp3",
-      "seconds": 2.352
+      "seconds": 2.76
     }
   },
-  "generatedAt": "2026-10-09T13:16:08.840Z"
+  "generatedAt": "2026-10-09T17:20:55.199Z"
 }

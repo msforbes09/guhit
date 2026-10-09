@@ -1,5 +1,5 @@
 {
-  "totalFrames": 1785,
+  "totalFrames": 1791,
   "scenes": [
     {
       "id": "draw",
@@ -19,205 +19,205 @@
     {
       "id": "problemA",
       "from": 4.4,
-      "dur": 2.436
+      "dur": 2.5799999999999996
     },
     {
       "id": "problemB",
-      "from": 6.836,
-      "dur": 2.4539999999999997
+      "from": 6.98,
+      "dur": 2.574
     },
     {
       "id": "logo",
-      "from": 9.29,
+      "from": 9.554,
       "dur": 3.6
     },
     {
       "id": "snapApp",
-      "from": 12.889999999999999,
+      "from": 13.154,
       "dur": 1.9000000000000001
     },
     {
       "id": "cutout",
-      "from": 14.79,
-      "dur": 2.506
+      "from": 15.054,
+      "dur": 3.4900000000000007
     },
     {
       "id": "vehicle",
-      "from": 17.296,
+      "from": 18.544,
       "dur": 2.35
     },
     {
       "id": "plant",
-      "from": 19.646,
+      "from": 20.894000000000002,
       "dur": 1.7000000000000002
     },
     {
       "id": "flyer",
-      "from": 21.346,
+      "from": 22.594,
       "dur": 1.85
     },
     {
       "id": "look",
-      "from": 23.195999999999998,
-      "dur": 2.654
+      "from": 24.444000000000003,
+      "dur": 2.3770491803278686
     },
     {
       "id": "guess",
-      "from": 25.849999999999998,
-      "dur": 3.4460000000000006
+      "from": 26.821049180327872,
+      "dur": 3.4229508196721308
     },
     {
       "id": "hold",
-      "from": 29.296,
-      "dur": 3
+      "from": 30.244,
+      "dur": 2.978605049208387
     },
     {
       "id": "answer",
-      "from": 32.296,
-      "dur": 4.010999999999996
+      "from": 33.22260504920839,
+      "dur": 3.9823949507916088
     },
     {
       "id": "airplane",
-      "from": 36.306999999999995,
-      "dur": 2.8
+      "from": 37.205,
+      "dur": 2.602
     },
     {
       "id": "setup",
-      "from": 39.10699999999999,
-      "dur": 5
+      "from": 39.806999999999995,
+      "dur": 4.6
     },
     {
       "id": "parts",
-      "from": 44.10699999999999,
-      "dur": 3.4
+      "from": 44.407,
+      "dur": 3
     },
     {
       "id": "diagram",
-      "from": 47.50699999999999,
-      "dur": 3.7
+      "from": 47.407,
+      "dur": 3.7520000000000002
     },
     {
       "id": "title",
-      "from": 51.206999999999994,
-      "dur": 3.4
+      "from": 51.159,
+      "dur": 3.54
     },
     {
       "id": "endLogo",
-      "from": 54.60699999999999,
-      "dur": 2.8
+      "from": 54.699,
+      "dur": 2.9600000000000004
     },
     {
       "id": "maker",
-      "from": 57.40699999999999,
-      "dur": 2.1
+      "from": 57.659,
+      "dur": 2.041000000000004
     }
   ],
   "cues": [
     {
       "id": "hook",
       "at": 0.3,
-      "seconds": 2.496,
+      "seconds": 2.832,
       "text": "What if every drawing had a friend inside?",
       "file": "voice/narration/hook.mp3"
     },
     {
       "id": "problem-a",
       "at": 4.550000000000001,
-      "seconds": 2.136,
+      "seconds": 2.28,
       "text": "Most AI imagines for kids.",
       "file": "voice/narration/problem-a.mp3"
     },
     {
       "id": "problem-b",
-      "at": 6.936,
-      "seconds": 2.304,
+      "at": 7.08,
+      "seconds": 2.424,
       "text": "Guhit makes kids imagine.",
       "file": "voice/narration/problem-b.mp3"
     },
     {
       "id": "snap-a",
-      "at": 12.989999999999998,
-      "seconds": 1.2,
+      "at": 13.254,
+      "seconds": 1.392,
       "text": "Snap your drawing.",
       "file": "voice/narration/snap-a.mp3"
     },
     {
       "id": "snap-b",
-      "at": 14.889999999999999,
-      "seconds": 2.256,
+      "at": 15.154,
+      "seconds": 3.24,
       "text": "Guhit cuts it out, and brings it to life.",
       "file": "voice/narration/snap-b.mp3"
     },
     {
       "id": "moves",
-      "at": 17.445999999999998,
-      "seconds": 1.992,
+      "at": 18.694,
+      "seconds": 1.8,
       "text": "It moves like what it is.",
       "file": "voice/narration/moves.mp3"
     },
     {
       "id": "guess",
-      "at": 23.345999999999997,
-      "seconds": 2.304,
+      "at": 24.594,
+      "seconds": 1.944,
       "text": "It even guesses what you drew.",
       "file": "voice/narration/guess.mp3"
     },
     {
       "id": "talk",
-      "at": 29.396,
-      "seconds": 2.304,
+      "at": 30.344,
+      "seconds": 2.592,
       "text": "Hold to talk, and your friend talks back.",
       "file": "voice/narration/talk.mp3"
     },
     {
       "id": "offline-a",
-      "at": 36.456999999999994,
-      "seconds": 2.04,
+      "at": 37.355,
+      "seconds": 2.352,
       "text": "No internet? Still works.",
       "file": "voice/narration/offline-a.mp3"
     },
     {
       "id": "offline-b",
-      "at": 39.40699999999999,
-      "seconds": 2.88,
+      "at": 40.10699999999999,
+      "seconds": 3.144,
       "text": "All the AI runs right here, on the device.",
       "file": "voice/narration/offline-b.mp3"
     },
     {
       "id": "offline-c",
-      "at": 47.60699999999999,
-      "seconds": 3.24,
+      "at": 47.507,
+      "seconds": 3.552,
       "text": "Nothing your child draws or says ever leaves it.",
       "file": "voice/narration/offline-c.mp3"
     },
     {
       "id": "title-a",
-      "at": 51.407,
-      "seconds": 0.768,
+      "at": 51.359,
+      "seconds": 1.08,
       "text": "No cloud.",
       "file": "voice/narration/title-a.mp3"
     },
     {
       "id": "title-b",
-      "at": 52.224999999999994,
-      "seconds": 0.864,
+      "at": 52.489000000000004,
+      "seconds": 1.08,
       "text": "No account.",
       "file": "voice/narration/title-b.mp3"
     },
     {
       "id": "title-c",
-      "at": 53.138999999999996,
-      "seconds": 1.008,
+      "at": 53.61900000000001,
+      "seconds": 1.08,
       "text": "Just crayons.",
       "file": "voice/narration/title-c.mp3"
     },
     {
       "id": "end",
-      "at": 54.806999999999995,
-      "seconds": 2.352,
+      "at": 54.899,
+      "seconds": 2.76,
       "text": "Every drawing has a friend inside.",
       "file": "voice/narration/end.mp3"
     }
   ],
-  "total": 59.50699999999999
+  "total": 59.7
 }
