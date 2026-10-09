@@ -36,6 +36,13 @@ export function loadSegmenter(onProgress?: (text: string) => void): Promise<Segm
     loading = (async () => {
       const tf = await import("@huggingface/transformers");
       tf.env.allowLocalModels = false;
+      // Serve the ONNX Runtime from our own origin (bundled assets) instead of
+      // its default CDN, so the only download is the model itself. The object
+      // form also lets Transformers.js keep both files in Cache Storage.
+      tf.env.backends.onnx.wasm!.wasmPaths = {
+        wasm: new URL("onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm", import.meta.url).href,
+        mjs: new URL("onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs", import.meta.url).href,
+      };
       const progress_callback = (p: ProgressInfo) => {
         if (p.status === "progress" && p.file?.endsWith(".onnx")) {
           onProgress?.(`Downloading the AI model… ${Math.round(p.progress ?? 0)}%`);
