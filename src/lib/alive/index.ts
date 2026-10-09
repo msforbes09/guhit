@@ -1,4 +1,4 @@
-export { applyTouchUp, cutout, cutoutFromCanvas, loadCutout, maskToCanvas, preloadAiCutout } from "./cutout";
+export { applyTouchUp, cutout, cutoutFromCanvas, loadCutout, maskToCanvas, preloadAiCutout, releaseCutoutWorker } from "./cutout";
 export { aiCutoutMissing, isAiCutoutCached } from "./ai-model";
 export { cutoutNote, settleWithin } from "./cutout-note";
 export { ALIVE_MOTIONS } from "./types";

@@ -38,3 +38,30 @@ test("names nothing when no label stands out", () => {
   assert.equal(pick.label, "");
   assert.equal(pick.top.length, 3);
 });
+
+import { LIGHT_INPUT, lightEyesFrame } from "../src/lib/ai/light-eyes.ts";
+
+test("the light eyes see a 256 px square", () => {
+  assert.equal(LIGHT_INPUT, 256);
+});
+
+test("a photo region keeps 30% paper around the crop and fits the square, centred", () => {
+  const f = lightEyesFrame({ width: 1000, height: 800 }, { x: 400, y: 300, w: 200, h: 100 });
+  assert.deepEqual([f.sx, f.sy, f.sw, f.sh], [340, 240, 320, 220]);
+  assert.deepEqual([f.dx, f.dy, f.dw, f.dh], [0, 40, 256, 176]);
+});
+
+test("the paper around a crop stops at the photo's edge", () => {
+  const f = lightEyesFrame({ width: 500, height: 500 }, { x: 0, y: 0, w: 100, h: 100 });
+  assert.deepEqual([f.sx, f.sy, f.sw, f.sh], [0, 0, 130, 130]);
+  assert.deepEqual([f.dx, f.dy, f.dw, f.dh], [0, 0, 256, 256]);
+});
+
+test("a cut-out goes on white with a 12% margin, centred", () => {
+  const f = lightEyesFrame({ width: 400, height: 200 });
+  assert.deepEqual([f.sx, f.sy, f.sw, f.sh], [0, 0, 400, 200]);
+  assert.equal(f.dw, 206);
+  assert.equal(f.dh, 103);
+  assert.equal(f.dx, 25);
+  assert.equal(f.dy, 77);
+});

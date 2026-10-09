@@ -33,7 +33,8 @@ import {
   splitSentences,
 } from "./sanitize";
 import { screen, topicChange } from "./safety";
-import { guessAllowed, guessFinished, guessStarted, lightEyesChosen } from "./guess-guard";
+import { guessAllowed, guessFinished, guessStage, guessStarted, lightEyesChosen } from "./guess-guard";
+import { LIGHT_INPUT, lightEyesPicture } from "./light-eyes";
 import { crashedParts, partSettled, partStarting } from "./part-guard";
 import { heapNote, recordNote, setGuessStep } from "@/lib/boot-log";
 import { sharedAttempt } from "./shared-attempt";
@@ -725,10 +726,10 @@ export class RealAI implements LocalAI {
     if (!png && !photo) return { label: "" };
     // Without the eyes the screens simply ask the child what it is.
     if (this.partStatus("eyes") === "not-installed") return { label: "" };
-    // iPhone and iPad: a guess that killed this tab before is not tried again (no guess beats a crash).
+    // iPhone and iPad: after two guesses in a row killed this tab, none until the app is opened again (guess-guard.ts).
     const guarded = isAppleMobile();
     if (guarded && !guessAllowed()) {
-      recordNote("No guess: guessing is off on this device since a guess was cut short. Get the parts again in setup.");
+      recordNote("No guess: two guesses in a row were cut short, so guessing rests until the app is opened again.");
       return { label: "" };
     }
     const begun = performance.now();
@@ -748,14 +749,29 @@ export class RealAI implements LocalAI {
     }
     const light = this.choice?.vision === LIGHT_VISION;
     if (guarded) guessStarted(this.choice?.vision ?? "");
+    // The step is kept with the guess's mark too, so a crash's note says what was running.
+    const step = (text: string) => {
+      setGuessStep(text);
+      if (guarded) guessStage(text);
+    };
+    let picture = photo ?? { image: png, crop: undefined };
+    if (guarded && light) {
+      // The 256 px picture is made before the light eyes load, and the whole photo freed, to keep the peak low.
+      step("shrinking the picture");
+      try {
+        picture = { image: await lightEyesPicture(picture.image, picture.crop), crop: { x: 0, y: 0, w: LIGHT_INPUT, h: LIGHT_INPUT } };
+      } catch {
+        // The worker shrinks it instead, as on laptops.
+      }
+    }
     const started = performance.now();
-    setGuessStep(`loading the eyes' model (since ${new Date().toLocaleTimeString()})`);
+    step(`loading the ${light ? "light eyes'" : "eyes'"} model (since ${new Date().toLocaleTimeString()})`);
     const vision = await this.acquireVision();
     this.takeOverPrefetch();
     const loadMs = performance.now() - started;
     const threads = self.crossOriginIsolated ? `${navigator.hardwareConcurrency ?? "?"} threads` : "1 thread, not isolated";
     const how = `${light ? "light eyes" : "eyes"} on ${this.choice?.visionDevice ?? "?"} (${threads}), started in ${(loadMs / 1000).toFixed(1)} s${heapNote()}`;
-    setGuessStep(`looking (eyes started in ${(loadMs / 1000).toFixed(1)} s)`);
+    step(`looking (eyes started in ${(loadMs / 1000).toFixed(1)} s)`);
     try {
       if (!vision) {
         recordNote(`No guess: the eyes did not start (${how}): ${this.visionError ?? "no reason given"}`);
@@ -763,9 +779,7 @@ export class RealAI implements LocalAI {
       }
       // The original photo reads better than the cut-out on white (tested in /lab).
       const task = this.choice?.visionTask;
-      const { caption, detail } = photo
-        ? await vision.describe(photo.image, photo.crop, task)
-        : await vision.describe(png, undefined, task);
+      const { caption, detail } = await vision.describe(picture.image, picture.crop, task);
       // The light eyes' likeliest subjects, so a miss in the log says what they thought.
       const seen = detail ? `; likeliest: ${detail}` : "";
       const ms = performance.now() - started;

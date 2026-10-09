@@ -315,7 +315,7 @@ export function SetupClient() {
     tryPartsAgain(selected);
     setCrashed(crashedParts());
     setChosenParts(selected.filter(offered));
-    // A guess that once killed the tab (iPhone) turned guessing off; the parent's tap turns it back on.
+    // Two guesses in a row that killed the tab (iPhone) rest guessing; the parent's tap turns it back on.
     allowGuessesAgain();
     void getReady();
   }

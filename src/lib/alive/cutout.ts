@@ -140,6 +140,15 @@ function getWorker(): Worker | null {
   return worker;
 }
 
+/** iPhone: frees the cut-out worker's memory before a guess; the next cut-out starts a new one. */
+export function releaseCutoutWorker() {
+  if (!worker) return;
+  for (const [, p] of pending) p.reject(new Error("cut-out worker released"));
+  pending.clear();
+  worker.terminate();
+  worker = undefined;
+}
+
 /** A worker that never answers (busy, or a script it could not load) must not keep the child waiting. */
 const CLASSICAL_PATIENCE_MS = 8000;
 

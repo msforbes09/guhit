@@ -10,7 +10,8 @@ import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { kindOf } from "@/lib/story/kind";
 import { shrinkPhoto } from "@/lib/story/image";
 import { detectSupport, isAppleMobile } from "@/lib/ai/device";
-import { aiCutoutMissing, cutout, cutoutNote, CutoutTouchUp, preloadAiCutout, settleWithin, type Cutout } from "./alive";
+import { guessAllowed } from "@/lib/ai/guess-guard";
+import { aiCutoutMissing, cutout, cutoutNote, CutoutTouchUp, preloadAiCutout, releaseCutoutWorker, settleWithin, type Cutout } from "./alive";
 import { FriendStage } from "./FriendStage";
 import { usePart } from "./hooks";
 import { ArrowsClockwise, Camera, Check, PaintBrush, Scissors, Sparkle } from "./icons";
@@ -97,6 +98,8 @@ export function useBringToLife() {
   const look = useCallback(async (png: string, picture?: { image: string; crop: PixelRect }): Promise<Seen | null> => {
     // Test mode's pretend reader always says the same thing, which only confuses testers.
     if (isTestMode()) return null;
+    // iPhone and iPad with guessing resting (guess-guard.ts): straight to "Who am I?", the engine notes why.
+    if (isAppleMobile() && !guessAllowed()) return getAI().describeDrawing(png, picture).catch(() => null);
     const deadline = performance.now() + LOOK_TIMEOUT_MS;
     const late = () => {
       recordNote(`No guess in time: the snap screen stopped waiting after ${LOOK_TIMEOUT_MS / 1000} s (eyes: ${readyRef.current}; guess: ${currentGuessStep()})`);
@@ -110,7 +113,9 @@ export function useBringToLife() {
     const answer = getAI()
       .describeDrawing(png, picture)
       .catch(() => null);
-    return Promise.race([answer, wait(Math.max(0, deadline - performance.now())).then(late)]);
+    // The timer stops with the answer, so a quick "no guess" is not later logged as late.
+    const out = await settleWithin(answer, Math.max(0, deadline - performance.now()));
+    return out.state === "done" ? out.value : out.state === "late" ? late() : null;
   }, []);
 
   const start = useCallback(
@@ -161,6 +166,8 @@ export function useBringToLife() {
         const photoCrop = cut.meta ? scaleRect(photoCropFromCutout(cut.meta), picture.scale) : undefined;
         // The engine looks before anything comes alive or is saved.
         setWorking("looking");
+        // iPhone and iPad: the cut-out worker's memory is freed before the eyes load (it comes back for the next snap).
+        if (isAppleMobile()) releaseCutoutWorker();
         const seen = await look(cut.png, photoCrop ? { image: picture.dataUrl, crop: photoCrop } : undefined);
         setResult({ drawing: picture.dataUrl, scale: picture.scale, cut, photoCrop, seen });
         // The cut-out pops to life (or a soft "uh-oh" when it can't be a friend).

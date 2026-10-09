@@ -32,7 +32,10 @@ export async function shrinkPhoto(source: Blob | string, maxSide = 1280): Promis
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return { dataUrl: canvas.toDataURL("image/jpeg", 0.86), scale };
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.86);
+  // Safari holds a canvas's memory until it is emptied (an iPhone guess needs it next).
+  canvas.width = canvas.height = 0;
+  return { dataUrl, scale };
 }
 
 export function canvasToBlob(canvas: HTMLCanvasElement, type = "image/png"): Promise<Blob> {
