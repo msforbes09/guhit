@@ -26,7 +26,7 @@ export function FriendTile({ friend, index }: { friend: Friend; index: number })
           className="sticker max-h-full max-w-full object-contain transition-transform duration-300 group-hover:-translate-y-1 group-hover:rotate-2"
         />
       </span>
-      <span className="w-full truncate text-center font-display text-xl font-extrabold text-ink">
+      <span className="line-clamp-2 w-full text-center font-display text-xl leading-tight font-extrabold break-words text-ink">
         {friend.name || "New friend"}
       </span>
     </Link>

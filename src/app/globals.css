@@ -68,105 +68,111 @@
   --shadow-lift: var(--shadow-lift);
 }
 
-html {
-  color-scheme: light;
-  -webkit-text-size-adjust: 100%;
-  -webkit-tap-highlight-color: transparent;
-}
+/* Element defaults sit in the base layer so Tailwind utilities (truncate,
+   absolute, …) still win over them. */
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
 
-body {
-  background-color: var(--paper);
-  /* Paper grain: fine fractal noise, faint enough to read as texture, not dirt. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.27 0 0 0 0 0.16 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  color: var(--ink);
-  font-family: var(--font-andika), ui-rounded, system-ui, sans-serif;
-  font-size: 1.125rem;
-  line-height: 1.5;
-}
+  body {
+    background-color: var(--paper);
+    /* Paper grain: fine fractal noise, faint enough to read as texture, not dirt. */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.27 0 0 0 0 0.16 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    color: var(--ink);
+    font-family: var(--font-andika), ui-rounded, system-ui, sans-serif;
+    font-size: 1.125rem;
+    line-height: 1.5;
+  }
 
-::selection {
-  background: var(--crayon-sun);
-  color: var(--ink);
-}
+  ::selection {
+    background: var(--crayon-sun);
+    color: var(--ink);
+  }
 
-:focus-visible {
-  outline: 4px solid var(--crayon-sky-deep);
-  outline-offset: 4px;
-  border-radius: 18px;
-}
+  :focus-visible {
+    outline: 4px solid var(--crayon-sky-deep);
+    outline-offset: 4px;
+    border-radius: 18px;
+  }
 
-input,
-textarea {
-  caret-color: var(--crayon-red);
-}
+  input,
+  textarea {
+    caret-color: var(--crayon-red);
+  }
 
-input::placeholder,
-textarea::placeholder {
-  color: var(--ink-faint);
-}
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-faint);
+  }
 
-h1,
-h2,
-h3 {
-  font-family: var(--font-grandstander), ui-rounded, system-ui, sans-serif;
-  text-wrap: balance;
-  letter-spacing: -0.01em;
-}
-
-/* Crayon outline: the ink ring is roughened by an SVG filter so every edge
-   looks traced by hand while the label inside stays crisp. */
-.crayon-edge {
-  position: relative;
-  isolation: isolate;
-}
-.crayon-edge::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: 3px solid var(--ink);
-  border-radius: inherit;
-  filter: url(#crayon-edge);
-  pointer-events: none;
-  z-index: 1;
-}
-
-/* A pressable piece of paper. Pressing pushes it down into the table. */
-.press {
-  transition:
-    transform 160ms var(--ease-out),
-    box-shadow 160ms var(--ease-out),
-    background-color 160ms var(--ease-out);
-  transform: rotate(var(--tilt, 0deg));
-  box-shadow: var(--shadow-soft);
-  touch-action: manipulation;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
-@media (hover: hover) {
-  .press:hover:not(:disabled) {
-    transform: translateY(-2px) rotate(var(--tilt, 0deg));
-    box-shadow: var(--shadow-lift);
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-grandstander), ui-rounded, system-ui, sans-serif;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
   }
 }
-.press:active:not(:disabled) {
-  transform: translateY(3px) scale(0.98) rotate(var(--tilt, 0deg));
-  box-shadow: var(--shadow-press);
-}
-.press:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
-/* Die-cut sticker: a white margin around the child's cut-out, then a soft shadow. */
-.sticker {
-  filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff)
-    drop-shadow(0 -3px 0 #fff) drop-shadow(0 10px 10px rgb(42 34 56 / 0.22));
-}
+@layer components {
+  /* Crayon outline: the ink ring is roughened by an SVG filter so every edge
+     looks traced by hand while the label inside stays crisp. */
+  .crayon-edge {
+    position: relative;
+    isolation: isolate;
+  }
+  .crayon-edge::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 3px solid var(--ink);
+    border-radius: inherit;
+    filter: url(#crayon-edge);
+    pointer-events: none;
+    z-index: 1;
+  }
 
-.scrollbar-paper {
-  scrollbar-width: thin;
-  scrollbar-color: var(--paper-edge) transparent;
+  /* A pressable piece of paper. Pressing pushes it down into the table. */
+  .press {
+    transition:
+      transform 160ms var(--ease-out),
+      box-shadow 160ms var(--ease-out),
+      background-color 160ms var(--ease-out);
+    transform: rotate(var(--tilt, 0deg));
+    box-shadow: var(--shadow-soft);
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  @media (hover: hover) {
+    .press:hover:not(:disabled) {
+      transform: translateY(-2px) rotate(var(--tilt, 0deg));
+      box-shadow: var(--shadow-lift);
+    }
+  }
+  .press:active:not(:disabled) {
+    transform: translateY(3px) scale(0.98) rotate(var(--tilt, 0deg));
+    box-shadow: var(--shadow-press);
+  }
+  .press:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Die-cut sticker: a white margin around the child's cut-out, then a soft shadow. */
+  .sticker {
+    filter: drop-shadow(3px 0 0 #fff) drop-shadow(-3px 0 0 #fff) drop-shadow(0 3px 0 #fff)
+      drop-shadow(0 -3px 0 #fff) drop-shadow(0 10px 10px rgb(42 34 56 / 0.22));
+  }
+
+  .scrollbar-paper {
+    scrollbar-width: thin;
+    scrollbar-color: var(--paper-edge) transparent;
+  }
 }
 
 /* ---------- Motion ---------- */
