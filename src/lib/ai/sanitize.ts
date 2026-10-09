@@ -4,6 +4,7 @@
  * Everything shown or spoken to a child goes through these helpers first.
  */
 
+import { tagPage, takeStaging } from "@/lib/story/staging";
 import { screen } from "./safety";
 
 const EMOJI = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu;
@@ -74,14 +75,19 @@ function isYesNo(question: string): boolean {
   );
 }
 
-/** Two or three story sentences, always ending with an invitation to draw. */
+/**
+ * Two or three story sentences, always ending with an invitation to draw.
+ * The page's scene and move ("Scene: night", "Move: sleep") are taken off the
+ * words and ride along as a tag (see staging.ts untagPage).
+ */
 export function cleanPage(raw: string): string | null {
-  const sentences = splitSentences(plainText(raw));
+  const { text, scene, move } = takeStaging(stripThink(raw));
+  const sentences = splitSentences(plainText(text));
   const story = sentences.filter((s) => !INVITE.test(s)).slice(0, 3);
   if (story.length === 0) return null;
   const invite = sentences.find((s) => INVITE.test(s)) ?? "What happens next? Draw it for me!";
   const page = [...story, invite].join(" ");
-  return isUnsafe(page) ? null : page;
+  return isUnsafe(page) ? null : tagPage(page, { scene, move });
 }
 
 const SMALL_WORDS = new Set(["a", "an", "and", "the", "of", "in", "on", "at", "to", "for", "with"]);

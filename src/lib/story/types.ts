@@ -1,4 +1,5 @@
 import type { Kind } from "./kind";
+import type { Scene, StoryMove } from "./staging";
 
 export interface Character {
   id: string;
@@ -19,6 +20,10 @@ export interface StoryPage {
   question: string;
   answer: string;
   text: string;
+  /** Where the page happens, from the story writer (see staging.ts); read from the words when missing. */
+  scene?: Scene;
+  /** What the character does on the page, from the story writer; read from the words when missing. */
+  move?: StoryMove;
 }
 
 export interface Story {
