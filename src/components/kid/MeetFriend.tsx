@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { getAI } from "@/lib/ai";
 import { deleteFriend, saveFriend, type Friend } from "@/lib/story/db";
 import { nameFrom, parseIntro, readYesNo, tidy } from "@/lib/story/intro";
+import { kindOf } from "@/lib/story/kind";
 import { NotThisOne } from "./BringToLife";
 import { FriendStage } from "./FriendStage";
 import { speechLevel, useAIReady, usePushToTalk, useSpeakingVoice } from "./hooks";
@@ -180,7 +181,8 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
     if (!name.trim()) return;
     setSaving(true);
     try {
-      onMet(await saveFriend({ ...friend, name: name.trim(), description: about.trim() }));
+      const description = about.trim();
+      onMet(await saveFriend({ ...friend, name: name.trim(), description, kind: kindOf(description, guess || friend.seenAs) }));
     } catch {
       setOops("I couldn't remember that. Try once more?");
       setSaving(false);
@@ -360,7 +362,10 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
         <FriendStage
           cutout={friend.cutout ?? friend.drawing}
           name={name}
-          motion={step === "confirm" ? "bounce" : step === "looking" ? "idle" : "wave"}
+          // Only something with arms waves hello; a car or a flower bounces instead.
+          motion={
+            step === "confirm" || kindOf(about, guess || friend.seenAs) !== "creature" ? "bounce" : step === "looking" ? "idle" : "wave"
+          }
           thinking={step === "looking" || hearing}
           talking={speaking && !hearing}
           level={speechLevel}

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { getAI } from "@/lib/ai";
 import type { ChatTurn } from "@/lib/ai";
 import { saveFriend, type Friend } from "@/lib/story/db";
+import { kindOf } from "@/lib/story/kind";
 import { JointPicker, loadCutout, type AliveCharacterHandle, type Cutout, type Joints, type Motion } from "./alive";
 import { FriendBooks } from "./FriendBooks";
 import { FriendStage } from "./FriendStage";
@@ -66,6 +67,9 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   // "Make it move more": the picker needs the cut-out with its mask.
   const [picking, setPicking] = useState<Cutout | null>(null);
   const name = friend.name;
+  // Head, hands and feet (and waving) only make sense for people and animal-like creatures.
+  const creature = (friend.kind ?? kindOf(friend.description, friend.seenAs)) === "creature";
+  const moves = creature ? MOVES : MOVES.filter((m) => m.motion !== "wave");
 
   const openPicker = async () => {
     if (!friend.cutout) return;
@@ -286,7 +290,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
           <FriendStage
             cutout={friend.cutout ?? friend.drawing}
             name={name}
-            joints={friend.joints}
+            joints={creature ? friend.joints : undefined}
             motion={phase === "thinking" || phase === "hearing" ? "idle" : motion}
             talking={phase === "speaking"}
             level={speechLevel}
@@ -378,8 +382,8 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
 
           <div>
             <h2 className="mb-2 font-display text-xl font-extrabold text-ink">Make {name} move</h2>
-            <div className="grid grid-cols-5 gap-2 sm:gap-3">
-              {MOVES.map((m) => (
+            <div className={`grid gap-2 sm:gap-3 ${moves.length === 5 ? "grid-cols-5" : "grid-cols-4"}`}>
+              {moves.map((m) => (
                 <button
                   key={m.motion}
                   type="button"
@@ -394,7 +398,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
                 </button>
               ))}
             </div>
-            {friend.cutout && !picking && (
+            {creature && friend.cutout && !picking && (
               <button
                 type="button"
                 onClick={openPicker}
