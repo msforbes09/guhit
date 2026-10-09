@@ -7,6 +7,7 @@ import { getStory } from "@/lib/story/db";
 import { kindOf } from "@/lib/story/kind";
 import type { Story } from "@/lib/story/types";
 import { sceneFor } from "./Backdrop";
+import { greetingMotion } from "./moves";
 import { CaretLeft, CaretRight, House, Play, Stop } from "./icons";
 import { StoryPage } from "./StoryPage";
 import { Button, LinkButton, TopBar } from "./ui";
@@ -56,6 +57,7 @@ export function BookScreen() {
 function Book({ story }: { story: Story }) {
   const name = story.character.name;
   const cutout = story.character.cutout ?? story.character.drawing;
+  const kind = story.character.kind ?? kindOf(story.character.description);
   // -1 is the cover, pages.length is "The End".
   const [at, setAt] = useState(-1);
   const [turn, setTurn] = useState<"next" | "back">("next");
@@ -144,7 +146,7 @@ function Book({ story }: { story: Story }) {
         <div className="relative flex-1 [perspective:1800px]">
           <div key={at} className={turn === "next" ? "book-turn-next" : "book-turn-back"} aria-live="polite">
             {at < 0 ? (
-              <StoryPage cutout={cutout} scene="meadow" motion="bounce" label="Cover">
+              <StoryPage cutout={cutout} kind={kind} scene="meadow" motion="bounce" label="Cover">
                 <h2 className="text-center text-4xl font-black leading-tight text-ink sm:text-5xl">{story.title || `A story with ${name}`}</h2>
                 <p className="text-center text-xl text-ink-soft">
                   A story with {name} · {new Date(story.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
@@ -154,7 +156,8 @@ function Book({ story }: { story: Story }) {
               <StoryPage
                 cutout={cutout}
                 scene="night"
-                motion={kindOf(story.character.description) === "creature" ? "wave" : "bounce"}
+                kind={kind}
+                motion={greetingMotion(kind)}
                 label="The End"
               >
                 <p className="text-center font-display text-5xl font-black text-ink">The End</p>
@@ -170,6 +173,7 @@ function Book({ story }: { story: Story }) {
             ) : (
               <StoryPage
                 cutout={cutout}
+                kind={kind}
                 scene={sceneFor(`${story.pages[at].text} ${story.pages[at].answer}`)}
                 motion={reading ? "bounce" : "idle"}
                 label={`Page ${at + 1}`}

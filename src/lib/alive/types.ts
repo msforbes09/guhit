@@ -2,6 +2,12 @@ export type AliveMotion = "idle" | "bounce" | "walk" | "jump" | "dance" | "sleep
 
 export const ALIVE_MOTIONS: AliveMotion[] = ["idle", "bounce", "walk", "jump", "dance", "sleep", "wave"];
 
+/**
+ * What the drawing is, so it moves like one: a car rolls, a flower sways in
+ * place, a bird hovers, a fish swims. Same values as the app's kindOf().
+ */
+export type AliveKind = "creature" | "vehicle" | "plant" | "flyer" | "swimmer" | "thing";
+
 export type CutoutMethod = "classical" | "ai" | "png";
 
 export interface CutoutMeta {

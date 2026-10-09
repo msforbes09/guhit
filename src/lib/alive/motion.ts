@@ -1,4 +1,4 @@
-import type { AliveMotion } from "./types";
+import type { AliveKind, AliveMotion } from "./types";
 
 /**
  * Procedural motion for a drawn character. Every motion is a function of
@@ -35,6 +35,9 @@ export interface Pose {
   legR: number;
   waveR: number;
   waveSwing: number;
+  /** Swimmers: a wave travelling along the body (amplitude, phase). */
+  swimAmp: number;
+  swimPhase: number;
 }
 
 const ZERO: Pose = {
@@ -54,6 +57,8 @@ const ZERO: Pose = {
   legR: 0,
   waveR: 0,
   waveSwing: 0,
+  swimAmp: 0,
+  swimPhase: 0,
 };
 
 interface Spring {
@@ -83,8 +88,26 @@ function noise1(t: number): number {
   );
 }
 
+/** Hover heights for things that float, in character heights. */
+const FLY_HEIGHT = 0.38;
+const SWIM_HEIGHT = 0.3;
+
+/** Cruising speed per kind, character heights per second. */
+const SPEED: Record<AliveKind, number> = {
+  creature: 0.62,
+  thing: 0.55,
+  vehicle: 0.95,
+  plant: 0,
+  flyer: 0.8,
+  swimmer: 0.5,
+};
+
 export class MotionController {
   motion: AliveMotion = "idle";
+  /** What the drawing is; each kind has its own way of moving. */
+  kind: AliveKind = "creature";
+  /** Reduced motion: smaller, slower movements. */
+  calm = false;
   private motionStart = 0;
   private prevMotion: AliveMotion = "idle";
   private prevStart = 0;
@@ -92,8 +115,13 @@ export class MotionController {
 
   /** Walking state lives here so the character stays where it walked to. */
   x = 0;
-  private dir: 1 | -1 = 1;
-  private speed = 0;
+  /** Current travel direction and speed (read by the stage for dust and splashes). */
+  dir: 1 | -1 = 1;
+  speed = 0;
+  private accel = 0;
+  /** Seconds when a swimmer last broke the water (leaving or landing), for a splash. */
+  splashAt = -10;
+  private splashCycle = -1;
   private walkPauseUntil = 0;
   private stepPhase = 0;
   private lastStepIndex = 0;
@@ -125,12 +153,28 @@ export class MotionController {
     this.jumpLanded = -1;
   }
 
-  /** Tap reaction: squish, then a happy hop. */
+  setCalm(calm: boolean) {
+    this.calm = calm;
+  }
+
+  setKind(kind: AliveKind) {
+    if (kind === this.kind) return;
+    this.kind = kind;
+    // A flower does not stay where a walker left it.
+    if (kind === "plant") this.x = 0;
+  }
+
+  /** Tap reaction: squish, then a happy hop (or the kind's own: honk, shiver, flip, flutter). */
   poke(now: number) {
     this.reactAt = now;
     this.reactLanded = false;
-    this.squash.v -= 5.5;
-    this.headSpring.v += 3;
+    this.squash.v -= this.kind === "plant" ? 2 : this.kind === "vehicle" ? 6.5 : 5.5;
+    this.headSpring.v += this.kind === "creature" || this.kind === "thing" ? 3 : 0;
+  }
+
+  /** Seconds since the last tap (for the stage's "Beep beep!"). */
+  sincePoke(now: number) {
+    return now - this.reactAt;
   }
 
   /**
@@ -163,7 +207,9 @@ export class MotionController {
 
     // Tap reaction layer.
     const tr = now - this.reactAt;
-    if (tr >= 0 && tr < 1.4) {
+    if (tr >= 0 && tr < 1.4 && this.kind !== "creature" && this.kind !== "thing") {
+      kindReaction(this.kind, tr, pose);
+    } else if (tr >= 0 && tr < 1.4) {
       const hopStart = 0.14,
         hopDur = 0.46;
       const q = (tr - hopStart) / hopDur;
@@ -194,33 +240,57 @@ export class MotionController {
     pose.bend += this.bend.x;
     pose.head += this.headSpring.x;
     pose.squash = Math.max(-0.42, Math.min(0.42, pose.squash));
+    if (this.calm) calmDown(pose);
     return pose;
   }
 
   private updateWalk(now: number, dt: number) {
-    const walking = this.motion === "walk";
+    const cruise = SPEED[this.kind];
+    const walking = this.motion === "walk" && cruise > 0;
     let targetSpeed = 0;
     if (walking && now >= this.walkPauseUntil) {
-      targetSpeed = 0.62;
+      targetSpeed = cruise;
       const atEdge = this.dir > 0 ? this.x >= this.bounds - 0.02 : this.x <= -this.bounds + 0.02;
       if (atEdge) {
         targetSpeed = 0;
         if (this.speed < 0.05) {
-          // Pause at the edge of the stage, then turn round with a little hop.
-          this.walkPauseUntil = now + 0.7;
+          const walker = this.kind === "creature" || this.kind === "thing";
+          // Pause at the edge of the stage, then turn round (walkers with a little hop).
+          this.walkPauseUntil = now + (walker ? 0.7 : 0.45);
           this.dir = this.dir > 0 ? -1 : 1;
-          this.reactAt = now + 0.35;
-          this.reactLanded = false;
+          if (walker) {
+            this.reactAt = now + 0.35;
+            this.reactLanded = false;
+          }
         }
       }
     }
-    this.speed += (targetSpeed - this.speed) * Math.min(1, dt * 5);
+    const before = this.speed;
+    // Wheels and fins take a moment to get going and to stop.
+    const grip = this.kind === "vehicle" ? 2.6 : this.kind === "swimmer" ? 2 : 5;
+    this.speed += (targetSpeed - this.speed) * Math.min(1, dt * grip);
+    this.accel = (this.speed - before) / Math.max(dt, 1e-3);
     this.x += this.dir * this.speed * dt;
     this.x = Math.max(-this.bounds, Math.min(this.bounds, this.x));
     this.stepPhase += (this.speed / 0.62) * dt / 0.36;
   }
 
   private poseFor(m: AliveMotion, t: number, now: number): Pose {
+    switch (this.kind) {
+      case "vehicle":
+        return this.vehicle(m, t, now);
+      case "plant":
+        return plant(m, t, now);
+      case "flyer":
+        return this.flyer(m, t, now);
+      case "swimmer":
+        return this.swimmer(m, t, now);
+      case "thing":
+        // No arms to wave; walking is a bouncy hop along.
+        if (m === "walk") return this.hopAlong(now);
+        if (m === "wave") return this.idle(t, now);
+        break;
+    }
     switch (m) {
       case "idle":
         return this.idle(t, now);
@@ -237,6 +307,201 @@ export class MotionController {
       case "wave":
         return wave(t, now);
     }
+  }
+
+  /** Whole-body hops instead of steps, for drawings that are not creatures. */
+  private hopAlong(now: number): Pose {
+    const p = breathing(now, 2.6, 0.015);
+    const moving = Math.min(1, this.speed / SPEED.thing);
+    const s = this.stepPhase * 0.75;
+    const k = Math.floor(s);
+    const q = s - k;
+    p.lift = 0.16 * 4 * q * (1 - q) * moving;
+    p.air = 4 * q * (1 - q) * moving;
+    p.squash += 0.06 * Math.abs(1 - 2 * q) * moving;
+    p.lean = -this.dir * 0.05 * moving;
+    if (k !== this.lastStepIndex) {
+      this.lastStepIndex = k;
+      if (moving > 0.3) this.squash.v -= 3.2 * moving;
+    }
+    return p;
+  }
+
+  /** Cars, buses, boats: no legs. They rumble, roll, hop bumps and honk. */
+  private vehicle(m: AliveMotion, t: number, now: number): Pose {
+    const p = { ...ZERO };
+    // Engine rumble: a tiny fast shake whenever the engine is on.
+    const rumble = m === "sleep" ? 0 : 1;
+    p.lift = 0.005 * rumble * (0.5 + 0.5 * Math.sin(now * TAU * 11));
+    p.squash = 0.007 * rumble * Math.sin(now * TAU * 7.3);
+    switch (m) {
+      case "walk": {
+        const moving = Math.min(1, this.speed / SPEED.vehicle);
+        // A small bump now and then on the road.
+        const s = this.stepPhase * 0.5;
+        const q = s - Math.floor(s);
+        const bump = q < 0.18 ? Math.sin((q / 0.18) * Math.PI) : 0;
+        p.lift += 0.035 * bump * moving;
+        p.air = 0.2 * bump * moving;
+        // Leans back when speeding up, dips forward when braking.
+        p.lean = Math.max(-0.09, Math.min(0.09, this.dir * this.accel * 0.05));
+        break;
+      }
+      case "jump": {
+        const c = t % 2.0;
+        if (c < 0.25) p.squash -= 0.1 * ease(c / 0.25);
+        else if (c < 0.85) {
+          const q = (c - 0.25) / 0.6;
+          p.lift += 0.3 * 4 * q * (1 - q);
+          p.air = 4 * q * (1 - q);
+          p.lean = 0.12 * Math.sin(q * TAU);
+          p.squash += 0.06 * Math.abs(1 - 2 * q);
+        } else if (this.jumpLanded !== Math.floor(t / 2.0)) {
+          this.jumpLanded = Math.floor(t / 2.0);
+          this.squash.v -= 5;
+        }
+        break;
+      }
+      case "dance": {
+        // Honk: two quick squashes, then a pause.
+        const c = t % 1.6;
+        const honk = (at: number) => (c > at && c < at + 0.22 ? Math.sin(((c - at) / 0.22) * Math.PI) : 0);
+        const h = Math.max(honk(0.05), honk(0.42));
+        p.squash += -0.13 * h;
+        p.lift += 0.02 * h;
+        break;
+      }
+      case "sleep": {
+        const settle = ease(t / 1.2);
+        p.squash = -0.035 * settle + 0.01 * Math.sin((TAU * t) / 4.2) * settle;
+        break;
+      }
+      case "bounce": {
+        const q = (t % 0.9) / 0.9;
+        p.lift += 0.14 * 4 * q * (1 - q);
+        p.air = 4 * q * (1 - q);
+        p.squash += 0.05 * Math.abs(1 - 2 * q);
+        break;
+      }
+    }
+    return p;
+  }
+
+  /** Birds, butterflies, planes, kites: they float above the ground. */
+  private flyer(m: AliveMotion, t: number, now: number): Pose {
+    const p = { ...ZERO };
+    const flap = (rate: number, amount: number) => amount * Math.sin(now * TAU * rate);
+    p.lift = FLY_HEIGHT + 0.04 * Math.sin((TAU * now) / 1.6);
+    p.squash = flap(3, 0.03);
+    p.lean = 0.03 * Math.sin((TAU * now) / 2.7);
+    switch (m) {
+      case "walk": {
+        // Loop across the sky: up and down along the way, tilting into the path.
+        const moving = Math.min(1, this.speed / SPEED.flyer);
+        const s = this.stepPhase * 0.55;
+        p.lift = FLY_HEIGHT + 0.2 * Math.sin(s * Math.PI) * moving + 0.03 * Math.sin((TAU * now) / 1.6);
+        p.lean = -this.dir * 0.22 * Math.cos(s * Math.PI) * moving;
+        p.squash = flap(5, 0.05);
+        break;
+      }
+      case "jump": {
+        // Flap up hard, then glide back down.
+        const c = t % 1.8;
+        const up = c < 0.7 ? ease(c / 0.7) : 1 - ease((c - 0.7) / 1.1);
+        p.lift = FLY_HEIGHT + 0.32 * up;
+        p.squash = c < 0.7 ? flap(7, 0.09) : flap(2, 0.02);
+        break;
+      }
+      case "dance": {
+        const b = (t / 0.5) * Math.PI;
+        p.lean = 0.25 * Math.sin(b);
+        p.lift = FLY_HEIGHT + 0.08 * Math.abs(Math.sin(b));
+        p.squash = flap(4, 0.05);
+        p.wiggleAmp = 0.04;
+        p.wigglePhase = 2 * b;
+        break;
+      }
+      case "sleep": {
+        // Lands, folds up and sleeps.
+        const settle = ease(t / 1.4);
+        const b = Math.sin((TAU * t) / 4.2);
+        p.lift = FLY_HEIGHT * (1 - settle);
+        p.squash = (0.03 * b - 0.04) * settle + flap(3, 0.03) * (1 - settle);
+        p.head = 0.15 * settle;
+        p.lean = 0.06 * settle;
+        break;
+      }
+      case "bounce": {
+        p.lift = FLY_HEIGHT + 0.1 * Math.sin((TAU * t) / 0.9);
+        p.squash = flap(4, 0.05);
+        break;
+      }
+    }
+    p.air = Math.min(1, p.lift / 0.7);
+    return p;
+  }
+
+  /** Fish, whales, turtles: they float in water and swim with a ripple. */
+  private swimmer(m: AliveMotion, t: number, now: number): Pose {
+    const p = { ...ZERO };
+    p.lift = SWIM_HEIGHT + 0.05 * Math.sin((TAU * now) / 2.2);
+    p.swimAmp = 0.035;
+    p.swimPhase = now * 3;
+    p.lean = 0.04 * Math.sin(now * 0.9);
+    switch (m) {
+      case "walk": {
+        const moving = Math.min(1, this.speed / SPEED.swimmer);
+        p.swimAmp = 0.035 + 0.06 * moving;
+        p.swimPhase = now * (3 + 5 * moving);
+        p.lift = SWIM_HEIGHT + 0.06 * Math.sin(this.stepPhase * 0.4);
+        break;
+      }
+      case "jump": {
+        // Leap: up out of the water in an arc, nose up then nose down, with a splash.
+        const cycle = 2.4;
+        const k = Math.floor(t / cycle);
+        const c = t % cycle;
+        const air0 = 0.2,
+          air1 = 1.15;
+        if (c >= air0 && c < air1) {
+          const q = (c - air0) / (air1 - air0);
+          p.lift = SWIM_HEIGHT + 0.55 * 4 * q * (1 - q);
+          p.lean = 0.5 * (1 - 2 * q);
+          p.swimAmp = 0.02;
+          if (this.splashCycle !== k * 2) {
+            this.splashCycle = k * 2;
+            this.splashAt = now;
+          }
+        } else if (c >= air1 && this.splashCycle !== k * 2 + 1) {
+          this.splashCycle = k * 2 + 1;
+          this.splashAt = now;
+          this.squash.v -= 3;
+        }
+        break;
+      }
+      case "dance": {
+        const b = (t / 0.55) * Math.PI;
+        p.swimAmp = 0.11;
+        p.swimPhase = now * 9;
+        p.lean = 0.2 * Math.sin(b);
+        break;
+      }
+      case "sleep": {
+        // Drifts down and rests near the bottom, still breathing.
+        const settle = ease(t / 1.6);
+        p.lift = SWIM_HEIGHT * (1 - settle) + 0.02 * settle + 0.015 * Math.sin((TAU * t) / 4.2);
+        p.swimAmp = 0.035 * (1 - settle) + 0.012 * settle;
+        p.swimPhase = now * (3 - 2 * settle);
+        p.lean = 0.04 * settle;
+        break;
+      }
+      case "bounce": {
+        p.lift = SWIM_HEIGHT + 0.1 * Math.sin((TAU * t) / 1.1);
+        break;
+      }
+    }
+    p.air = 0.6;
+    return p;
   }
 
   private idle(t: number, now: number): Pose {
@@ -354,6 +619,96 @@ export class MotionController {
   }
 }
 
+/** Flowers, trees, cacti: rooted at the bottom, they bend more the higher up. */
+function plant(m: AliveMotion, t: number, now: number): Pose {
+  const p = { ...ZERO };
+  // Wind: a slow sway with the occasional gust.
+  const gust = 0.5 + 0.5 * Math.sin((TAU * now) / 9);
+  p.bend = (0.06 + 0.04 * gust) * Math.sin((TAU * now) / 3.2) + 0.02 * Math.sin((TAU * now) / 1.3 + 1);
+  p.squash = 0.012 * Math.sin((TAU * now) / 3.6);
+  switch (m) {
+    case "jump": {
+      // Grow: stretch up, hold, settle back.
+      const c = t % 3.2;
+      const up = c < 0.9 ? ease(c / 0.9) : c < 1.5 ? 1 : 1 - ease((c - 1.5) / 0.8);
+      p.squash += 0.15 * up;
+      p.bend *= 1 - 0.6 * up;
+      p.wiggleAmp = 0.02 * up;
+      p.wigglePhase = t * 12;
+      break;
+    }
+    case "dance": {
+      // Happy sway, side to side.
+      const b = (t / 0.55) * Math.PI;
+      p.bend = 0.16 * Math.sin(b);
+      p.squash = 0.05 * Math.cos(2 * b);
+      p.wiggleAmp = 0.03;
+      p.wigglePhase = 2 * b;
+      break;
+    }
+    case "sleep": {
+      // Droops gently.
+      const settle = ease(t / 1.5);
+      p.bend = -0.13 * settle + 0.015 * Math.sin((TAU * t) / 4.2);
+      p.squash = -0.08 * settle;
+      p.head = 0.22 * settle;
+      break;
+    }
+    case "bounce": {
+      const q = (t % 0.8) / 0.8;
+      p.squash += 0.08 * Math.sin(q * Math.PI);
+      break;
+    }
+  }
+  return p;
+}
+
+/** Tap reactions for kinds without a hop: honk, shiver, flip, flutter. */
+function kindReaction(kind: AliveKind, tr: number, pose: Pose) {
+  const decay = Math.max(0, 1 - tr / 1.4);
+  switch (kind) {
+    case "vehicle":
+      // Honk: squash comes from the spring kick in poke(); add a little shake.
+      pose.lift += 0.01 * Math.sin(tr * 50) * decay;
+      break;
+    case "plant":
+      pose.bend += 0.05 * Math.sin(tr * 42) * decay;
+      pose.wiggleAmp += 0.03 * decay;
+      pose.wigglePhase = tr * 30;
+      break;
+    case "swimmer": {
+      // Flip: a quick hop with a tail flick, nose up then down.
+      const q = clamp01(tr / 0.7);
+      pose.lean += 0.45 * Math.sin(q * TAU);
+      pose.lift += 0.14 * Math.sin(q * Math.PI);
+      pose.swimAmp += 0.1 * decay;
+      pose.swimPhase = tr * 20;
+      break;
+    }
+    case "flyer": {
+      // Flutter: fast little flaps and a lift.
+      pose.squash += 0.09 * Math.sin(tr * TAU * 8) * decay;
+      pose.lift += 0.1 * Math.sin(clamp01(tr / 0.8) * Math.PI);
+      break;
+    }
+  }
+}
+
+/** Reduced motion: keep the character recognisably alive, but small and slow. */
+function calmDown(p: Pose) {
+  p.squash *= 0.35;
+  p.bend *= 0.35;
+  p.lean *= 0.35;
+  p.head *= 0.35;
+  p.wiggleAmp = 0;
+  p.swimAmp *= 0.3;
+  p.armL *= 0.4;
+  p.armR *= 0.4;
+  p.legL *= 0.4;
+  p.legR *= 0.4;
+  p.arm *= 0.4;
+}
+
 function breathing(now: number, period: number, amount: number): Pose {
   const p = { ...ZERO };
   const b = Math.sin((TAU * now) / period);
@@ -415,6 +770,7 @@ function mixPose(a: Pose, b: Pose, t: number): Pose {
   }
   // Wiggle phase is an angle; blending phases jumps, so take the incoming one.
   out.wigglePhase = b.wiggleAmp > 0 ? b.wigglePhase : a.wigglePhase;
+  out.swimPhase = b.swimAmp > 0 ? b.swimPhase : a.swimPhase;
   return out;
 }
 

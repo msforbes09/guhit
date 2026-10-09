@@ -1,6 +1,5 @@
 import type { ChatTurn, PixelRect } from "@/lib/ai/types";
 import type { Joints } from "@/lib/alive";
-import type { Kind } from "./kind";
 import type { Character, Story } from "./types";
 
 /** A character the child made, plus everything they have said to each other. */
@@ -12,8 +11,6 @@ export interface Friend extends Character {
   seenAs?: string;
   /** Head, hands and feet the child tapped ("Make it move more"); creatures only. */
   joints?: Joints;
-  /** What sort of thing it is (see kindOf), saved with the confirmed description. */
-  kind?: Kind;
   createdAt: number;
   updatedAt: number;
 }

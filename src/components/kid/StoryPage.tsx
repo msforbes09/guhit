@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { Kind } from "@/lib/story/kind";
 import { AliveCharacter, type Motion } from "./alive";
 import { Backdrop, type Scene } from "./Backdrop";
 
@@ -12,6 +13,7 @@ export function StoryPage({
   cutout,
   scene,
   motion = "idle",
+  kind = "creature",
   talking = false,
   label,
   children,
@@ -20,6 +22,7 @@ export function StoryPage({
   cutout: string | undefined;
   scene: Scene;
   motion?: Motion;
+  kind?: Kind;
   talking?: boolean;
   /** Small caption in the scene's corner, e.g. "Page 2". */
   label?: string;
@@ -31,7 +34,7 @@ export function StoryPage({
       <Backdrop scene={scene} className="aspect-[16/10] w-full max-h-[52vh] shrink-0 rounded-t-[inherit]">
         {cutout && (
           <div className="absolute inset-0">
-            <AliveCharacter cutout={cutout} motion={motion} talking={talking} groundY={0.9} size={0.66} />
+            <AliveCharacter cutout={cutout} motion={motion} kind={kind} talking={talking} groundY={0.9} size={0.66} />
           </div>
         )}
         {label && (

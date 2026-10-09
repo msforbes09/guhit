@@ -45,6 +45,21 @@ const STARS = [
  */
 export function AliveStage({ night, className, style, characterRef, children, ...character }: AliveStageProps) {
   const isNight = night ?? character.motion === "sleep";
+  if (character.kind === "swimmer") {
+    return (
+      <div className={`${cls.stage} ${cls.sea} ${className ?? ""}`} style={{ containerType: "size", ...style }}>
+        <style href="guhit-alive" precedence="medium">
+          {ALIVE_CSS}
+        </style>
+        <Sea />
+        <div className={`${cls.night} ${isNight ? cls.nightOn : ""}`} aria-hidden />
+        <div className={cls.characterLayer}>
+          <AliveCharacter {...character} groundY={GROUND_Y} ref={characterRef} />
+        </div>
+        {children}
+      </div>
+    );
+  }
   return (
     <div className={`${cls.stage} ${className ?? ""}`} style={style}>
       <style href="guhit-alive" precedence="medium">
@@ -115,6 +130,53 @@ export function AliveStage({ night, className, style, characterRef, children, ..
       </div>
       {children}
     </div>
+  );
+}
+
+const BUBBLES = [
+  { x: 8, s: 14, d: 0 },
+  { x: 19, s: 9, d: 2.4 },
+  { x: 33, s: 18, d: 4.6 },
+  { x: 61, s: 10, d: 1.2 },
+  { x: 74, s: 16, d: 3.5 },
+  { x: 88, s: 11, d: 5.6 },
+];
+
+/** Underwater: light from above, sand and weed below, bubbles rising. Plain shapes only. */
+function Sea() {
+  return (
+    <>
+      <svg className={cls.sky} viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden>
+        <g fill="#ffffff" opacity="0.16">
+          <path d="M60 0 L110 0 L70 120 L30 120 Z" />
+          <path d="M190 0 L230 0 L210 120 L160 120 Z" />
+          <path d="M300 0 L345 0 L330 120 L285 120 Z" />
+        </g>
+        <path d="M0 6 q25 -6 50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0 t50 0" fill="none" stroke="#e6f6ff" strokeWidth="3" opacity="0.6" />
+      </svg>
+      <svg className={cls.ground} viewBox="0 0 400 140" preserveAspectRatio="none" aria-hidden>
+        <g fill="none" strokeWidth="7" strokeLinecap="round">
+          <path d="M40 140 C 30 110, 52 96, 40 70 C 32 52, 46 40, 42 26" stroke="#3f9e6b" />
+          <path d="M62 140 C 70 118, 54 104, 66 84" stroke="#56b97f" />
+          <path d="M340 140 C 352 112, 330 98, 344 70 C 352 54, 340 44, 346 30" stroke="#3f9e6b" />
+          <path d="M366 140 C 358 120, 374 106, 362 90" stroke="#56b97f" />
+        </g>
+        <path d="M0 108 C 100 98, 300 98, 400 108 L 400 140 L 0 140 Z" fill="#f2d79c" />
+        <g fill="#e9c47c">
+          <ellipse cx="120" cy="120" rx="10" ry="3" />
+          <ellipse cx="250" cy="126" rx="14" ry="3.5" />
+          <ellipse cx="300" cy="116" rx="8" ry="2.5" />
+        </g>
+      </svg>
+      {BUBBLES.map((b, i) => (
+        <span
+          key={i}
+          className={cls.bubble}
+          style={{ left: `${b.x}%`, width: b.s, height: b.s, animationDelay: `${-b.d}s` }}
+          aria-hidden
+        />
+      ))}
+    </>
   );
 }
 
