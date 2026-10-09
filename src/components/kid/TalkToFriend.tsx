@@ -8,7 +8,7 @@ import { saveFriend, type Friend } from "@/lib/story/db";
 import { JointPicker, loadCutout, type AliveCharacterHandle, type Cutout, type Joints, type Motion } from "./alive";
 import { FriendBooks } from "./FriendBooks";
 import { FriendStage } from "./FriendStage";
-import { useAIReady, usePushToTalk } from "./hooks";
+import { speechLevel, useAIReady, usePushToTalk } from "./hooks";
 import {
   ArrowFatLineUp,
   ArrowsClockwise,
@@ -58,6 +58,8 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   const [motion, setMotion] = useState<Motion>("idle");
   const [typed, setTyped] = useState("");
   const [showChat, setShowChat] = useState(false);
+  // The reply streams: the voice can start before its words reach the screen.
+  const [awaitingWords, setAwaitingWords] = useState(false);
   const moveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greeted = useRef(false);
   const character = useRef<AliveCharacterHandle>(null);
@@ -119,11 +121,14 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
     async (childSays: string, history: ChatTurn[]) => {
       setPhase("thinking");
       setOops(null);
+      setAwaitingWords(true);
       try {
         const reply = (await getAI().reply(friendRef.current, history.slice(-MEMORY_TURNS), childSays)).trim();
+        setAwaitingWords(false);
         await remember([...friendRef.current.chat, { who: "character", text: reply }]);
         await speak(reply);
       } catch {
+        setAwaitingWords(false);
         setOops({ message: `${friendRef.current.name} got a little mixed up.`, retry: childSays });
         setPhase("oops");
       }
@@ -157,6 +162,15 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
     }, 400);
     return () => clearTimeout(id);
   }, [ready, answer]);
+
+  // Talk the moment the character's voice is actually heard.
+  useEffect(
+    () =>
+      getAI().onSpeechStart((voice) => {
+        if (voice === "character") setPhase((p) => (p === "thinking" ? "speaking" : p));
+      }),
+    [],
+  );
 
   useEffect(
     () => () => {
@@ -215,7 +229,13 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   const listening = mic.state === "recording";
 
   let bubble: ReactNode;
-  if (phase === "thinking" || phase === "hearing") {
+  if (phase === "speaking" && awaitingWords) {
+    bubble = (
+      <SpeechBubble className="anim-pop-in" live={false}>
+        <ThinkingDots size="lg" label={`${name} is talking`} />
+      </SpeechBubble>
+    );
+  } else if (phase === "thinking" || phase === "hearing") {
     bubble = (
       <SpeechBubble tone="think" className="anim-pop-in">
         <ThinkingDots size="lg" label={`${name} is thinking`} />
@@ -269,6 +289,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
             joints={friend.joints}
             motion={phase === "thinking" || phase === "hearing" ? "idle" : motion}
             talking={phase === "speaking"}
+            level={speechLevel}
             thinking={phase === "thinking" || phase === "hearing"}
             characterRef={character}
             bubble={bubble}
@@ -291,9 +312,9 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
                 onStop={mic.stop}
               />
               {(said || lastLine) && !listening && !busy && (
-                <div className="flex w-full flex-wrap items-center justify-center gap-2">
+                <div className="flex w-full flex-col items-center gap-2">
                   {said && (
-                    <p className="min-w-0 flex-1 rounded-2xl bg-white/80 px-4 py-2 text-lg text-ink-soft">
+                    <p className="w-full rounded-2xl bg-white/80 px-4 py-2 text-lg text-ink-soft">
                       <span className="font-bold text-ink">You said:</span> {said}
                     </p>
                   )}
@@ -377,7 +398,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
               <button
                 type="button"
                 onClick={openPicker}
-                className="mt-3 inline-flex min-h-12 items-center gap-2 font-display text-lg font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
+                className="mt-3 inline-flex min-h-14 items-center gap-2 font-display text-lg font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
               >
                 <Sparkle size={22} weight="fill" aria-hidden="true" />
                 {friend.joints ? "Change how I move" : "Make it move more"}
@@ -393,7 +414,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
                 type="button"
                 onClick={() => setShowChat((v) => !v)}
                 aria-expanded={showChat}
-                className="inline-flex min-h-12 items-center gap-2 font-display text-lg font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
+                className="inline-flex min-h-14 items-center gap-2 font-display text-lg font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
               >
                 <ChatCircleDots size={24} weight="bold" aria-hidden="true" />
                 {showChat ? "Hide our chat" : "See our chat"}

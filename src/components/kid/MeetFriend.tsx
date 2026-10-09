@@ -6,7 +6,7 @@ import { deleteFriend, saveFriend, type Friend } from "@/lib/story/db";
 import { nameFrom, parseIntro, readYesNo, tidy } from "@/lib/story/intro";
 import { NotThisOne } from "./BringToLife";
 import { FriendStage } from "./FriendStage";
-import { useAIReady, usePushToTalk } from "./hooks";
+import { speechLevel, useAIReady, usePushToTalk, useSpeakingVoice } from "./hooks";
 import { ArrowsClockwise, Check, Keyboard, PaperPlaneRight, X } from "./icons";
 import { MicButton } from "./MicButton";
 import { ReadyCard } from "./ReadyCard";
@@ -37,6 +37,7 @@ const LINES: Record<Exclude<Step, "looking" | "guess" | "confirm" | "flagged">, 
 /** First meeting: the drawing guesses what it is, the child corrects it and names it. */
 export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: Friend) => void }) {
   const ready = useAIReady();
+  const speaking = useSpeakingVoice() === "character";
   const [step, setStep] = useState<Step>("looking");
   const stepRef = useRef<Step>("looking");
   const [guess, setGuess] = useState("");
@@ -361,6 +362,8 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
           name={name}
           motion={step === "confirm" ? "bounce" : step === "looking" ? "idle" : "wave"}
           thinking={step === "looking" || hearing}
+          talking={speaking && !hearing}
+          level={speechLevel}
           className="h-[44vh] min-h-72 lg:h-[72vh]"
           bubble={
             step === "looking" || hearing ? (
