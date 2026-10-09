@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AliveStage } from "@/components/alive/AliveStage";
 import type { AliveCharacterHandle, AliveStats } from "@/components/alive/AliveCharacter";
+import { CutoutTouchUp } from "@/components/alive/CutoutTouchUp";
 import { cutout, cutoutFromCanvas, maskToCanvas } from "@/lib/alive/cutout";
 import { ALIVE_MOTIONS, type AliveMotion, type CutoutWithDebug } from "@/lib/alive/types";
 import { filmstrip } from "./filmstrip";
@@ -22,6 +23,7 @@ export function AliveLab() {
   const [taps, setTaps] = useState(0);
   const [drawing, setDrawing] = useState(false);
   const [strip, setStrip] = useState<{ url: string; label: string } | null>(null);
+  const [touching, setTouching] = useState(false);
   const charRef = useRef<AliveCharacterHandle>(null);
   const [source, setSource] = useState<Blob | null>(null);
 
@@ -34,7 +36,8 @@ export function AliveLab() {
       return URL.createObjectURL(blob);
     });
     try {
-      setResult(await cutout(blob, { debug: true }));
+      setResult(await cutout(blob, { debug: true, editable: true }));
+      setTouching(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -52,7 +55,8 @@ export function AliveLab() {
         if (old) URL.revokeObjectURL(old);
         return URL.createObjectURL(blob);
       });
-      setResult(await cutoutFromCanvas(c, { debug: true }));
+      setResult(await cutoutFromCanvas(c, { debug: true, editable: true }));
+      setTouching(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -109,7 +113,7 @@ export function AliveLab() {
             setBusy("Loading the AI model…");
             setError(null);
             try {
-              setResult(await cutout(source, { method: "ai", debug: true, onProgress: setBusy }));
+              setResult(await cutout(source, { method: "ai", debug: true, editable: true, onProgress: setBusy }));
             } catch (e) {
               setError(e instanceof Error ? e.message : String(e));
             } finally {
@@ -119,11 +123,29 @@ export function AliveLab() {
         >
           Try AI cut-out
         </button>
+        <button
+          className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50"
+          disabled={!result?.edit}
+          onClick={() => setTouching((t) => !t)}
+        >
+          {touching ? "Close touch-up" : "Touch up"}
+        </button>
         {busy && <span className="text-sm text-violet-700">{busy}</span>}
         {error && <span className="text-sm text-red-600">Error: {error}</span>}
       </section>
 
       {drawing && <DrawPad onDone={runCanvas} disabled={!!busy} />}
+
+      {touching && result?.edit && (
+        <CutoutTouchUp
+          cutout={result}
+          onCancel={() => setTouching(false)}
+          onDone={(fixed) => {
+            setResult({ ...fixed, debug: result.debug && { ...result.debug, fullAlpha: maskToAlpha(fixed.edit!.mask) } });
+            setTouching(false);
+          }}
+        />
+      )}
 
       {result && (
         <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -275,6 +297,12 @@ export function AliveLab() {
       </div>
     </main>
   );
+}
+
+function maskToAlpha(mask: Uint8Array): Uint8ClampedArray {
+  const a = new Uint8ClampedArray(mask.length);
+  for (let i = 0; i < mask.length; i++) a[i] = mask[i] ? 255 : 0;
+  return a;
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {

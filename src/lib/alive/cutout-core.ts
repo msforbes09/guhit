@@ -27,6 +27,17 @@ export interface CoreOptions {
   closeFrac?: number;
   /** Return intermediate masks for the lab page. */
   debug?: boolean;
+  /** Also return the full paper-corrected frame and mask, for the touch-up brush. */
+  editable?: boolean;
+}
+
+export interface CoreEdit {
+  /** Full processed frame, paper-corrected, opaque RGBA. */
+  image: Uint8ClampedArray;
+  /** Hard mask (0/1) before feathering. */
+  mask: Uint8Array;
+  width: number;
+  height: number;
 }
 
 export interface CoreResult {
@@ -46,6 +57,7 @@ export interface CoreResult {
   fullAlpha?: Uint8ClampedArray;
   /** Full-frame ink score 0..255 (processed size), for debug views. */
   scoreMap?: Uint8ClampedArray;
+  edit?: CoreEdit;
 }
 
 type Now = () => number;
@@ -213,6 +225,7 @@ export function cutoutCore(
     timings,
     stats,
   };
+  if (options.editable) result.edit = correctedFrame(R, G, B, W, H, selected, shade2);
   if (options.debug) {
     result.fullAlpha = alphaFull;
     const sm = new Uint8ClampedArray(N);
@@ -287,8 +300,63 @@ export function cutoutFromMask(
     timings,
     stats,
   };
+  if (options.editable) result.edit = correctedFrame(R, G, B, W, H, selected, shade2);
   if (options.debug) result.fullAlpha = cut.alphaFull;
   return result;
+}
+
+/**
+ * Re-finish after a touch-up: the edited hard mask over the corrected frame
+ * gets the same soft edge and crop as a fresh cut-out.
+ */
+export function finishFromEdit(edit: CoreEdit): CoreResult {
+  const { image, mask, width: W, height: H } = edit;
+  const N = W * H;
+  const R = new Float32Array(N),
+    G = new Float32Array(N),
+    B = new Float32Array(N);
+  const one = new Float32Array(N).fill(255);
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    R[i] = image[j];
+    G[i] = image[j + 1];
+    B[i] = image[j + 2];
+  }
+  const t0 = now();
+  const cut = finishCut(R, G, B, W, H, mask, { r: one, g: one, b: one });
+  let area = 0;
+  for (let i = 0; i < N; i++) area += mask[i];
+  return {
+    rgba: cut.rgba,
+    alpha: cut.alpha,
+    width: cut.crop.w,
+    height: cut.crop.h,
+    crop: cut.crop,
+    quality: cut.empty ? "poor" : "good",
+    reasons: cut.reasons,
+    timings: { finish: Math.round((now() - t0) * 10) / 10 },
+    stats: { fgFrac: round3(area / N) },
+    edit: { image, mask, width: W, height: H },
+  };
+}
+
+function correctedFrame(
+  R: Float32Array,
+  G: Float32Array,
+  B: Float32Array,
+  W: number,
+  H: number,
+  selected: Uint8Array,
+  shade: Shade,
+): CoreEdit {
+  const N = W * H;
+  const image = new Uint8ClampedArray(N * 4);
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    image[j] = (R[i] / shade.r[i]) * 255;
+    image[j + 1] = (G[i] / shade.g[i]) * 255;
+    image[j + 2] = (B[i] / shade.b[i]) * 255;
+    image[j + 3] = 255;
+  }
+  return { image, mask: selected.slice(), width: W, height: H };
 }
 
 /** Keep the biggest piece and the pieces close to it. */

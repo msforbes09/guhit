@@ -14,6 +14,7 @@ export type WorkerRequest =
       maxSide: number;
       method: "classical" | "ai";
       debug: boolean;
+      editable: boolean;
     }
   | { id: number; type: "preload" };
 
@@ -38,12 +39,13 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     let result: RunResult;
     if (req.method === "ai") {
       const { runAi } = await import("./ai-segment");
-      result = await runAi(req.blob, req.maxSide, req.debug, progress);
+      result = await runAi(req.blob, req.maxSide, req.debug, progress, req.editable);
     } else {
-      result = await runClassical(req.blob, req.maxSide, req.debug);
+      result = await runClassical(req.blob, req.maxSide, req.debug, req.editable);
     }
     const transfer: Transferable[] = [result.mask.buffer];
     if (result.fullAlpha) transfer.push(result.fullAlpha.buffer);
+    if (result.edit) transfer.push(result.edit.image.buffer, result.edit.mask.buffer);
     ctx.postMessage({ id: req.id, type: "result", result } satisfies WorkerResponse, transfer);
   } catch (err) {
     ctx.postMessage({

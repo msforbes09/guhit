@@ -1,6 +1,7 @@
-import { alphaToMaskRgba, context2d, decodeToPixels, round1, runClassical, type RunResult } from "./cutout-run";
+import { finishFromEdit } from "./cutout-core";
+import { alphaToMaskRgba, context2d, decodeToPixels, encodeRgba, round1, runClassical, type RunResult } from "./cutout-run";
 import type { WorkerRequest, WorkerResponse } from "./segment.worker";
-import type { Cutout, CutoutOptions, CutoutWithDebug } from "./types";
+import type { Cutout, CutoutEdit, CutoutMeta, CutoutOptions, CutoutWithDebug } from "./types";
 
 /**
  * Cut the character out of a photo of a drawing (or an on-screen drawing).
@@ -13,15 +14,16 @@ export async function cutout(image: Blob | string, options: CutoutOptions = {}):
   const maxSide = options.maxSide ?? 1024;
   const debug = options.debug ?? false;
   const method = options.method ?? "classical";
+  const editable = options.editable ?? false;
 
   let run: RunResult;
   const worker = getWorker();
   if (worker) {
-    run = (await callWorker(worker, { type: "cutout", blob, maxSide, method, debug }, options.onProgress))!;
+    run = (await callWorker(worker, { type: "cutout", blob, maxSide, method, debug, editable }, options.onProgress))!;
   } else if (method === "ai") {
     throw new Error("AI cut-out needs Web Worker and OffscreenCanvas support");
   } else {
-    run = await runClassical(blob, maxSide, debug);
+    run = await runClassical(blob, maxSide, debug, editable);
   }
   run.meta.timings.total = round1(performance.now() - t0);
   return toCutout(run);
@@ -35,6 +37,20 @@ export async function preloadAiCutout(onProgress?: (text: string) => void): Prom
   const worker = getWorker();
   if (!worker) throw new Error("AI cut-out needs Web Worker and OffscreenCanvas support");
   await callWorker(worker, { type: "preload" }, onProgress);
+}
+
+/** Turn a touched-up mask back into a cut-out (same soft edge and crop). */
+export async function applyTouchUp(edit: CutoutEdit, mask: Uint8Array, base?: CutoutMeta): Promise<Cutout> {
+  const core = finishFromEdit({ ...edit, mask });
+  const png = await encodeRgba(core.rgba, core.width, core.height);
+  return {
+    png,
+    width: core.width,
+    height: core.height,
+    mask: new ImageData(alphaToMaskRgba(core.alpha), core.width, core.height),
+    meta: base ? { ...base, crop: core.crop, reasons: core.reasons, quality: core.quality } : undefined,
+    edit: { ...edit, mask },
+  };
 }
 
 /** On-screen drawing: same pipeline, the canvas is read as a PNG. */
@@ -69,6 +85,7 @@ function toCutout(run: RunResult): CutoutWithDebug {
     height: run.height,
     mask: new ImageData(new Uint8ClampedArray(run.mask), run.width, run.height),
     meta: run.meta,
+    edit: run.edit,
   };
   if (run.fullAlpha) {
     out.debug = { fullAlpha: run.fullAlpha, width: run.processedWidth, height: run.processedHeight };
@@ -128,7 +145,9 @@ function callWorker(w: Worker, req: WorkerJob, onProgress?: (t: string) => void)
     w.postMessage({ ...req, id } as WorkerRequest);
   }).catch(async (err) => {
     // The classical pipeline can always run on the main thread instead.
-    if (req.type === "cutout" && req.method === "classical") return runClassical(req.blob, req.maxSide, req.debug);
+    if (req.type === "cutout" && req.method === "classical") {
+      return runClassical(req.blob, req.maxSide, req.debug, req.editable);
+    }
     throw err;
   });
 }

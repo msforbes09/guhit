@@ -82,6 +82,7 @@ export async function runAi(
   maxSide: number,
   debug: boolean,
   onProgress?: (text: string) => void,
+  editable = false,
 ): Promise<RunResult> {
   const t0 = performance.now();
   const seg = await loadSegmenter(onProgress);
@@ -104,7 +105,7 @@ export async function runAi(
       alpha[y * px.width + x] = out.data[(oy * out.width + ox) * out.channels + (out.channels - 1)];
     }
   }
-  const core = cutoutFromMask(px.data, px.width, px.height, alpha, { debug });
+  const core = cutoutFromMask(px.data, px.width, px.height, alpha, { debug, editable });
   const t4 = performance.now();
   const png = await encodeRgba(core.rgba, core.width, core.height);
   const t5 = performance.now();
@@ -135,5 +136,6 @@ export async function runAi(
     fullAlpha: debug ? core.fullAlpha : undefined,
     processedWidth: px.width,
     processedHeight: px.height,
+    edit: core.edit,
   };
 }

@@ -20,6 +20,16 @@ export interface CutoutMeta {
   stats?: Record<string, number>;
 }
 
+/** Full processed frame kept for the touch-up brush. */
+export interface CutoutEdit {
+  /** Paper-corrected frame, opaque RGBA. */
+  image: Uint8ClampedArray;
+  /** Hard mask, 1 = part of the character. */
+  mask: Uint8Array;
+  width: number;
+  height: number;
+}
+
 export interface Cutout {
   /** PNG data URL: transparent background, cropped to the character with small padding. */
   png: string;
@@ -28,6 +38,8 @@ export interface Cutout {
   /** Alpha of the cut-out as ImageData: every channel of a pixel holds that pixel's alpha. */
   mask: ImageData;
   meta?: CutoutMeta;
+  /** Present when cut out with `{ editable: true }`; feed it to <CutoutTouchUp>. */
+  edit?: CutoutEdit;
 }
 
 export interface CutoutOptions {
@@ -37,6 +49,8 @@ export interface CutoutOptions {
   method?: "classical" | "ai";
   /** Also return the full-frame mask, for the lab page. */
   debug?: boolean;
+  /** Keep the full frame so the result can be touched up with a brush. */
+  editable?: boolean;
   onProgress?: (text: string) => void;
 }
 
