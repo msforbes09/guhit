@@ -69,6 +69,13 @@ const LETTERS = (() => {
   ];
 })();
 const INK_I = 3;
+/**
+ * The writing crayon is the logo's crayon at full size, held at a slant with
+ * its point on the stroke. Its tail leans up and right, over letters not yet
+ * written, and the hold turns more upright towards the end of the word so the
+ * tail stays on a phone screen.
+ */
+const holdAngle = (x: number) => -135 - 28 * clamp((x - 230) / 170);
 const STROKES = LETTERS.flatMap((paths, letter) => paths.map((d) => ({ d, letter })));
 /** The crayon's flat end, which it squashes onto as it lands. */
 const CRAYON_FOOT = { x: I_X, y: 134 };
@@ -167,24 +174,25 @@ export function Splash({ version }: { version: string }) {
 
       const enter = along(c, T.enter);
       const hop = along(c, T.hop, ease.inOut);
-      let x: number, y: number, rot: number, s: number;
+      let x: number, y: number, rot: number;
       if (hop <= 0) {
         const at = penAt(c);
         const wobble = c > T.write[0] && c < T.write[1] ? Math.sin(c * 0.045) : 0;
         x = at.x - (1 - enter) * 80 + wobble * 0.6;
         y = at.y - (1 - enter) * 110 - 12 * at.lift + Math.cos(c * 0.06) * 0.4;
-        rot = -140 + wobble * 3 - (1 - enter) * 20;
-        s = 0.42 + 0.04 * enter;
+        rot = holdAngle(at.x) + wobble * 3 - (1 - enter) * 20;
       } else {
-        // 2. Hop back and land upright on the ink i, squashing it out.
+        // 2. Hop back and land upright on the ink i, squashing it out. It
+        // flips backwards, tail up and over the word, so it never swings off
+        // the right edge.
         x = landFrom.x + (tip.x - landFrom.x) * hop;
         y = landFrom.y + (tip.y - landFrom.y) * hop - 280 * hop * (1 - hop);
-        rot = -140 + 140 * hop;
-        s = 0.46 + 0.54 * ease.out(hop);
+        const from = holdAngle(landFrom.x);
+        rot = from + (-360 - from) * hop;
       }
       const landed = c >= T.hop[1];
       if (pen.current) {
-        pen.current.setAttribute("transform", `translate(${x} ${y}) rotate(${rot}) scale(${s}) translate(${-tip.x} ${-tip.y})`);
+        pen.current.setAttribute("transform", `translate(${x} ${y}) rotate(${rot}) translate(${-tip.x} ${-tip.y})`);
         pen.current.style.opacity = landed ? "0" : `${Math.min(1, enter * 3)}`;
       }
       if (crayon.current) {
