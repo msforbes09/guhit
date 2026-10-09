@@ -398,7 +398,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
               <button
                 type="button"
                 onClick={openPicker}
-                className="mt-3 inline-flex min-h-12 items-center gap-2 font-display text-lg font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
+                className="mt-3 inline-flex min-h-14 items-center gap-2 font-display text-lg font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
               >
                 <Sparkle size={22} weight="fill" aria-hidden="true" />
                 {friend.joints ? "Change how I move" : "Make it move more"}
@@ -414,7 +414,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
                 type="button"
                 onClick={() => setShowChat((v) => !v)}
                 aria-expanded={showChat}
-                className="inline-flex min-h-12 items-center gap-2 font-display text-lg font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
+                className="inline-flex min-h-14 items-center gap-2 font-display text-lg font-bold text-ink-soft underline decoration-2 underline-offset-4 hover:text-ink"
               >
                 <ChatCircleDots size={24} weight="bold" aria-hidden="true" />
                 {showChat ? "Hide our chat" : "See our chat"}
