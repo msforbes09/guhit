@@ -447,6 +447,16 @@ export class RealAI implements LocalAI {
         .filter((s) => s.endsWith("?"))
         .map(sameText),
     );
+    // Likewise a stock exclamation ("How cool!") at the end of reply after reply.
+    const isExclamation = (s: string) => s.endsWith("!") && s.split(/\s+/).length <= 4;
+    const exclaimedLately = new Set(
+      history
+        .filter((t) => t.who === "character")
+        .slice(-3)
+        .flatMap((t) => splitSentences(t.text))
+        .filter(isExclamation)
+        .map(sameText),
+    );
     let firstSentenceMs: number | undefined;
     let firstSpokenMs: number | undefined;
     let metric: CallMetric | null = null;
@@ -476,6 +486,10 @@ export class RealAI implements LocalAI {
         return false;
       }
       if (sentence.endsWith("?") && askedBefore.has(sameText(sentence))) return false;
+      if (isExclamation(sentence) && exclaimedLately.has(sameText(sentence))) {
+        // Drop it; stop if the reply already says something, else let the model go on.
+        return sentences.length === 0;
+      }
       say(sentence);
       return sentences.length < MAX_REPLY_SENTENCES;
     };
