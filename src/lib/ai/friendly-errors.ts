@@ -34,7 +34,7 @@ export function explainLoadError(error: unknown): FriendlyError {
   if (GPU.test(message)) {
     return {
       kind: "gpu",
-      title: "This browser can't use this computer's graphics chip for Guhit.",
+      title: "This browser can't use this device's graphics chip for Guhit.",
       action: "Guhit can run without it, only slower. Tap below to carry on that way.",
       button: "Continue without the graphics chip",
     };
