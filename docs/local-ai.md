@@ -85,8 +85,8 @@ and `nextQuestion(story)`, and `titleFor(story)` at the end. Narration uses
 ## Voices
 
 Kokoro-82M, a neural voice that runs on the device (`src/lib/ai/voice/`,
-`src/workers/tts.worker.ts`): WebGPU in full precision on laptops, the CPU
-(8-bit) on phones. Narrator `af_heart`, character `af_bella` a semitone higher;
+`src/workers/tts.worker.ts`): the 8-bit model on the CPU (wasm) on every
+device (`?ttsDevice=webgpu` lets `/lab` try the GPU). Narrator `af_heart`, character `af_bella` a semitone higher;
 `/lab` switches voices, speed and pitch, or the engine. Sentences are voiced
 one at a time and played back to back through Web Audio, so the first words
 start while the rest is still being made.
