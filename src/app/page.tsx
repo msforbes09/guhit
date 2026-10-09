@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AIStatusPill } from "@/components/kid/AIStatusPill";
 import { FriendShelf } from "@/components/kid/FriendShelf";
 import { HeroDoodle } from "@/components/kid/HeroDoodle";
+import { InstallNudge } from "@/components/kid/InstallNudge";
 import { Logo } from "@/components/kid/Logo";
 import { Camera, DownloadSimple, PaintBrush } from "@/components/kid/icons";
 import { LinkButton, Scribble } from "@/components/kid/ui";
@@ -54,6 +55,8 @@ export default function Home() {
       </section>
 
       <FriendShelf />
+
+      <InstallNudge className="mt-10" />
 
       <footer className="mt-auto flex flex-wrap items-center justify-between gap-x-6 gap-y-2 pt-10 text-base text-ink-soft">
         <p>Everything stays on this device. No internet needed.</p>
