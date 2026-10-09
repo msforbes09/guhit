@@ -7,6 +7,7 @@ import { nameFrom, parseIntro, readYesNo, tidy } from "@/lib/story/intro";
 import { kindOf } from "@/lib/story/kind";
 import { NotThisOne } from "./BringToLife";
 import { FriendStage } from "./FriendStage";
+import { greetingMotion } from "./moves";
 import { speechLevel, useAIReady, usePushToTalk, useSpeakingVoice } from "./hooks";
 import { ArrowsClockwise, Check, Keyboard, PaperPlaneRight, X } from "./icons";
 import { MicButton } from "./MicButton";
@@ -362,10 +363,9 @@ export function MeetFriend({ friend, onMet }: { friend: Friend; onMet: (friend: 
         <FriendStage
           cutout={friend.cutout ?? friend.drawing}
           name={name}
-          // Only something with arms waves hello; a car or a flower bounces instead.
-          motion={
-            step === "confirm" || kindOf(about, guess || friend.seenAs) !== "creature" ? "bounce" : step === "looking" ? "idle" : "wave"
-          }
+          // Creatures wave hello; a car rumbles, a flower sways: each its own idle.
+          kind={kindOf(about, guess || friend.seenAs)}
+          motion={step === "confirm" ? "bounce" : step === "looking" ? "idle" : greetingMotion(kindOf(about, guess || friend.seenAs))}
           thinking={step === "looking" || hearing}
           talking={speaking && !hearing}
           level={speechLevel}

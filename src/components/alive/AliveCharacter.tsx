@@ -6,7 +6,7 @@ import { MotionController, type Pose } from "@/lib/alive/motion";
 import { createRenderer, type Placement, type Renderer, type Rigging } from "@/lib/alive/renderer";
 import { buildSkeleton, computeSkin, type Joints } from "@/lib/alive/skeleton";
 import { analyzeMask, buildMesh, hitMask, type Mesh, type RigInfo } from "@/lib/alive/rig";
-import type { AliveMotion, Cutout } from "@/lib/alive/types";
+import type { AliveKind, AliveMotion, Cutout } from "@/lib/alive/types";
 import { ALIVE_CSS, cls } from "./styles";
 
 export interface AliveCharacterHandle {
@@ -24,6 +24,8 @@ export interface AliveCharacterProps {
   /** A cut-out, or a stored transparent PNG data URL (Character.cutout). */
   cutout: Cutout | string;
   motion?: AliveMotion;
+  /** What the drawing is; each kind moves its own way (a car drives, a fish swims). */
+  kind?: AliveKind;
   /** While true the character pulses as if speaking. */
   talking?: boolean;
   /**
@@ -63,6 +65,7 @@ interface Burst {
   id: number;
   x: number;
   y: number;
+  type: "hearts" | "splash";
 }
 
 const HEARTS = ["💖", "⭐", "💛", "✨", "💜"];
@@ -70,6 +73,7 @@ const HEARTS = ["💖", "⭐", "💛", "✨", "💜"];
 export function AliveCharacter({
   cutout,
   motion = "idle",
+  kind = "creature",
   talking = false,
   level,
   onTap,
@@ -85,16 +89,18 @@ export function AliveCharacter({
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const zzzRef = useRef<HTMLDivElement>(null);
+  const dustRef = useRef<HTMLDivElement>(null);
+  const beepRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const [ctrl] = useState(() => new MotionController());
   const loadedRef = useRef<Loaded | null>(null);
   const frameRef = useRef<{ pose: Pose; place: Placement } | null>(null);
-  const props = useRef({ motion, talking, level, onTap, groundY, size, shadow, onStats });
+  const props = useRef({ motion, kind, talking, level, onTap, groundY, size, shadow, onStats });
   const [bursts, setBursts] = useState<Burst[]>([]);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    props.current = { motion, talking, level, onTap, groundY, size, shadow, onStats };
+    props.current = { motion, kind, talking, level, onTap, groundY, size, shadow, onStats };
   });
 
   const poke = useCallback(() => {
@@ -150,10 +156,17 @@ export function AliveCharacter({
     const ro = new ResizeObserver(resize);
     ro.observe(root);
 
+    // Reduced motion keeps the character alive but small and slow.
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
+    ctrl.setCalm(calm.matches);
+    const onCalm = () => ctrl.setCalm(calm.matches);
+    calm.addEventListener("change", onCalm);
+
     let raf = 0;
     let last = performance.now() / 1000;
     let frames = 0;
     let fpsStart = last;
+    let lastSplash = ctrl.splashAt;
 
     const tick = (ts: number) => {
       raf = requestAnimationFrame(tick);
@@ -165,6 +178,7 @@ export function AliveCharacter({
       const W = canvas.width,
         H = canvas.height;
 
+      ctrl.setKind(p.kind);
       ctrl.setMotion(p.motion, now);
       const lvl = typeof p.level === "function" ? p.level() : p.level;
       const pose = ctrl.update(now, dt, p.talking || lvl !== undefined, lvl ?? null);
@@ -173,14 +187,44 @@ export function AliveCharacter({
         const rig = L.rig;
         const widthUnits = Math.max(0.3, rig.right - rig.left);
         const ground = H * p.groundY;
-        // Leave head-room for the highest jump so the character never leaves the frame.
-        const scale = Math.min(H * p.size, ground / 1.75, (W * 0.85) / widthUnits);
+        // Leave head-room for the highest jump so the character never leaves the frame
+        // (more for things that hover or leap out of the water).
+        const headroom = p.kind === "flyer" || p.kind === "swimmer" ? 1.95 : 1.75;
+        // Wide travellers (cars, fish, birds) stay narrower than the stage so they have room to go.
+        const widthShare = p.kind === "vehicle" ? 0.55 : p.kind === "swimmer" ? 0.6 : p.kind === "flyer" ? 0.65 : 0.85;
+        const scale = Math.min(H * p.size, ground / headroom, (W * widthShare) / widthUnits);
         const margin = 0.04 * W;
         const half = Math.max(-rig.left, rig.right);
         ctrl.bounds = Math.max(0, (W / 2 - margin) / scale - half);
         const place: Placement = { centerX: W / 2, groundY: ground, scale };
         renderer.draw(pose, place, p.shadow);
         frameRef.current = { pose, place };
+
+        const dust = dustRef.current;
+        if (dust) {
+          // Dust puffs trail behind a vehicle while it drives.
+          const moving = Math.min(1, ctrl.speed / 0.95);
+          const rearX = (place.centerX + (pose.x - ctrl.dir * half * 0.85) * scale) / dpr;
+          dust.style.transform = `translate(${rearX}px, ${ground / dpr}px)`;
+          dust.style.opacity = moving > 0.15 ? String(moving) : "0";
+          dust.style.setProperty("--dir", String(ctrl.dir));
+        }
+        const beep = beepRef.current;
+        if (beep) {
+          const honking = p.motion === "dance" || ctrl.sincePoke(now) < 1.1;
+          const bx = (place.centerX + pose.x * scale) / dpr;
+          const by = (ground - (pose.lift + 1.02) * scale) / dpr;
+          beep.style.transform = `translate(${bx}px, ${by}px) translate(-50%, -100%) scale(${honking ? 1 : 0.6})`;
+          beep.style.opacity = honking ? "1" : "0";
+        }
+        if (ctrl.splashAt !== lastSplash) {
+          lastSplash = ctrl.splashAt;
+          const id = performance.now();
+          const x = (place.centerX + pose.x * scale) / dpr;
+          const y = (ground - (pose.lift + 0.15) * scale) / dpr;
+          setBursts((b) => [...b, { id, x, y, type: "splash" }]);
+          window.setTimeout(() => setBursts((b) => b.filter((x) => x.id !== id)), 1000);
+        }
 
         const z = zzzRef.current;
         if (z) {
@@ -206,6 +250,7 @@ export function AliveCharacter({
 
     return () => {
       cancelAnimationFrame(raf);
+      calm.removeEventListener("change", onCalm);
       ro.disconnect();
       renderer.dispose();
       rendererRef.current = null;
@@ -224,7 +269,7 @@ export function AliveCharacter({
     if (!hitsCharacter(L, f.pose, f.place, cx, cy)) return;
     poke();
     const id = performance.now();
-    setBursts((b) => [...b, { id, x: e.clientX - rect.left, y: e.clientY - rect.top }]);
+    setBursts((b) => [...b, { id, x: e.clientX - rect.left, y: e.clientY - rect.top, type: "hearts" }]);
     window.setTimeout(() => setBursts((b) => b.filter((x) => x.id !== id)), 1000);
     props.current.onTap?.();
   };
@@ -248,7 +293,33 @@ export function AliveCharacter({
           <span className={cls.z}>Z</span>
         </div>
       )}
-      {bursts.map((b) => (
+      {kind === "vehicle" && (
+        <>
+          <div ref={dustRef} className={cls.dust} aria-hidden>
+            <span className={cls.puff} />
+            <span className={cls.puff} />
+            <span className={cls.puff} />
+          </div>
+          <div ref={beepRef} className={cls.beep} aria-hidden>
+            Beep beep!
+          </div>
+        </>
+      )}
+      {bursts.map((b) =>
+        b.type === "splash" ? (
+          <div key={b.id} className={cls.burst} style={{ left: b.x, top: b.y }} aria-hidden>
+            {[0, 1, 2, 3, 4, 5].map((i) => {
+              const a = Math.PI + (i / 5) * Math.PI;
+              return (
+                <span
+                  key={i}
+                  className={cls.drop}
+                  style={{ "--dx": `${Math.cos(a) * 46}px`, "--dy": `${Math.sin(a) * 52}px` } as CSSProperties}
+                />
+              );
+            })}
+          </div>
+        ) : (
         <div key={b.id} className={cls.burst} style={{ left: b.x, top: b.y }} aria-hidden>
           {HEARTS.map((h, i) => {
             const a = (i / HEARTS.length) * Math.PI * 2 - Math.PI / 2;
@@ -269,7 +340,8 @@ export function AliveCharacter({
             );
           })}
         </div>
-      ))}
+        ),
+      )}
     </div>
   );
 }

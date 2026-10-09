@@ -193,6 +193,116 @@ export const ALIVE_CSS = `
   }
 }
 
+.alive-dust {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform, opacity;
+  transition: opacity 0.3s ease;
+  --dir: 1;
+}
+.alive-puff {
+  position: absolute;
+  left: -10px;
+  top: -16px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(150, 128, 104, 0.45);
+  animation: alive-puff 0.9s ease-out infinite;
+}
+.alive-puff:nth-child(2) {
+  animation-delay: 0.3s;
+}
+.alive-puff:nth-child(3) {
+  animation-delay: 0.6s;
+}
+@keyframes alive-puff {
+  from {
+    transform: translate(0, 0) scale(0.4);
+    opacity: 0.85;
+  }
+  to {
+    transform: translate(calc(var(--dir) * -46px), -20px) scale(1.5);
+    opacity: 0;
+  }
+}
+
+.alive-beep {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  padding: 6px 14px;
+  border: 3px solid #1e1b2e;
+  border-radius: 20px;
+  background: #fff;
+  color: #1e1b2e;
+  font: 800 20px var(--font-grandstander, ui-rounded), ui-rounded, system-ui, sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  transform-origin: 50% 100%;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  will-change: transform, opacity;
+}
+
+.alive-drop {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 14px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: #7fc8f8;
+  border: 2px solid #ffffff;
+  animation: alive-splash 0.85s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+@keyframes alive-splash {
+  0% {
+    transform: translate(0, 0) scale(0.3);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx), calc(var(--dy) + 40px)) scale(1);
+    opacity: 0;
+  }
+}
+
+.alive-sea {
+  background: linear-gradient(180deg, #8fd6f7 0%, #4fb1e6 38%, #2a86c8 72%, #1f6aa6 100%);
+}
+.alive-bubble {
+  position: absolute;
+  bottom: -6%;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.18);
+  pointer-events: none;
+  animation: alive-rise 7s linear infinite;
+}
+@keyframes alive-rise {
+  from {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  to {
+    transform: translate(12px, -115cqh);
+    opacity: 0;
+  }
+}
+
 .alive-character-layer {
   position: absolute;
   inset: 0;
@@ -202,14 +312,25 @@ export const ALIVE_CSS = `
   .alive-cloud,
   .alive-cloud-slow,
   .alive-sun,
-  .alive-star {
+  .alive-star,
+  .alive-puff,
+  .alive-bubble {
     animation: none;
+  }
+  .alive-bubble {
+    opacity: 0.6;
   }
 }
 `;
 
 export const cls = {
+  beep: "alive-beep",
+  bubble: "alive-bubble",
   burst: "alive-burst",
+  drop: "alive-drop",
+  dust: "alive-dust",
+  puff: "alive-puff",
+  sea: "alive-sea",
   canvas: "alive-canvas",
   characterLayer: "alive-character-layer",
   cloud: "alive-cloud",

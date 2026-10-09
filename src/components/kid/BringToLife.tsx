@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getAI, photoCropFromCutout } from "@/lib/ai";
 import type { DrawingDescription, PixelRect } from "@/lib/ai";
 import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
+import { kindOf } from "@/lib/story/kind";
 import { shrinkPhoto } from "@/lib/story/image";
 import { cutout, CutoutTouchUp, type Cutout } from "./alive";
 import { FriendStage } from "./FriendStage";
@@ -144,6 +145,7 @@ export function useBringToLife() {
         photoCrop: result.photoCrop,
         // Unknown (the engine could not look in time) stays unset so the meet screen asks again.
         seenAs: result.seen ? result.seen.label.trim() : undefined,
+        kind: result.seen ? kindOf(result.seen.label) : undefined,
         chat: [],
         createdAt: now,
         updatedAt: now,
@@ -194,6 +196,7 @@ export function CutoutPreview({
   onRetake,
   onAccept,
   onFixed,
+  seenAs,
 }: {
   cut: Cutout;
   saving: boolean;
@@ -201,6 +204,8 @@ export function CutoutPreview({
   onRetake: () => void;
   onAccept: () => void;
   onFixed: (fixed: Cutout) => void;
+  /** What the drawing reader thought it was, so the preview already moves like it. */
+  seenAs?: string;
 }) {
   const [fixing, setFixing] = useState(false);
 
@@ -228,7 +233,7 @@ export function CutoutPreview({
   return (
     <div className="flex flex-1 flex-col items-center gap-5 py-2 sm:gap-6">
       <h2 className="anim-float-in text-center text-4xl font-black text-ink sm:text-5xl">Is this your friend?</h2>
-      <FriendStage cutout={cut} name="your friend" motion="bounce" size={0.74} className="anim-pop-in h-[48vh] min-h-72 w-full max-w-2xl" />
+      <FriendStage cutout={cut} name="your friend" motion="bounce" kind={kindOf(seenAs)} size={0.74} className="anim-pop-in h-[48vh] min-h-72 w-full max-w-2xl" />
       {cut.meta?.quality === "poor" && (
         <p className="max-w-2xl rounded-2xl bg-sun/40 px-4 py-3 text-center text-lg font-bold text-ink" role="status">
           Hmm, some bits may be missing. A brighter spot and a flat paper can help, if you want to try again.

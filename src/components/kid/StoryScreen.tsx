@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { getAI } from "@/lib/ai";
 import { getFriend, newId, saveStory, type Friend } from "@/lib/story/db";
+import { kindOf } from "@/lib/story/kind";
 import type { Character, Story } from "@/lib/story/types";
 import { sceneFor } from "./Backdrop";
 import { FriendSkeleton } from "./FriendScreen";
@@ -22,12 +23,13 @@ type Retry = { step: "ask" } | { step: "write"; words: string } | { step: "finis
 const MAX_PAGES = 6;
 const SUGGEST_END_AFTER = 4;
 
-const asCharacter = ({ id, name, description, drawing, cutout }: Friend): Character => ({
+const asCharacter = ({ id, name, description, drawing, cutout, kind, seenAs }: Friend): Character => ({
   id,
   name,
   description,
   drawing,
   cutout,
+  kind: kind ?? kindOf(description, seenAs),
 });
 
 /** /story?id=<friend>: the character asks, the child answers, each answer becomes a page. */
@@ -221,7 +223,13 @@ function MakeStory({ friend }: { friend: Friend }) {
           </div>
         ) : phase === "page" && last ? (
           <div className="anim-float-in grid gap-5 lg:grid-cols-[1.4fr_1fr] lg:items-start">
-            <StoryPage cutout={friend.cutout ?? friend.drawing} scene={sceneFor(`${last.text} ${last.answer}`)} motion="bounce" label={`Page ${pages.length}`}>
+            <StoryPage
+              cutout={friend.cutout ?? friend.drawing}
+              kind={story.character.kind}
+              scene={sceneFor(`${last.text} ${last.answer}`)}
+              motion="bounce"
+              label={`Page ${pages.length}`}
+            >
               <p className="text-2xl leading-relaxed text-ink sm:text-[1.7rem]">{last.text}</p>
             </StoryPage>
             <div className="flex flex-col gap-3">
@@ -260,6 +268,7 @@ function MakeStory({ friend }: { friend: Friend }) {
             <FriendStage
               cutout={friend.cutout ?? friend.drawing}
               name={name}
+              kind={story.character.kind}
               thinking={busy}
               talking={voice === "character" && !busy}
               level={speechLevel}

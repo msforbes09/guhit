@@ -261,6 +261,7 @@ export function SnapScreen() {
             onRetake={life.reset}
             onAccept={life.accept}
             onFixed={life.fixEdges}
+            seenAs={life.result.seen?.label}
           />
         )}
         {life.phase === "error" && <CutError onRetry={life.reset} />}

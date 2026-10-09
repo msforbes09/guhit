@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 import { getAI, isMarkedReady } from "@/lib/ai";
+// Loaded on every page so the browser's one-time install offer is never missed.
+import "./install";
 
 /**
  * Starts loading the on-device models the moment any page opens (behind the

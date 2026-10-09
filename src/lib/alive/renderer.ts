@@ -48,6 +48,7 @@ uniform float u_squash;
 uniform float u_bend;
 uniform float u_lean;
 uniform vec2 u_wiggle;
+uniform vec2 u_swim;     // amplitude, phase: a wave travelling along the body
 uniform float u_head;
 uniform vec4 u_arm;      // pivot.x, pivot.y, angle, side
 uniform vec2 u_armSize;  // reach, half height
@@ -87,6 +88,9 @@ void main() {
   // Squash and stretch about the feet, roughly keeping volume.
   p.y *= 1.0 + u_squash;
   p.x *= 1.0 - u_squash * 0.55;
+
+  // Swimming: the body ripples up and down along its length, most at the ends.
+  p.y += u_swim.x * sin(u_swim.y - p.x * 5.0) * abs(p.x) * 1.6;
 
   // Sway and wiggle grow with height so the feet stay planted.
   float h = clamp(p.y, 0.0, 1.6);
@@ -208,6 +212,7 @@ class GLRenderer implements Renderer {
       "u_bend",
       "u_lean",
       "u_wiggle",
+      "u_swim",
       "u_head",
       "u_arm",
       "u_armSize",
@@ -320,6 +325,7 @@ class GLRenderer implements Renderer {
     gl.uniform1f(this.u.u_bend, pose.bend);
     gl.uniform1f(this.u.u_lean, pose.lean);
     gl.uniform2f(this.u.u_wiggle, pose.wiggleAmp, pose.wigglePhase);
+    gl.uniform2f(this.u.u_swim, pose.swimAmp, pose.swimPhase);
     const rg = this.rigging;
     if (rg) {
       // Bones carry the arms, legs and head; the region-based arm and nod step aside.
