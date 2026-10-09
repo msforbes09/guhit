@@ -87,6 +87,13 @@ export class LLMClient implements TextGenerator {
     this.modelId = modelId;
   }
 
+  /** Frees the model's GPU memory; load() again reloads it in the same worker (never stopped: see load). */
+  async unload(): Promise<void> {
+    const engine = this.engine;
+    this.engine = null;
+    await engine?.unload();
+  }
+
   generate(messages: Message[], options: GenOptions): Promise<string> {
     const run = this.chain.then(() => this.run(messages, options));
     this.chain = run.catch(() => undefined);

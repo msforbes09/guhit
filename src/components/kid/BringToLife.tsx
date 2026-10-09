@@ -8,9 +8,10 @@ import { sfx } from "@/lib/sfx";
 import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { kindOf } from "@/lib/story/kind";
 import { shrinkPhoto } from "@/lib/story/image";
+import { isAppleMobile } from "@/lib/ai/device";
 import { cutout, CutoutTouchUp, type Cutout } from "./alive";
 import { FriendStage } from "./FriendStage";
-import { useAIReady } from "./hooks";
+import { usePart } from "./hooks";
 import { ArrowsClockwise, Camera, Check, PaintBrush, Scissors, Sparkle } from "./icons";
 import { Button, LinkButton } from "./ui";
 
@@ -28,7 +29,8 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The AI cut-out may need its model the first time; never keep a child waiting longer. */
 const AI_RETRY_MS = 12000;
 /** Reading the drawing must never hold the child up. */
-const LOOK_TIMEOUT_MS = 8000;
+// A phone's first guess loads the eyes' model from storage before it looks.
+const LOOK_TIMEOUT_MS = 20000;
 
 /** The crop is in the original photo's pixels; the kept photo may be smaller. */
 const scaleRect = (r: PixelRect, s: number): PixelRect => ({
@@ -45,8 +47,8 @@ const scaleRect = (r: PixelRect, s: number): PixelRect => ({
  */
 export function useBringToLife() {
   const router = useRouter();
-  // Wakes the engine quietly when its models are already on this device.
-  const ready = useAIReady();
+  // Wakes the eyes quietly when they are on this device; the guess needs only them.
+  const ready = usePart("eyes");
   const readyRef = useRef(ready);
   useEffect(() => {
     readyRef.current = ready;
@@ -99,7 +101,9 @@ export function useBringToLife() {
         const [first, picture] = await Promise.all([cutout(image, { editable: true }), shrinkPhoto(image), wait(1100)]);
         let cut = first;
         // (Not in test mode: the AI cut-out downloads its model on first use.)
-        if (first.meta?.quality === "poor" && !isTestMode()) {
+        // Not on iPhone or iPad: the AI cut-out model and the eyes together can be
+        // more memory than Safari gives a tab.
+        if (first.meta?.quality === "poor" && !isTestMode() && !isAppleMobile()) {
           // A messy cut-out gets one closer look with the on-device AI model
           // before the child is asked to take the photo again.
           setWorking("closer");

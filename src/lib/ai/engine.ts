@@ -2,6 +2,7 @@ import type { Character, Story } from "@/lib/story/types";
 import {
   chooseModels,
   detectSupport,
+  isAppleMobile,
   isGpuError,
   rememberLLMOnCpu,
   type DeviceSupport,
@@ -32,6 +33,7 @@ import {
   splitSentences,
 } from "./sanitize";
 import { screen, topicChange } from "./safety";
+import { guessAllowed, guessFinished, guessStarted } from "./guess-guard";
 import { sharedAttempt } from "./shared-attempt";
 import type { STTClient } from "./stt";
 import type { VisionClient } from "./vision";
@@ -156,24 +158,42 @@ export class RealAI implements LocalAI {
    * After a failed setup, "Continue download" runs load() again: a model that
    * finished, or is still loading, is kept rather than started a second time.
    */
-  private llmLoad = sharedAttempt(async () => {
-    const choice = this.choice!;
-    if (findLLM(choice.llm)?.cpu) return this.loadCpuLLM(choice);
-    const { LLMClient } = await import("./llm");
-    // One client for every attempt: a retry reloads in the same WebLLM worker.
-    this.gpuLLM ??= new LLMClient();
-    try {
-      await this.loadLLM(this.gpuLLM, choice);
-    } catch (error) {
-      if (!isGpuError(error instanceof Error ? error.message : String(error))) throw error;
-      // The page saw a GPU but WebLLM cannot use it: the CPU story helper
-      // instead, on this device from now on, rather than no story helper at all.
-      rememberLLMOnCpu();
-      this.choice = { ...choice, llm: CPU_LLM };
-      await this.loadCpuLLM(this.choice);
-    }
-  });
+  private llmLoad = this.llmAttempt();
   private llmWarm = sharedAttempt(() => this.warmUpLLM());
+
+  private llmAttempt() {
+    return sharedAttempt(async () => {
+      const choice = this.choice!;
+      if (findLLM(choice.llm)?.cpu) return this.loadCpuLLM(choice);
+      const { LLMClient } = await import("./llm");
+      // One client for every attempt: a retry reloads in the same WebLLM worker.
+      this.gpuLLM ??= new LLMClient();
+      try {
+        await this.loadLLM(this.gpuLLM, choice);
+      } catch (error) {
+        if (!isGpuError(error instanceof Error ? error.message : String(error))) throw error;
+        // The page saw a GPU but WebLLM cannot use it: the CPU story helper
+        // instead, on this device from now on, rather than no story helper at all.
+        rememberLLMOnCpu();
+        this.choice = { ...choice, llm: CPU_LLM };
+        await this.loadCpuLLM(this.choice);
+      }
+    });
+  }
+
+  /**
+   * iPhone and iPad: the story helper steps aside (its GPU memory freed) while
+   * the eyes look, so a guess never shares the tab with every other model; the
+   * next reply loads it back from the cache.
+   */
+  private unloadStoryHelper() {
+    const llm = this.gpuLLM;
+    if (!llm || this.llm !== llm) return;
+    this.llm = null;
+    void llm.unload().catch(() => undefined);
+    this.llmLoad = this.llmAttempt();
+    this.llmWarm = sharedAttempt(() => this.warmUpLLM());
+  }
   private sttLoad = this.sttAttempt();
   /** Device and model choice, worked out once. */
   private prepared = sharedAttempt(async () => {
@@ -501,6 +521,7 @@ export class RealAI implements LocalAI {
       // Phones never hold all four models: the ears step aside while the eyes look
       // (they come back from the cache in a second or two, on the next listen).
       if (this.support?.mobile) this.unloadEars();
+      if (isAppleMobile()) this.unloadStoryHelper();
       this.visionLoading = this.loadVision(onProgress).finally(() => {
         this.visionLoading = null;
       });
@@ -608,6 +629,11 @@ export class RealAI implements LocalAI {
 
   private async storyHelper(): Promise<TextGenerator> {
     await this.needPart("talk");
+    // Back from the cache if a guess sent it away (iPhone).
+    if (!this.llm) {
+      await this.llmLoad();
+      await this.llmWarm();
+    }
     return this.llm!;
   }
 
@@ -644,7 +670,11 @@ export class RealAI implements LocalAI {
     if (!png && !photo) return { label: "" };
     // Without the eyes the screens simply ask the child what it is.
     if (this.partStatus("eyes") === "not-installed") return { label: "" };
+    // iPhone and iPad: a guess that killed this tab before is not tried again (no guess beats a crash).
+    const guarded = isAppleMobile();
+    if (guarded && !guessAllowed()) return { label: "" };
     await this.needPart("eyes");
+    if (guarded) guessStarted();
     const started = performance.now();
     const vision = await this.acquireVision();
     this.takeOverPrefetch();
@@ -672,6 +702,7 @@ export class RealAI implements LocalAI {
       return { label: "" };
     } finally {
       this.releaseVision();
+      if (guarded) guessFinished();
     }
   }
 
