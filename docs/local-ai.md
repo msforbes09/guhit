@@ -72,9 +72,20 @@ and `nextQuestion(story)`, and `titleFor(story)` at the end. Narration uses
 
 ## Voices
 
-The OS's own voices through the Web Speech API (offline-safe). On macOS:
-narrator "Samantha"; character "Tessa" at a higher pitch. The first `speak()`
-needs a user gesture on the page (a tap) because of browser autoplay rules.
+Kokoro-82M, a neural voice that runs on the device (`src/lib/ai/voice/`,
+`src/workers/tts.worker.ts`): WebGPU in full precision on laptops, the CPU
+(8-bit) on phones. Narrator `af_heart`, character `af_bella` a semitone higher;
+`/lab` switches voices, speed and pitch, or the engine. Sentences are voiced
+one at a time and played back to back through Web Audio, so the first words
+start while the rest is still being made.
+
+The OS's own voices (Web Speech API; on macOS narrator "Samantha", character
+"Tessa") take over automatically when Kokoro is not downloaded, fails, takes
+over 4 s for a sentence, or measures slower than speech on the CPU (most
+phones); after a fallback the session stays on the OS voice. Kid screens
+never start the Kokoro download: only `/setup` (or `/lab`) does. The first
+`speak()` needs a user gesture on the page (a tap) because of browser
+autoplay rules.
 
 To move a mouth with the voice, poll `speechLevel()` (0..1, smoothed, 0 when
 silent) every animation frame, and use `onSpeechStart(cb)` (returns its

@@ -124,6 +124,31 @@ export function setStyle(role: VoiceRole, style: VoiceStyle | null) {
   }
 }
 
+const SLOW_KEY = "guhit:voice-slow";
+
+/**
+ * A device where Kokoro measured slower than speech is remembered, so later
+ * app starts skip loading it (on a phone that is ~10 s and ~300 MB of memory
+ * for nothing). Choosing Kokoro in /lab forgets it and measures again.
+ */
+export function slowVoiceMeasured(device: TTSDevice): number | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SLOW_KEY) ?? "null") as { device?: string; rtf?: number } | null;
+    return saved?.device === device && typeof saved.rtf === "number" ? saved.rtf : null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberSlowVoice(device: TTSDevice, rtf: number | null) {
+  try {
+    if (rtf === null) localStorage.removeItem(SLOW_KEY);
+    else localStorage.setItem(SLOW_KEY, JSON.stringify({ device, rtf }));
+  } catch {
+    // Blocked storage: it is measured again next time.
+  }
+}
+
 /** Every voice the app may use offline is downloaded with the model, so /lab can switch with Wi-Fi off. */
 export const PRELOADED_VOICES = KOKORO_VOICES.map((v) => v.id);
 

@@ -16,6 +16,8 @@ import {
   KOKORO,
   PRELOADED_VOICES,
   preferredEngine,
+  rememberSlowVoice,
+  slowVoiceMeasured,
   setPreferredEngine,
   styleFor,
   type KokoroDtype,
@@ -354,9 +356,12 @@ export class Speaker {
     const total = (KOKORO.modelMB[device] + KOKORO.voiceMB * PRELOADED_VOICES.length) * 1e6;
     // The download may start only where a parent asked for it, never on a kid screen.
     const mayDownload = !isMarkedReady() || /^\/(setup|lab)\b/.test(window.location.pathname);
+    const measuredSlow = this.forced ? null : slowVoiceMeasured(device);
 
     if (!this.out.supported) {
       this.reason = "Web Audio is missing";
+    } else if (!this.kokoro && measuredSlow !== null) {
+      this.reason = `Kokoro measured slower than speech on this device (real-time factor ${measuredSlow.toFixed(2)})`;
     } else if (!this.kokoro && !mayDownload && !(await isKokoroCached(device))) {
       this.reason = "Kokoro is not downloaded yet (open /setup)";
     } else if (!this.kokoro) {
@@ -371,6 +376,7 @@ export class Speaker {
         });
         if (device === "wasm" && rtf > MAX_WASM_RTF && !this.forced) {
           kokoro.dispose();
+          rememberSlowVoice(device, rtf);
           this.reason = `Kokoro is slower than speech on this device (real-time factor ${rtf.toFixed(2)})`;
         } else {
           this.kokoro = kokoro;
@@ -404,6 +410,8 @@ export class Speaker {
   /** For /lab: switch between Kokoro and the built-in voice; choosing Kokoro again clears a fallback. */
   setEngine(engine: VoiceEngine) {
     setPreferredEngine(engine);
+    // Choosing Kokoro again measures it again on the next load.
+    if (engine === "kokoro") rememberSlowVoice("wasm", null);
     if (engine === "kokoro" && this.kokoro) this.reason = null;
   }
 
