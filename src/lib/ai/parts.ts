@@ -1,11 +1,11 @@
 /**
  * The parts of Guhit's AI set up on a device. The eyes are always there; the
- * others are the parent's choice (snap, cut-out and moves need no model at all).
+ * voice and talking are the parent's choice (snap, cut-out and moves need no
+ * model at all).
  *
  * - eyes: guesses what was drawn (Florence-2, plus the AI cut-out model);
- * - voice: the storytelling voice (Kokoro; without it the character babbles);
- * - ears: hears the child (Whisper): moves on command and short written answers;
- * - story: the story helper (the language model): free conversation and new stories.
+ * - voice: the storytelling voice (Kokoro; without it the device's own voice speaks);
+ * - talk: listening ears and story helper together (Whisper + the language model).
  */
 import type { LoadProgress, Part } from "./types";
 
@@ -13,13 +13,9 @@ export type { Part };
 type Stage = LoadProgress["stage"];
 
 /** In order of importance, which is also the order setup gets them in. */
-export const PARTS: Part[] = ["eyes", "voice", "ears", "story"];
+export const PARTS: Part[] = ["eyes", "voice", "talk"];
 
-export const PART_STAGES: Record<Part, Stage[]> = { eyes: ["vision"], voice: ["tts"], ears: ["stt"], story: ["llm"] };
-
-/** "talk" was the ears and the story helper as one part: a device that had it has both. */
-const LEGACY_TALK = "talk";
-const fromLegacy = (names: string[]) => names.flatMap((n) => (n === LEGACY_TALK ? ["ears", "story"] : [n]));
+export const PART_STAGES: Record<Part, Stage[]> = { eyes: ["vision"], voice: ["tts"], talk: ["stt", "llm"] };
 
 export const partOf = (stage: Stage): Part => PARTS.find((part) => PART_STAGES[part].includes(stage))!;
 
@@ -56,8 +52,7 @@ export function chosenParts(): Part[] | null {
   if (saved === null) return null;
   try {
     const parsed: unknown = JSON.parse(saved);
-    if (!Array.isArray(parsed)) return null;
-    return inOrder(fromLegacy(parsed.map(String)).filter((p): p is Part => PARTS.includes(p as Part)));
+    return Array.isArray(parsed) ? inOrder(parsed.filter((p): p is Part => PARTS.includes(p))) : null;
   } catch {
     return null;
   }
@@ -72,19 +67,12 @@ export function setChosenParts(parts: Part[]) {
 
 /** Parts whose models are downloaded and have started on this device at least once. */
 export function installedParts(): Part[] {
-  const talk = read(INSTALLED_PREFIX + LEGACY_TALK) === "1";
-  const marked = PARTS.filter((part) => read(INSTALLED_PREFIX + part) === "1" || (talk && (part === "ears" || part === "story")));
+  const marked = PARTS.filter((part) => read(INSTALLED_PREFIX + part) === "1");
   if (marked.length === 0 && read(LEGACY_READY) === "1" && chosenParts() === null) return [...PARTS];
   return marked;
 }
 
 export function markInstalled(part: Part, installed: boolean) {
-  // The old one-part mark becomes two, so either half can be removed on its own.
-  if (read(INSTALLED_PREFIX + LEGACY_TALK) === "1") {
-    write(INSTALLED_PREFIX + LEGACY_TALK, null);
-    write(INSTALLED_PREFIX + "ears", "1");
-    write(INSTALLED_PREFIX + "story", "1");
-  }
   write(INSTALLED_PREFIX + part, installed ? "1" : null);
 }
 
@@ -93,12 +81,11 @@ export function isPartInstalled(part: Part): boolean {
 }
 
 /**
- * What setup suggests for this device. "deviceMemory" is Chrome's rough RAM
- * figure (absent on iPhones, whose recent models handle all four); short
- * memory leaves out the story helper, the largest part.
+ * What setup ticks to begin with. "deviceMemory" is Chrome's rough RAM figure
+ * (absent on iPhones, whose recent models handle all three).
  */
 export function recommendParts(device: { webgpu: boolean; mobile: boolean; deviceMemory?: number }): Part[] {
   const memory = device.deviceMemory;
-  if (memory !== undefined && memory < (device.webgpu ? 6 : 8)) return ["eyes", "voice", "ears"];
+  if (memory !== undefined && memory < (device.webgpu ? 6 : 8)) return ["eyes", "voice"];
   return [...PARTS];
 }
