@@ -68,6 +68,10 @@ export class LLMClient {
         initProgressCallback: onProgress,
         appConfig: appConfigFor(modelId, modelHost),
       });
+    } catch (error) {
+      // A retry starts a fresh worker; this one must not keep downloading beside it.
+      worker.terminate();
+      throw error;
     } finally {
       progress.close();
     }

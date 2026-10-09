@@ -17,6 +17,11 @@ export class ModelWorker<Result extends { type: "result"; id: number }> {
   load(message: object, onProgress: (loaded: number, total: number) => void): Promise<{ warmupMs: number }> {
     const files = new Map<string, { loaded: number; total: number }>();
     return new Promise((resolve, reject) => {
+      // A failed load stops its worker: a retry starts clean instead of beside it.
+      const fail = (error: Error) => {
+        this.terminate();
+        reject(error);
+      };
       this.worker.onmessage = (event: MessageEvent<WorkerReply>) => {
         const reply = event.data;
         if (reply.type === "progress") {
@@ -32,10 +37,10 @@ export class ModelWorker<Result extends { type: "result"; id: number }> {
           this.worker.onmessage = (e: MessageEvent<WorkerReply>) => this.settle(e.data);
           resolve({ warmupMs: reply.warmupMs });
         } else if (reply.type === "error") {
-          reject(new Error(reply.message));
+          fail(new Error(reply.message));
         }
       };
-      this.worker.onerror = (event) => reject(new Error(event.message || "A model failed to start."));
+      this.worker.onerror = (event) => fail(new Error(event.message || "A model failed to start."));
       this.worker.postMessage(message);
     });
   }

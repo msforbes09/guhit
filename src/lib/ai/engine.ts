@@ -23,6 +23,7 @@ import {
   splitSentences,
 } from "./sanitize";
 import { screen, topicChange } from "./safety";
+import { sharedAttempt } from "./shared-attempt";
 import type { STTClient } from "./stt";
 import type { VisionClient } from "./vision";
 import { Speaker, type VoiceInfo } from "./tts";
@@ -135,6 +136,18 @@ export class RealAI implements LocalAI {
   private prefetchHeld = false;
   private visionLoading: Promise<VisionClient | null> | null = null;
   private speaker = new Speaker();
+  /**
+   * After a failed setup, "Continue download" runs load() again: a model that
+   * finished, or is still loading, is kept rather than started a second time.
+   */
+  private llmLoad = sharedAttempt(async () => {
+    const { LLMClient } = await import("./llm");
+    await this.loadLLM(new LLMClient(), this.choice!);
+  });
+  private sttLoad = sharedAttempt(async () => {
+    const { STTClient } = await import("./stt");
+    await this.loadSTT(new STTClient(), this.choice!);
+  });
 
   status(): AIStatus {
     return this.state;
@@ -168,7 +181,6 @@ export class RealAI implements LocalAI {
       this.choice = choice;
       void requestPersistence();
 
-      const [{ LLMClient }, { STTClient }] = await Promise.all([import("./llm"), import("./stt")]);
       // Downloads run side by side: the first visit is bound by network, not GPU.
       // Drawing recognition is not loaded here: it is loaded for each guess and
       // freed straight after, so it never holds GPU memory during the talk loop.
@@ -180,13 +192,13 @@ export class RealAI implements LocalAI {
       if (support.mobile) {
         // One at a time on phones: WebKit closes a tab past ~1–1.5 GB, and the
         // downloads share a weaker connection. The voice last, as the optional one.
-        await this.loadLLM(new LLMClient(), choice);
-        await this.loadSTT(new STTClient(), choice);
+        await this.llmLoad();
+        await this.sttLoad();
         voices = await loadVoice();
       } else {
         [, , voices] = await Promise.all([
-          this.loadLLM(new LLMClient(), choice),
-          this.loadSTT(new STTClient(), choice),
+          this.llmLoad(),
+          this.sttLoad(),
           // Never fails the load: without the neural voice, the built-in one speaks.
           loadVoice(),
         ]);
