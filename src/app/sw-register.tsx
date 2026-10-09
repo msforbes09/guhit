@@ -27,6 +27,8 @@ export function ServiceWorkerRegister() {
       return;
     }
     navigator.serviceWorker
+      // "none": update checks for sw.js skip the HTTP cache, which a zone-wide
+      // browser cache TTL (4 h on the custom domain) would otherwise hold.
       .register("/sw.js", { scope: "/", updateViaCache: "none" })
       .then(() => navigator.serviceWorker.ready)
       // Store a newly deployed build's files now, while the network is here.

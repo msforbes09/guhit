@@ -149,7 +149,9 @@ async function handlePage(request) {
   const url = new URL(request.url);
   const key = url.origin + url.pathname;
   const pages = await caches.open(PAGES);
-  const network = fetch(request).then(async (response) => {
+  // "no-cache" revalidates with the server: a zone-wide browser cache TTL
+  // (4 h on the custom domain) would otherwise serve an old build's page.
+  const network = fetch(request.url, { cache: "no-cache", credentials: "same-origin" }).then(async (response) => {
     if (response.ok && !response.redirected) await pages.put(key, response.clone());
     return response;
   });
