@@ -10,7 +10,7 @@
 // libraries only need a different host. The files are large and gitignored;
 // they live outside public/ because the static export copies all of public/.
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { prebuiltAppConfig } from "@mlc-ai/web-llm";
@@ -19,7 +19,10 @@ const run = promisify(execFile);
 const PARALLEL = 8;
 
 const root = join(process.cwd(), "mirror", "models");
-const llmIds = process.argv.slice(2).length ? process.argv.slice(2) : ["Qwen3-1.7B-q4f16_1-MLC"];
+// Every story model src/lib/ai/device.ts may pick: laptop and phone, each in
+// the 16-bit build and the 32-bit one for GPUs without 16-bit float support.
+const TIER_LLMS = ["Qwen3-1.7B-q4f16_1-MLC", "Qwen3-1.7B-q4f32_1-MLC", "Qwen3-0.6B-q4f16_1-MLC", "Qwen3-0.6B-q4f32_1-MLC"];
+const llmIds = process.argv.slice(2).length ? process.argv.slice(2) : TIER_LLMS;
 // Transformers.js models and the ONNX files of the precisions src/lib/ai/models.ts loads.
 const onnxRepos = [
   {
@@ -30,6 +33,11 @@ const onnxRepos = [
       "onnx/encoder_model_quantized.onnx",
       "onnx/decoder_model_merged_quantized.onnx",
     ],
+  },
+  {
+    // The story helper on devices without WebGPU (8-bit runs best on the CPU).
+    repo: "onnx-community/Qwen3-0.6B-ONNX",
+    onnx: ["onnx/model_quantized.onnx"],
   },
   {
     // Drawing recognition on laptops; base below is the phone model.
@@ -64,16 +72,24 @@ const complete = (target, expectedSize) =>
 
 // The Hugging Face CDN sometimes leaves a connection crawling at a few KB/s
 // while a fresh one runs at MB/s, so a transfer that drops below 100 KB/s for
-// 15 s is abandoned and resumed ("-C -") on a new connection.
+// 15 s is abandoned and resumed ("-C -") on a new connection. Unfinished files
+// end in ".part", so an upload of mirror/ running meanwhile never copies a
+// truncated model under its real name.
 async function download(url, target, expectedSize) {
   if (complete(target, expectedSize)) return "kept";
   mkdirSync(dirname(target), { recursive: true });
+  const part = `${target}.part`;
+  // A partial file left under the real name by an older version of this script.
+  if (existsSync(target)) renameSync(target, part);
   for (let attempt = 1; attempt <= 40; attempt++) {
-    const args = ["-sSfL", "--speed-limit", "100000", "--speed-time", "15", "-o", target, url];
-    if (existsSync(target)) args.unshift("-C", "-");
+    const args = ["-sSfL", "--speed-limit", "100000", "--speed-time", "15", "-o", part, url];
+    if (existsSync(part)) args.unshift("-C", "-");
     try {
       await run("curl", args, { maxBuffer: 1024 * 1024 });
-      if (complete(target, expectedSize)) return attempt === 1 ? "downloaded" : `downloaded (${attempt} tries)`;
+      if (complete(part, expectedSize)) {
+        renameSync(part, target);
+        return attempt === 1 ? "downloaded" : `downloaded (${attempt} tries)`;
+      }
     } catch {
       // Slow or dropped: try again from where the partial file ends.
     }
@@ -87,7 +103,8 @@ async function repoFiles(repo) {
   return (await response.json()).siblings.map((s) => ({ name: s.rfilename, size: s.size }));
 }
 
-const wanted = (name) => !name.startsWith(".") && name !== "README.md";
+// "onnxruntime/" holds builds for ONNX Runtime GenAI, which the browser never loads.
+const wanted = (name) => !name.startsWith(".") && name !== "README.md" && !name.startsWith("onnxruntime/");
 const filesOf = async (repo, keep) =>
   (await repoFiles(repo))
     .filter((f) => keep(f.name))

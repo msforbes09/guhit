@@ -14,11 +14,11 @@
 export type ModelSource = "r2" | "hf" | "local";
 
 /**
- * Guhit's model copies: the iam4bs-assets R2 bucket, keys "guhit/models/<same
- * path as mirror/models>", on the bucket's public domain. The one place to
- * change it; null leaves R2 out and downloads straight from Hugging Face.
+ * Guhit's model copies: the guhit-models R2 bucket, keys "models/<same path as
+ * mirror/models>", on the bucket's public domain. The one place to change it;
+ * null leaves R2 out and downloads straight from Hugging Face.
  */
-export const R2_BASE: string | null = "https://assets.iam4bs.dev/guhit/models";
+export const R2_BASE: string | null = "https://models.iam4bs.dev/models";
 
 /** The LLM worker reports downloaded bytes here (WebLLM itself reports only whole files). */
 export const LLM_DOWNLOAD_CHANNEL = "guhit-llm-download";
