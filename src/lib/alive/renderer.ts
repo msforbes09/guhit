@@ -394,10 +394,16 @@ class Canvas2DRenderer implements Renderer {
     if (shadow) {
       const half = (rig.footHalf * 1.25 + 0.08) * place.scale * (1 - 0.45 * Math.min(1, pose.air));
       ctx.save();
-      ctx.globalAlpha = 0.3 * (1 - 0.55 * Math.min(1, pose.air));
-      ctx.fillStyle = "rgb(30,40,76)";
+      ctx.translate(rootX, place.groundY);
+      ctx.scale(1, 0.2);
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, half);
+      const a = 0.32 * (1 - 0.55 * Math.min(1, pose.air));
+      g.addColorStop(0, `rgba(31,41,77,${a})`);
+      g.addColorStop(0.25, `rgba(31,41,77,${a})`);
+      g.addColorStop(1, "rgba(31,41,77,0)");
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.ellipse(rootX, place.groundY, half, Math.max(3, half * 0.2), 0, 0, Math.PI * 2);
+      ctx.arc(0, 0, half, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
