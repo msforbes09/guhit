@@ -11,8 +11,15 @@ type WorkerReply =
 export class ModelWorker<Result extends { type: "result"; id: number }> {
   private nextId = 1;
   private pending = new Map<number, { resolve: (r: Result) => void; reject: (e: Error) => void }>();
+  /** Replies that answer no request (e.g. streamed text), once the model is loaded. */
+  onOther: ((reply: { type: string }) => void) | null = null;
 
   constructor(private worker: Worker) {}
+
+  /** A message that expects no reply (e.g. "stop"). */
+  post(message: object) {
+    this.worker.postMessage(message);
+  }
 
   load(message: object, onProgress: (loaded: number, total: number) => void): Promise<{ warmupMs: number }> {
     const files = new Map<string, { loaded: number; total: number }>();
@@ -61,7 +68,8 @@ export class ModelWorker<Result extends { type: "result"; id: number }> {
   }
 
   private settle(reply: WorkerReply) {
-    if ((reply.type !== "result" && reply.type !== "error") || reply.id === undefined) return;
+    if (reply.type !== "result" && reply.type !== "error") return void this.onOther?.(reply);
+    if (reply.id === undefined) return;
     const waiter = this.pending.get(reply.id);
     if (!waiter) return;
     this.pending.delete(reply.id);

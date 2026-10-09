@@ -321,7 +321,7 @@ export function LabClient() {
 
       <section className="flex flex-col gap-1">
         <p>
-          WebGPU: {support ? (support.webgpu ? "yes" : `no – ${support.problem}`) : "…"} · shader-f16:{" "}
+          WebGPU: {support ? (support.webgpu ? "yes" : "no, CPU tier (?gpu=on switches an emulated one back)") : "…"} · shader-f16:{" "}
           {support?.shaderF16 ? "yes" : "no"} · device: {support?.mobile ? "phone" : "laptop"}
         </p>
         <p>

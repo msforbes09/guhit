@@ -39,7 +39,14 @@ export interface GenOptions {
   onText?: (delta: string) => boolean | void;
 }
 
-export class LLMClient {
+/** The story helper as the engine uses it, on the GPU (WebLLM) or the CPU (llm-cpu.ts). */
+export interface TextGenerator {
+  modelId: string;
+  lastStats: GenStats | null;
+  generate(messages: Message[], options: GenOptions): Promise<string>;
+}
+
+export class LLMClient implements TextGenerator {
   private engine: WebWorkerMLCEngine | null = null;
   // WebLLM runs one request at a time; queue callers instead of failing them.
   private chain: Promise<unknown> = Promise.resolve();
