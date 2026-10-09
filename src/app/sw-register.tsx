@@ -1,12 +1,22 @@
 "use client";
 
 import { useEffect } from "react";
+import { requestPersistence } from "@/lib/ai/offline";
 
 /**
  * Registers the offline service worker (production builds only) and links the
  * web app manifest; React hoists the link and meta tags into <head>.
  */
 export function ServiceWorkerRegister() {
+  useEffect(() => {
+    // Browsers grant persistent storage far more readily to an installed app,
+    // so ask again right after a parent installs Guhit (or when it runs installed).
+    const askToKeep = () => void requestPersistence();
+    window.addEventListener("appinstalled", askToKeep);
+    if (window.matchMedia("(display-mode: standalone)").matches) askToKeep();
+    return () => window.removeEventListener("appinstalled", askToKeep);
+  }, []);
+
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     if (process.env.NODE_ENV !== "production") {

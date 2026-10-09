@@ -80,9 +80,15 @@ one at a time and played back to back through Web Audio, so the first words
 start while the rest is still being made.
 
 The OS's own voices (Web Speech API; on macOS narrator "Samantha", character
-"Tessa") take over automatically when Kokoro is not downloaded, fails, takes
-over 4 s for a sentence, or measures slower than speech on the CPU (most
-phones); after a fallback the session stays on the OS voice. Kid screens
+"Tessa") take over automatically. When Kokoro is not downloaded, fails to load
+(it is retried once on its own after the other models), errors, produces
+invalid audio, or measures slower than speech on the CPU (most phones), the
+session stays on the OS voice. A sentence that is merely slow (over 4 s; 12 s
+for the first message after load or after the vision model ran) sends only
+that message to the OS voice, and the next message tries Kokoro again; three
+slow messages in a row keep the OS voice for the session. Kokoro is warmed
+up at load, once more when every model is in, and after each drawing guess.
+`/lab?ttsTimeout=<ms>` forces the timeout to test this. Kid screens
 never start the Kokoro download: only `/setup` (or `/lab`) does. The first
 `speak()` needs a user gesture on the page (a tap) because of browser
 autoplay rules.

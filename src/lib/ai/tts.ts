@@ -32,6 +32,13 @@ export type { SentenceMetric, SpeechPlayback, VoiceEngine, VoiceRole };
 const MAX_WASM_RTF = 0.8;
 /** A sentence that takes longer than this to synthesise is said by the built-in voice instead. */
 const SENTENCE_TIMEOUT_MS = 4000;
+/**
+ * The first message after load (or after another model used the GPU) can be
+ * slow while kernels settle; it gets more time before giving up on Kokoro.
+ */
+const FIRST_MESSAGE_TIMEOUT_MS = 12000;
+/** A timeout only skips Kokoro for that message; this many in a row means it cannot keep up here. */
+const MAX_TIMEOUTS_IN_A_ROW = 3;
 
 // Voices installed with the OS (localService) keep working with Wi-Fi off;
 // browser "Google" voices stream from a server, so they are only a last resort.
@@ -251,8 +258,10 @@ const same = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.repla
 
 /**
  * Speaks with Kokoro (an on-device neural voice) when it is loaded and keeps
- * up, and with the browser's built-in voice otherwise. Once the neural voice
- * fails or falls behind, the built-in voice speaks for the rest of the session.
+ * up, and with the browser's built-in voice otherwise. A sentence that is too
+ * slow sends only that message to the built-in voice; a real failure (an
+ * error, invalid audio, too slow for this device) keeps the built-in voice
+ * for the rest of the session.
  */
 export class Speaker {
   /** The page's speaker, so /lab can switch voices and read sentence timings. */
@@ -271,6 +280,11 @@ export class Speaker {
   private loading: Promise<VoiceInfo> | null = null;
   /** "?ttsForce=1" keeps the neural voice on even when it measures too slow (for /lab). */
   private forced = false;
+  /** True until the first Kokoro message after load or a re-warm, which gets the patient timeout. */
+  private coldStart = true;
+  private timeoutsInARow = 0;
+  /** "?ttsTimeout=<ms>" replaces both sentence timeouts, so /lab can exercise the fallback. */
+  private timeoutOverride: number | null = null;
   /** Every spoken sentence's timing, for /lab. */
   onMetric: ((metric: SentenceMetric) => void) | null = null;
 
@@ -351,6 +365,8 @@ export class Speaker {
     this.out.installUnlock();
     const search = window.location.search;
     this.forced = new URLSearchParams(search).get("ttsForce") === "1";
+    const timeout = Number(new URLSearchParams(search).get("ttsTimeout"));
+    this.timeoutOverride = Number.isFinite(timeout) && timeout > 0 ? timeout : null;
     const device = chooseTTSDevice(support, search);
     const dtype = chooseTTSDtype(device, search);
     const total = (KOKORO.modelMB[device] + KOKORO.voiceMB * PRELOADED_VOICES.length) * 1e6;
@@ -382,6 +398,8 @@ export class Speaker {
           this.kokoro = kokoro;
           this.neural = { device, dtype, rtf, warmupMs };
           this.reason = null;
+          this.coldStart = true;
+          this.timeoutsInARow = 0;
         }
       } catch (error) {
         kokoro.dispose();
@@ -397,7 +415,7 @@ export class Speaker {
       info.engine === "kokoro" && info.kokoro
         ? `Voice ready (Kokoro ${voiceName(info.kokoro.narrator)} and ${voiceName(info.kokoro.character)})`
         : info.narrator
-          ? `Using the device voice (${info.narrator})`
+          ? `Using the device voice (${info.narrator})${info.reason ? `. Why: ${info.reason}` : ""}`
           : "No voice found on this device",
     );
     return info;
@@ -428,9 +446,16 @@ export class Speaker {
       device,
       startListeners: this.startListeners,
       maxRtf: device === "wasm" && !this.forced ? MAX_WASM_RTF : null,
-      timeoutMs: SENTENCE_TIMEOUT_MS,
+      timeoutMs: this.timeoutOverride ?? (this.coldStart ? FIRST_MESSAGE_TIMEOUT_MS : SENTENCE_TIMEOUT_MS),
       disable: (reason) => {
         this.reason = reason;
+      },
+      timedOut: (reason) => {
+        this.timeoutsInARow++;
+        if (this.timeoutsInARow >= MAX_TIMEOUTS_IN_A_ROW) this.reason = `${reason} (${this.timeoutsInARow} times in a row)`;
+      },
+      succeeded: () => {
+        this.timeoutsInARow = 0;
       },
       builtin: (r, notify, reason) => this.builtinPlayback(r, notify, reason),
       metric: (m) => this.onMetric?.(m),
@@ -440,12 +465,36 @@ export class Speaker {
   /** Starts a message that is spoken sentence by sentence as text arrives. */
   stream(role: VoiceRole): SpeechPlayback {
     this.stop();
-    const playback =
-      this.useNeural() && this.kokoro && this.neural
-        ? new NeuralPlayback(role, this.neuralHost(role, this.kokoro, this.neural.device))
-        : this.builtinPlayback(role, true, this.kokoro ? (this.reason ?? undefined) : undefined);
+    let playback: SpeechPlayback;
+    if (this.useNeural() && this.kokoro && this.neural) {
+      playback = new NeuralPlayback(role, this.neuralHost(role, this.kokoro, this.neural.device));
+      this.coldStart = false;
+    } else {
+      playback = this.builtinPlayback(role, true, this.kokoro ? (this.reason ?? undefined) : undefined);
+    }
     this.active = playback;
     return playback;
+  }
+
+  /**
+   * Call synchronously inside a tap handler, before any await: browsers only
+   * let audio start from within the gesture itself, and the neural voice's
+   * samples arrive later. Also nudges Chrome's speech queue, which can get stuck.
+   */
+  prime() {
+    if (this.out.supported) void this.out.resume();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.resume();
+  }
+
+  /**
+   * After another model has used the GPU, Kokoro's next sentence can be slow:
+   * voice a throwaway word now, and give the next message the patient timeout.
+   */
+  rewarm() {
+    const kokoro = this.kokoro;
+    if (!kokoro || !this.useNeural()) return;
+    this.coldStart = true;
+    void kokoro.synthesize("Hi!", styleFor("narrator").voice, 1).catch(() => {});
   }
 
   async speak(text: string, role: VoiceRole = "narrator"): Promise<void> {

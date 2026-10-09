@@ -52,6 +52,10 @@ export interface NeuralHost {
   timeoutMs: number;
   /** The neural voice failed: it stays off for the rest of the session. */
   disable(reason: string): void;
+  /** A sentence was too slow: only this message goes to the built-in voice; the next one tries Kokoro again. */
+  timedOut(reason: string): void;
+  /** A sentence came back in time (resets the run of timeouts). */
+  succeeded(): void;
   /** A built-in voice message, for the sentences the neural voice cannot say. */
   builtin(role: VoiceRole, notifyStart: boolean, reason: string): SpeechPlayback;
   metric(metric: SentenceMetric): void;
@@ -87,9 +91,12 @@ export function splitOpening(sentence: string): [string, string] | null {
   return null;
 }
 
+/** A sentence that took too long: worth retrying later, unlike a real failure. */
+class SpeechTimeout extends Error {}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), ms);
+    const timer = setTimeout(() => reject(new SpeechTimeout(message)), ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -228,10 +235,19 @@ export class NeuralPlayback implements SpeechPlayback {
           fallback: "arrived too late, not played",
         }),
       );
-      this.fail(`Kokoro ${reason}`);
+      if (error instanceof SpeechTimeout) {
+        // Slow, not broken (often a cold GPU right after load): the rest of this
+        // message goes to the built-in voice, and the next message tries Kokoro again.
+        this.failed = true;
+        host.kokoro.cancelPending();
+        host.timedOut(`Kokoro ${reason}`);
+      } else {
+        this.fail(`Kokoro ${reason}`);
+      }
       return this.handOver(sentence, `Kokoro ${reason}`);
     }
     if (this.cancelled) return;
+    host.succeeded();
     // Time this sentence kept the voice waiting: from its turn (or from being added, if later) to samples.
     const synthMs = performance.now() - Math.max(turn, addedAt);
     const audioSeconds = result.audio.length / KOKORO.sampleRate;
