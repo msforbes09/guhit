@@ -3,13 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-ort.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-ort.mjs",
     "build": "next build",
+    "postbuild": "node scripts/precache-manifest.mjs",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "lab:sample": "mkdir -p public/samples && say -v Samantha -o public/samples/tala-answer.wav --data-format=LEI16@16000 \"Tala lives in a big purple castle on a cloud, and she eats pancakes every morning.\""
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.1",
+    "@mlc-ai/web-llm": "^0.2.85",
+    "@phosphor-icons/react": "^2.1.10",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"

@@ -127,6 +127,7 @@ function getWorker(): Worker | null {
     worker.onerror = (e) => {
       // A worker that fails to boot (old browser, blocked module workers)
       // must not strand callers: fail them and fall back to the main thread.
+      console.warn("[alive] cut-out worker failed:", e.message || e);
       for (const [, p] of pending) p.reject(new Error(e.message || "cut-out worker failed"));
       pending.clear();
       worker?.terminate();

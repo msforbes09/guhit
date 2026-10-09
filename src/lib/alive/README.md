@@ -47,8 +47,8 @@ import { AliveStage } from "@/components/alive";
 ## Offline notes
 
 - The classical cut-out and the animation make no network calls.
-- **AI cut-out.** The ONNX Runtime files are bundled with the app (`/_next/static/media/ort-wasm-simd-threaded.asyncify.*`). The model is `xrds/isnet-general-onnx-int8` at a pinned revision, about 44 MB, from huggingface.co on first use. Both are kept in Cache Storage (`transformers-cache`). A page that is already open keeps working offline.
-- **Fresh offline load.** The service worker must have cached the app's `/_next/static` chunks, including the worker and the Transformers.js chunk.
+- **AI cut-out.** The ONNX Runtime files are served from our own origin (`/ort/`, copied at build time and cached by the service worker, shared with speech recognition). The model is `xrds/isnet-general-onnx-int8` at a pinned revision, about 44 MB, from huggingface.co on first use. Both are kept in Cache Storage (`transformers-cache`). A page that is already open keeps working offline.
+- **Fresh offline load.** The service worker must have cached the app's `/_next/static` chunks (including the worker and the Transformers.js chunk) and `/ort/`.
 
 ## Licences
 
