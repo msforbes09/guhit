@@ -2,8 +2,17 @@ import { RealAI } from "./engine";
 import { MockAI } from "./mock";
 import type { LocalAI } from "./types";
 
-export type { AIStatus, ChatTurn, DrawingDescription, LoadProgress, LocalAI } from "./types";
+export type {
+  AIStatus,
+  ChatTurn,
+  DrawingDescription,
+  DrawingPhoto,
+  LoadProgress,
+  LocalAI,
+  PixelRect,
+} from "./types";
 export { detectSupport } from "./device";
+export { photoCropFromCutout } from "./photo";
 export { isMarkedReady, READY_FLAG } from "./offline";
 export { RealAI };
 

@@ -14,10 +14,12 @@ const ASSETS = "guhit-assets-v1";
 const ROUTES = ["/", "/snap", "/draw", "/friend", "/friends", "/story", "/book", "/setup", "/lab"];
 const FILES = [
   "/manifest.webmanifest",
-  "/favicon.ico",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/icon-maskable-512.png",
+  "/icons/favicon.svg",
+  "/icons/favicon-32.png",
+  "/icons/apple-touch-icon-180.png",
+  "/icons/guhit-icon-192.png",
+  "/icons/guhit-icon-512.png",
+  "/icons/guhit-icon-maskable-512.png",
   "/ort/ort-wasm-simd-threaded.asyncify.mjs",
   "/ort/ort-wasm-simd-threaded.asyncify.wasm",
 ];
@@ -144,13 +146,35 @@ async function handlePage(request) {
   }
 }
 
+/**
+ * A copy of a response that carries no URL of its own, so the browser keeps
+ * the request's URL. Turbopack starts each Web Worker with its config in the
+ * URL ("#params=…", or "?params=" for shared workers); a response carrying its
+ * own URL drops that, and the worker fails with "Missing worker bootstrap config".
+ */
+const asRequested = (response) =>
+  new Response(response.body, { status: response.status, statusText: response.statusText, headers: response.headers });
+
+async function looseMatch(cache, request) {
+  const cached = await cache.match(request, { ignoreSearch: true });
+  return cached ? asRequested(cached) : undefined;
+}
+
 async function handleAsset(request) {
   const assets = await caches.open(ASSETS);
-  const cached = await assets.match(request, { ignoreSearch: true });
-  if (cached) return cached;
-  const response = await fetch(request);
-  if (response.ok && response.type === "basic") await assets.put(request, response.clone());
-  return response;
+  const isWorker = request.destination === "worker" || request.destination === "sharedworker";
+  const exact = await assets.match(request);
+  if (exact) return isWorker ? asRequested(exact) : exact;
+  try {
+    const response = await fetch(request);
+    if (response.ok && response.type === "basic") await assets.put(request, response.clone());
+    return isWorker ? asRequested(response) : response;
+  } catch (error) {
+    // Offline: the precache stored build files without their query strings.
+    const cached = await looseMatch(assets, request);
+    if (cached) return cached;
+    throw error;
+  }
 }
 
 async function handleOther(request) {
@@ -160,7 +184,7 @@ async function handleOther(request) {
     if (response.ok && response.type === "basic") await assets.put(request, response.clone());
     return response;
   } catch (error) {
-    const cached = await assets.match(request, { ignoreSearch: true });
+    const cached = await looseMatch(assets, request);
     if (cached) return cached;
     throw error;
   }

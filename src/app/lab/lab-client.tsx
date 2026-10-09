@@ -21,6 +21,18 @@ const ANSWERS = [
   "they fly to the rainbow to look for pancakes",
 ];
 const SAMPLE_CLIP = "/samples/tala-answer.wav";
+// Copies of assets/test-drawings (gitignored): photos of paper drawings.
+const SAMPLE_DRAWINGS = ["tala-dragon", "cat-uneven-light", "robot-on-table", "flower-girl-thin-lines"];
+
+interface DrawingResult {
+  name: string;
+  /** "cut-out" runs the real pipeline (alive cut-out, then describe); "photo" captions the raw photo. */
+  input: "cut-out" | "photo";
+  image: string;
+  label: string;
+  caption: string;
+  ms: number;
+}
 
 const ms = (value?: number) => (value === undefined ? "–" : value >= 10000 ? `${(value / 1000).toFixed(1)} s` : `${Math.round(value)} ms`);
 const num = (value?: number, digits = 1) => (value === undefined || value === 0 ? "–" : value.toFixed(digits));
@@ -39,6 +51,7 @@ export function LabClient() {
   const [error, setError] = useState<string | null>(null);
   const [speakReplies, setSpeakReplies] = useState(true);
   const [recording, setRecording] = useState(false);
+  const [drawings, setDrawings] = useState<DrawingResult[]>([]);
   const recorder = useRef<MediaRecorder | null>(null);
   // The engine only exists in the browser; reading it before hydration would mismatch the server HTML.
   const mounted = useSyncExternalStore(
@@ -116,11 +129,35 @@ export function LabClient() {
     await ai.transcribe(await response.blob());
   }
 
+  async function describeSamples() {
+    if (!ai) return;
+    await loadModels();
+    const { cutout } = await import("@/lib/alive");
+    const results: DrawingResult[] = [];
+    for (const name of SAMPLE_DRAWINGS) {
+      const response = await fetch(`/samples/drawings/${name}.png`);
+      if (!response.ok) throw new Error(`missing /samples/drawings/${name}.png (copy assets/test-drawings there)`);
+      const photo = await response.blob();
+      const cut = await cutout(photo);
+      const inputs: [DrawingResult["input"], string][] = [
+        ["cut-out", cut.png],
+        ["photo", URL.createObjectURL(photo)],
+      ];
+      for (const [input, image] of inputs) {
+        const { label } = await ai.describeDrawing(image);
+        const metric = real?.metrics.at(-1);
+        results.push({ name, input, image, label, caption: metric?.detail ?? "", ms: metric?.ms ?? 0 });
+        setDrawings([...results]);
+      }
+    }
+  }
+
   async function runAll() {
     await step("load", loadModels);
     await step("chat", runChat);
     await step("story", runStory);
     await step("whisper", transcribeSample);
+    await step("describe drawings", describeSamples);
     report();
   }
 
@@ -166,6 +203,8 @@ export function LabClient() {
       decodeTokPerSecAvg: avg(llmCalls.map((m) => m.decodeTps)),
       prefillTokPerSecAvg: avg(llmCalls.map((m) => m.prefillTps)),
       transcribe: of("transcribe").map((m) => ({ ms: m.ms, audioSeconds: m.audioSeconds, text: m.text })),
+      describeMsAvg: avg(of("describe").map((m) => m.ms)),
+      drawings: drawings.map(({ name, input, label, caption, ms }) => ({ name, input, label, caption, ms })),
       calls: metrics,
     };
   }
@@ -181,6 +220,9 @@ export function LabClient() {
     ["  LLM load + warm-up", ms(timings.llmMs)],
     ["  Whisper load", ms(timings.sttMs)],
     ["  Whisper warm-up", ms(timings.sttWarmupMs)],
+    ["  Vision load", real?.visionError ? `failed: ${real.visionError}` : ms(timings.visionMs)],
+    ["  Vision warm-up", ms(timings.visionWarmupMs)],
+    ["Describe drawing (avg)", ms(s.describeMsAvg)],
     ["Reply: first sentence ready (avg)", ms(s.replyFirstSentenceMsAvg)],
     ["Reply: first words spoken (avg)", ms(s.replyFirstSpokenMsAvg)],
     ["Reply: complete (avg)", ms(s.replyTotalMsAvg)],
@@ -294,6 +336,14 @@ export function LabClient() {
         </button>
         <button
           type="button"
+          disabled={!!busy}
+          onClick={() => step("describe drawings", describeSamples)}
+          className="rounded border px-3 py-2"
+        >
+          Describe test drawings
+        </button>
+        <button
+          type="button"
           disabled={!!busy && !recording}
           onClick={() => void toggleRecording()}
           className="rounded border px-3 py-2"
@@ -335,6 +385,26 @@ export function LabClient() {
           ))}
         </tbody>
       </table>
+
+      {drawings.length > 0 && (
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {drawings.map((d) => (
+            <figure key={`${d.name}-${d.input}`} className="flex flex-col gap-1 rounded border border-stone-200 p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element -- data and blob URLs made on this page */}
+              <img src={d.image} alt={`${d.name} (${d.input})`} className="h-32 w-full bg-white object-contain" />
+              <figcaption className="font-sans text-xs">
+                <strong>{d.label || "(no guess)"}</strong>
+                <br />
+                <span className="text-stone-500">
+                  {d.name} · {d.input} · {ms(d.ms)}
+                </span>
+                <br />
+                <span className="text-stone-400">raw: {d.caption}</span>
+              </figcaption>
+            </figure>
+          ))}
+        </section>
+      )}
 
       <table className="w-full text-xs">
         <thead>

@@ -18,25 +18,48 @@ const PARALLEL = 8;
 
 const root = join(process.cwd(), "public", "models");
 const llmIds = process.argv.slice(2).length ? process.argv.slice(2) : ["Qwen3-1.7B-q4f16_1-MLC"];
-const whisper = "onnx-community/whisper-base.en";
-// The precisions src/lib/ai/models.ts loads on WebGPU and on the CPU fallback.
-const whisperOnnx = [
-  "onnx/encoder_model.onnx",
-  "onnx/decoder_model_merged_q4.onnx",
-  "onnx/encoder_model_quantized.onnx",
-  "onnx/decoder_model_merged_quantized.onnx",
+// Transformers.js models and the ONNX files of the precisions src/lib/ai/models.ts loads.
+const onnxRepos = [
+  {
+    repo: "onnx-community/whisper-base.en",
+    onnx: [
+      "onnx/encoder_model.onnx",
+      "onnx/decoder_model_merged_q4.onnx",
+      "onnx/encoder_model_quantized.onnx",
+      "onnx/decoder_model_merged_quantized.onnx",
+    ],
+  },
+  {
+    repo: "onnx-community/Florence-2-base-ft",
+    onnx: [
+      "onnx/vision_encoder_q4.onnx",
+      "onnx/embed_tokens_quantized.onnx",
+      "onnx/encoder_model_q4.onnx",
+      "onnx/decoder_model_merged_q4.onnx",
+    ],
+  },
 ];
 
-// curl resumes partial files and retries dropped connections, which slow or
-// flaky Wi-Fi to the Hugging Face CDN needs for 1 GB of weights.
+const complete = (target, expectedSize) =>
+  existsSync(target) && (!expectedSize || statSync(target).size === expectedSize);
+
+// The Hugging Face CDN sometimes leaves a connection crawling at a few KB/s
+// while a fresh one runs at MB/s, so a transfer that drops below 100 KB/s for
+// 15 s is abandoned and resumed ("-C -") on a new connection.
 async function download(url, target, expectedSize) {
-  if (existsSync(target) && (!expectedSize || statSync(target).size === expectedSize)) return "kept";
+  if (complete(target, expectedSize)) return "kept";
   mkdirSync(dirname(target), { recursive: true });
-  const args = ["-sSfL", "--retry", "20", "--retry-all-errors", "--retry-delay", "2", "-o", target, url];
-  // "-C -" resumes from the partial file left by an earlier, interrupted run.
-  if (existsSync(target)) args.unshift("-C", "-");
-  await run("curl", args, { maxBuffer: 1024 * 1024 });
-  return "downloaded";
+  for (let attempt = 1; attempt <= 40; attempt++) {
+    const args = ["-sSfL", "--speed-limit", "100000", "--speed-time", "15", "-o", target, url];
+    if (existsSync(target)) args.unshift("-C", "-");
+    try {
+      await run("curl", args, { maxBuffer: 1024 * 1024 });
+      if (complete(target, expectedSize)) return attempt === 1 ? "downloaded" : `downloaded (${attempt} tries)`;
+    } catch {
+      // Slow or dropped: try again from where the partial file ends.
+    }
+  }
+  throw new Error(`Gave up on ${url}`);
 }
 
 async function repoFiles(repo) {
@@ -64,7 +87,9 @@ for (const id of llmIds) {
   queue.push({ url: record.model_lib, target: join(root, "libs", record.model_lib.split("/").pop()) });
   queue.push(...(await filesOf(`mlc-ai/${id}`, wanted)));
 }
-queue.push(...(await filesOf(whisper, (name) => (name.startsWith("onnx/") ? whisperOnnx.includes(name) : wanted(name)))));
+for (const { repo, onnx } of onnxRepos) {
+  queue.push(...(await filesOf(repo, (name) => (name.startsWith("onnx/") ? onnx.includes(name) : wanted(name)))));
+}
 
 const total = queue.length;
 let done = 0;

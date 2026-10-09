@@ -1,4 +1,5 @@
 import type { STTRequest, STTResponse } from "@/workers/stt.worker";
+import { ModelWorker } from "./model-worker";
 import type { STTDevice } from "./models";
 
 const SAMPLE_RATE = 16000;
@@ -43,9 +44,7 @@ export function cleanTranscript(text: string): string {
 }
 
 export class STTClient {
-  private worker: Worker | null = null;
-  private nextId = 1;
-  private pending = new Map<number, { resolve: (r: STTResponse & { type: "result" }) => void; reject: (e: Error) => void }>();
+  private worker: ModelWorker<STTResponse & { type: "result" }> | null = null;
 
   load(
     model: string,
@@ -54,56 +53,20 @@ export class STTClient {
     modelHost: string | null,
     onProgress: (loaded: number, total: number) => void,
   ): Promise<{ warmupMs: number }> {
-    const worker = new Worker(new URL("../../workers/stt.worker.ts", import.meta.url), { type: "module" });
-    this.worker = worker;
-    const files = new Map<string, { loaded: number; total: number }>();
-    return new Promise((resolve, reject) => {
-      worker.onmessage = (event: MessageEvent<STTResponse>) => {
-        const message = event.data;
-        if (message.type === "progress") {
-          files.set(message.file, { loaded: message.loaded, total: message.total });
-          let loaded = 0;
-          let total = 0;
-          for (const f of files.values()) {
-            loaded += f.loaded;
-            total += f.total;
-          }
-          onProgress(loaded, total);
-        } else if (message.type === "ready") {
-          worker.onmessage = (e: MessageEvent<STTResponse>) => this.onResult(e.data);
-          resolve({ warmupMs: message.warmupMs });
-        } else if (message.type === "error") {
-          reject(new Error(message.message));
-        }
-      };
-      worker.onerror = (event) => reject(new Error(event.message || "Speech recognition failed to start."));
-      worker.postMessage({ type: "load", model, device, dtype, modelHost } satisfies STTRequest);
-    });
-  }
-
-  private onResult(message: STTResponse) {
-    if (message.type !== "result" && message.type !== "error") return;
-    if (message.id === undefined) return;
-    const waiter = this.pending.get(message.id);
-    if (!waiter) return;
-    this.pending.delete(message.id);
-    if (message.type === "result") waiter.resolve(message);
-    else waiter.reject(new Error(message.message));
+    this.worker = new ModelWorker(
+      new Worker(new URL("../../workers/stt.worker.ts", import.meta.url), { type: "module" }),
+    );
+    return this.worker.load({ type: "load", model, device, dtype, modelHost } satisfies STTRequest, onProgress);
   }
 
   async transcribe(blob: Blob): Promise<Transcription> {
-    const worker = this.worker;
-    if (!worker) throw new Error("Speech recognition is not loaded yet.");
+    if (!this.worker) throw new Error("Speech recognition is not loaded yet.");
     const audio = await decodeTo16kMono(blob);
     const audioSeconds = audio.length / SAMPLE_RATE;
     if (audio.length < SAMPLE_RATE * 0.3 || rms(audio) < SILENCE_RMS) {
       return { text: "", ms: 0, audioSeconds };
     }
-    const id = this.nextId++;
-    const result = await new Promise<STTResponse & { type: "result" }>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      worker.postMessage({ type: "transcribe", id, audio } satisfies STTRequest, [audio.buffer]);
-    });
+    const result = await this.worker.call({ type: "transcribe", audio }, [audio.buffer]);
     return { text: cleanTranscript(result.text), ms: result.ms, audioSeconds };
   }
 }

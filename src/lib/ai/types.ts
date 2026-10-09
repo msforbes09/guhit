@@ -23,12 +23,31 @@ export interface DrawingDescription {
   confidence?: number;
 }
 
+export interface PixelRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The picture the cut-out came from; recognition reads the original pixels, which carry more detail. */
+export interface DrawingPhoto {
+  /** Data URL of the original photo, or of the on-screen drawing's canvas. */
+  image: string;
+  /** The cut-out's bounding box in that image's own pixels (see photoCropFromCutout). */
+  crop: PixelRect;
+}
+
 export interface LocalAI {
   status(): AIStatus;
   load(onProgress: (p: LoadProgress) => void): Promise<void>;
   transcribe(audio: Blob): Promise<string>;
-  /** Guesses what the child drew, from the cut-out (data URL PNG, transparent background). */
-  describeDrawing(png: string): Promise<DrawingDescription>;
+  /**
+   * Guesses what the child drew. `png` is the cut-out (data URL, transparent
+   * background); pass `photo` when there is one: the guess is then made from
+   * the original picture cropped to the cut-out, which is more accurate.
+   */
+  describeDrawing(png: string, photo?: DrawingPhoto): Promise<DrawingDescription>;
   /** The drawn character answers the child in first person. */
   reply(character: Character, history: ChatTurn[], childSays: string): Promise<string>;
   firstQuestion(character: Character): Promise<string>;

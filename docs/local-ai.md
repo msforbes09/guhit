@@ -34,6 +34,18 @@ used.
 Pass `childSays = ""` with an empty history to get the character's greeting
 when it first comes alive.
 
+## Guessing the drawing
+
+```ts
+const { label } = await getAI().describeDrawing(cut.png); // e.g. "a purple dragon with wings"
+```
+
+Florence-2 captions the cut-out on white paper; the caption is trimmed to a
+short noun phrase ("A cartoon drawing of …" and "on a white background" are
+removed) for "Is that …?". An empty `label` means no guess (model not
+available, nothing safe to say): ask the child instead. The drawing itself is
+never changed.
+
 ## Story mode
 
 `firstQuestion(character)`, then per turn `writePage(story, question, answer)`
