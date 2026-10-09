@@ -17,10 +17,22 @@ export interface ChatTurn {
   text: string;
 }
 
+/** Why something was kept away from the child (see src/lib/ai/safety.ts). */
+export type SafetyCategory =
+  | "weapon"
+  | "violence"
+  | "gore"
+  | "adult"
+  | "drugs"
+  | "profanity"
+  | "personal-info";
+
 export interface DrawingDescription {
   /** Short kid-friendly noun phrase, e.g. "a purple dragon with wings"; "" when there is no guess. */
   label: string;
   confidence?: number;
+  /** Set when the drawing looks unsafe for the app (the label is then ""). */
+  flagged?: SafetyCategory;
 }
 
 export interface PixelRect {

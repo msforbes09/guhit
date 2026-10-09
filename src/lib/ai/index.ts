@@ -7,6 +7,7 @@ export type {
   ChatTurn,
   DrawingDescription,
   DrawingPhoto,
+  SafetyCategory,
   LoadProgress,
   LocalAI,
   PixelRect,
