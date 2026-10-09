@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { getAI } from "@/lib/ai";
 import { getFriend, newId, saveStory, type Friend } from "@/lib/story/db";
-import { kindOf } from "@/lib/story/kind";
+import { settledKind } from "@/lib/story/kind";
 import type { Character, Story } from "@/lib/story/types";
 import { sceneFor } from "./Backdrop";
 import { FriendSkeleton } from "./FriendScreen";
@@ -29,7 +29,7 @@ const asCharacter = ({ id, name, description, drawing, cutout, kind, seenAs }: F
   description,
   drawing,
   cutout,
-  kind: kind ?? kindOf(description, seenAs),
+  kind: settledKind({ kind, description, seenAs }),
 });
 
 /** /story?id=<friend>: the character asks, the child answers, each answer becomes a page. */

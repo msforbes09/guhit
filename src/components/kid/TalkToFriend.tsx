@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { getAI } from "@/lib/ai";
 import type { ChatTurn } from "@/lib/ai";
 import { saveFriend, type Friend } from "@/lib/story/db";
-import { kindOf } from "@/lib/story/kind";
+import { settledKind } from "@/lib/story/kind";
 import { JointPicker, loadCutout, type AliveCharacterHandle, type Cutout, type Joints, type Motion } from "./alive";
 import { FriendBooks } from "./FriendBooks";
 import { FriendStage } from "./FriendStage";
@@ -56,7 +56,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
   const [picking, setPicking] = useState<Cutout | null>(null);
   const name = friend.name;
   // Each kind moves its own way; only creatures have a head, hands and feet (and wave).
-  const kind = friend.kind ?? kindOf(friend.description, friend.seenAs);
+  const kind = settledKind(friend);
   const creature = kind === "creature";
   const moves = movesFor(kind);
 
@@ -117,7 +117,7 @@ export function TalkToFriend({ friend: initial }: { friend: Friend }) {
       setAwaitingWords(true);
       try {
         const me = friendRef.current;
-        const character = { ...me, kind: me.kind ?? kindOf(me.description, me.seenAs) };
+        const character = { ...me, kind: settledKind(me) };
         const reply = (await getAI().reply(character, history.slice(-MEMORY_TURNS), childSays)).trim();
         setAwaitingWords(false);
         await remember([...friendRef.current.chat, { who: "character", text: reply }]);

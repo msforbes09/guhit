@@ -1,11 +1,12 @@
 /**
  * What sort of thing a drawing is, from the words describing it. The single
  * source for anything that depends on it (only creatures get a head, hands
- * and feet; later, each kind may move like itself).
+ * and feet and wave; each kind moves like itself). Children mostly draw
+ * people and animals, so anything not clearly something else is a creature.
  */
 export type Kind = "creature" | "vehicle" | "plant" | "flyer" | "swimmer" | "thing";
 
-const WORDS: Record<Exclude<Kind, "thing">, string[]> = {
+const WORDS: Record<Kind, string[]> = {
   vehicle: [
     "car", "jeep", "jeepney", "bus", "truck", "firetruck", "train", "boat", "ship", "bike", "bicycle",
     "motorcycle", "motorbike", "tricycle", "trike", "rocket", "spaceship", "van", "taxi", "tractor",
@@ -34,6 +35,17 @@ const WORDS: Record<Exclude<Kind, "thing">, string[]> = {
     "mouse", "mice", "frog", "giraffe", "zebra", "panda", "koala", "kangaroo", "hippo", "rhino",
     "deer", "squirrel", "hamster", "chicken", "duck", "penguin", "snowman", "carabao", "kalabaw",
     "tao", "bata", "babae", "lalaki", "aso", "pusa", "unggoy", "baboy", "kabayo", "manok", "daga",
+    "sister", "brother", "sis", "bro", "friend", "bestie", "grandma", "grandpa", "granny", "nana",
+    "aunt", "auntie", "uncle", "cousin", "twin", "family", "me", "myself", "nanay", "tatay", "inay",
+    "itay", "tita", "tito", "pinsan", "kapatid", "kaibigan", "guro", "dalaga", "binata",
+  ],
+  // Clearly inanimate: these hop about but never get arms and legs.
+  thing: [
+    "house", "castle", "tower", "building", "ball", "cake", "cupcake", "cookie", "pizza", "candy",
+    "box", "cup", "mug", "rock", "stone", "star", "heart", "shoe", "hat", "chair", "table", "bed",
+    "lamp", "book", "pencil", "crayon", "toy", "block", "clock", "phone", "computer", "tv", "door",
+    "sun", "moon", "cloud", "rainbow", "mountain", "apple", "banana", "bahay", "bola", "bato",
+    // Not bituin, araw, buwan or ulap: they are popular names too.
   ],
 };
 
@@ -45,24 +57,35 @@ const PATTERNS = (Object.keys(WORDS) as (keyof typeof WORDS)[]).map((kind) => ({
   re: new RegExp(`\\b(?:${WORDS[kind].map(escape).join("|")})(?:e?s)?\\b`, "i"),
 }));
 
-/** The kind named earliest in one piece of text: "a girl holding a flower" is a creature. */
-function kindIn(text: string): Kind {
-  let best: { kind: Kind; at: number } = { kind: "thing", at: Infinity };
+/** The kind named earliest in one piece of text ("a girl holding a flower" is a creature), or null. */
+function kindIn(text: string): Kind | null {
+  let best: { kind: Kind; at: number } | null = null;
   for (const { kind, re } of PATTERNS) {
     const match = re.exec(text);
-    if (match && match.index < best.at) best = { kind, at: match.index };
+    if (match && (!best || match.index < best.at)) best = { kind, at: match.index };
   }
-  return best.kind;
+  return best?.kind ?? null;
 }
 
 /**
  * Pass the most trusted words first: the child's confirmed description, then
- * the drawing reader's guess. The first one that names something decides.
+ * the drawing reader's guess. The first one that names something decides; a
+ * bare name ("Lily") or no words at all means a creature.
  */
 export function kindOf(...texts: (string | undefined)[]): Kind {
   for (const text of texts) {
-    const kind = text ? kindIn(text) : "thing";
-    if (kind !== "thing") return kind;
+    const kind = text ? kindIn(text) : null;
+    if (kind) return kind;
   }
-  return "thing";
+  return "creature";
+}
+
+/**
+ * The kind to use for a saved friend or story character. Friends saved
+ * before creatures became the default were stored as "thing" whenever no
+ * keyword matched; those keep "thing" only when their words say so.
+ */
+export function settledKind(c: { kind?: Kind; description?: string; seenAs?: string }): Kind {
+  if (c.kind && c.kind !== "thing") return c.kind;
+  return kindOf(c.description, c.seenAs);
 }
