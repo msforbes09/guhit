@@ -27,6 +27,7 @@ export type Art =
   | "comet"
   | "castle"
   | "window"
+  | "nightWindow"
   | "frame"
   | "bed"
   | "lamp"
@@ -116,7 +117,6 @@ export const ART: Record<Art, () => ReactNode> = {
   ),
   moon: () => (
     <>
-      <circle className="bd-a-glow" cx="50" cy="50" r="46" fill="#fff3c4" opacity="0.25" style={{ transformOrigin: "50px 50px" }} />
       <path d="M58 14 A36 36 0 1 0 86 70 A30 30 0 1 1 58 14 Z" fill="#fff3c4" stroke="#f3d77a" strokeWidth="3" />
       <circle cx="40" cy="52" r="3" fill={INK} />
       <path d="M36 64 Q42 69 48 64" fill="none" stroke={INK} strokeWidth="2.5" strokeLinecap="round" />
@@ -266,6 +266,21 @@ export const ART: Record<Art, () => ReactNode> = {
       <line x1="50" y1="8" x2="50" y2="88" stroke="#c99764" strokeWidth="5" />
       <line x1="10" y1="48" x2="90" y2="48" stroke="#c99764" strokeWidth="5" />
       <path d="M4 4 Q14 50 6 94 L22 94 Q30 50 22 4 Z M96 4 Q86 50 94 94 L78 94 Q70 50 78 4 Z" fill="#f585ae" opacity="0.92" />
+    </>
+  ),
+  nightWindow: () => (
+    <>
+      <rect x="10" y="8" width="80" height="80" rx="6" fill="#26306a" stroke="#c99764" strokeWidth="7" />
+      <path d="M70 18 A13 13 0 1 0 80 40 A10 10 0 1 1 70 18 Z" fill="#fff3c4" />
+      <g fill="#fff4b8">
+        <circle cx="28" cy="24" r="2.4" />
+        <circle cx="40" cy="38" r="1.8" />
+        <circle cx="24" cy="62" r="2" />
+        <circle cx="66" cy="66" r="2.4" />
+      </g>
+      <line x1="50" y1="8" x2="50" y2="88" stroke="#c99764" strokeWidth="5" />
+      <line x1="10" y1="48" x2="90" y2="48" stroke="#c99764" strokeWidth="5" />
+      <path d="M4 4 Q14 50 6 94 L22 94 Q30 50 22 4 Z M96 4 Q86 50 94 94 L78 94 Q70 50 78 4 Z" fill="#7c4cc8" opacity="0.92" />
     </>
   ),
   frame: () => (

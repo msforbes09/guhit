@@ -65,7 +65,7 @@ export function StoryPage({
 }) {
   return (
     <article className={`crayon-edge flex flex-col overflow-hidden rounded-cut-lg bg-white shadow-soft ${className ?? ""}`}>
-      <Backdrop scene={staging.scene} props={staging.props} className="aspect-[4/3] w-full max-h-[56vh] shrink-0 rounded-t-[inherit]">
+      <Backdrop scene={staging.scene} props={staging.props} bedtime={staging.move === "sleep"} className="aspect-[4/3] w-full max-h-[56vh] shrink-0 rounded-t-[inherit]">
         {cutout && <StagedCharacter cutout={cutout} kind={kind} motion={motion ?? motionFor(staging.move, kind)} talking={talking} />}
         {label && (
           <span className="absolute left-3 top-3 z-10 rounded-full bg-white/90 px-3 py-1 font-display text-base font-bold text-ink shadow-soft">

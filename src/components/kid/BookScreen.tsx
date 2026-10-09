@@ -22,6 +22,8 @@ const TURN_MS = 720;
 const SETTLE_MS = 950;
 const PAUSE_BETWEEN_PAGES = 900;
 const SENTENCE_GAP_MS = 260;
+/** Babble carries no words, so a page stays at least this long per word: time to look and follow along. */
+const MS_PER_WORD = 300;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sentences = (text: string) => (text.match(/[^.!?]+[.!?]+["'”’)]*|[^.!?]+$/g) ?? [text]).map((s) => s.trim()).filter(Boolean);
 
@@ -132,13 +134,16 @@ function Book({ story }: { story: Story }) {
         return;
       }
       const parts = sentences(text);
-      const ms = parts.reduce((sum, s) => sum + planBabble(s, kind).length * 1000 + SENTENCE_GAP_MS, 0);
+      const babbling = parts.reduce((sum, s) => sum + planBabble(s, kind).length * 1000 + SENTENCE_GAP_MS, 0);
+      const ms = Math.max(babbling, text.split(/\s+/).length * MS_PER_WORD);
       setReadAlong({ index: i, ms, token });
+      const started = performance.now();
       for (const part of parts) {
         if (readToken.current !== token) return;
         await sayAsCharacter(part, kind);
         await wait(SENTENCE_GAP_MS);
       }
+      await wait(ms - (performance.now() - started));
     },
     [kind, textAt],
   );
@@ -226,7 +231,7 @@ function Book({ story }: { story: Story }) {
             <Words text="The End" along={along} />
           </p>
           <Flourish />
-          <div className="mt-2 flex flex-col gap-3 sm:flex-row lg:flex-col xl:flex-row">
+          <div className="mt-2 flex flex-wrap gap-3">
             <Button tone="sun" size="md" onClick={() => step(-(last + 1))}>
               Read it again
             </Button>
@@ -240,7 +245,7 @@ function Book({ story }: { story: Story }) {
     const staging = stagings[index];
     return (
       <Sheet staging={staging} cutout={cutout} kind={kind} motion={motionFor(staging.move, kind)} label={`${index + 1}`}>
-        <p className="text-[1.45rem] leading-snug text-ink sm:text-[1.7rem] lg:text-[2rem] lg:leading-[1.35]">
+        <p className="text-[1.45rem] leading-snug text-ink sm:text-[1.7rem] lg:text-[2rem] lg:leading-[1.35] [@media(max-height:700px)]:text-[1.2rem]">
           <Words text={story.pages[index].text} along={along} />
         </p>
       </Sheet>
@@ -364,7 +369,7 @@ function Sheet({
 }) {
   return (
     <article className="crayon-edge flex h-full flex-col overflow-hidden rounded-cut-lg bg-paper shadow-lift md:landscape:grid md:landscape:grid-cols-[1.45fr_1fr] md:landscape:grid-rows-1">
-      <Backdrop scene={staging.scene} props={staging.props} className="min-h-0 flex-1">
+      <Backdrop scene={staging.scene} props={staging.props} bedtime={staging.move === "sleep"} className="min-h-0 flex-1">
         {cutout && <StagedCharacter cutout={cutout} kind={kind} motion={motion} level={speechLevel} />}
         {label && (
           <span className="absolute left-3 top-3 z-10 grid h-11 min-w-11 place-items-center rounded-full bg-white/90 px-2 font-display text-xl font-black text-ink shadow-soft">

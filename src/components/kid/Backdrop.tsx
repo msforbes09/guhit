@@ -33,6 +33,8 @@ interface Spot {
   flip?: boolean;
   /** Darker, for night. */
   dim?: boolean;
+  /** A soft glow around it (the moon). */
+  halo?: boolean;
 }
 
 interface SceneDef {
@@ -100,7 +102,7 @@ const SCENES: Record<Scene, SceneDef> = {
     sky: ["#1b2253", "#4a3f86"],
     far: [
       ...STARS,
-      { art: "moon", x: 80, y: 18, s: 24 },
+      { art: "moon", x: 80, y: 18, s: 24, halo: true },
       { art: "comet", x: 30, y: 14, s: 16, a: "shoot" },
       { art: "pine", x: 24, y: 70, s: 12, dim: true },
       { art: "pine", x: 70, y: 69, s: 10, dim: true },
@@ -143,7 +145,6 @@ const SCENES: Record<Scene, SceneDef> = {
     ),
     mid: [
       { art: "palm", x: 91, y: 82, s: 38, a: "sway" },
-      { art: "sandcastle", x: 14, y: 91, s: 18 },
     ],
     front: (
       <>
@@ -152,6 +153,7 @@ const SCENES: Record<Scene, SceneDef> = {
       </>
     ),
     near: [
+      { art: "sandcastle", x: 14, y: 93, s: 18 },
       { art: "shell", x: 72, y: 96, s: 6 },
       { art: "starfish", x: 86, y: 97, s: 7 },
     ],
@@ -366,7 +368,7 @@ const SCENES: Record<Scene, SceneDef> = {
 
 /** Where a mentioned thing goes, and which layer. */
 const PROP_SPOTS: Record<Prop, { spot: Spot; layer: "far" | "near" }> = {
-  cake: { spot: { art: "cake", x: 80, y: 96, s: 15 }, layer: "near" },
+  cake: { spot: { art: "cake", x: 70, y: 97, s: 15 }, layer: "near" },
   ball: { spot: { art: "ball", x: 24, y: 94, s: 9, a: "bounce" }, layer: "near" },
   kite: { spot: { art: "kite", x: 24, y: 24, s: 14, a: "bob" }, layer: "far" },
   rainbow: { spot: { art: "rainbow", x: 50, y: 42, s: 80 }, layer: "far" },
@@ -395,7 +397,11 @@ function Spots({ spots }: { spots: Spot[] }) {
           style={{
             animationDelay: spot.d ? `${spot.d}s` : undefined,
             transformOrigin: stands ? "50% 100%" : undefined,
-            filter: spot.dim ? "brightness(0.55) saturate(0.8)" : undefined,
+            filter: spot.dim
+              ? "brightness(0.55) saturate(0.8)"
+              : spot.halo
+                ? "drop-shadow(0 0 1.5cqmin rgb(255 243 196 / 0.9)) drop-shadow(0 0 5cqmin rgb(255 243 196 / 0.45))"
+                : undefined,
           }}
         >
           <svg viewBox={`0 0 ${100 * ratio} 100`} style={spot.flip ? { scale: "-1 1" } : undefined}>
@@ -446,19 +452,24 @@ function Weather({ kind }: { kind: "rain" | "snow" }) {
 export function Backdrop({
   scene = "meadow",
   props = [],
+  bedtime = false,
   children,
   className,
 }: {
   scene?: Scene;
   /** Small things the page mentions (a cake, a kite…), drawn in too. */
   props?: Prop[];
+  /** The character is going to sleep: indoors, the window shows the night. */
+  bedtime?: boolean;
   children?: ReactNode;
   className?: string;
 }) {
   const def = SCENES[scene] ?? SCENES.meadow;
   const [top, bottom] = def.sky;
   const extra = props.map((p) => PROP_SPOTS[p]);
-  const far = [...def.far, ...extra.filter((e) => e.layer === "far").map((e) => e.spot)];
+  const far = [...def.far, ...extra.filter((e) => e.layer === "far").map((e) => e.spot)].map((spot) =>
+    bedtime && spot.art === "window" ? { ...spot, art: "nightWindow" as const } : spot,
+  );
   const near = [...def.near, ...extra.filter((e) => e.layer === "near").map((e) => e.spot)];
   return (
     <div
@@ -471,12 +482,22 @@ export function Backdrop({
       </style>
       <svg aria-hidden="true" width="0" height="0" className="absolute">
         <defs>
-          <filter id="bd-crayon" x="-10%" y="-10%" width="120%" height="120%">
+          <filter id="bd-crayon" x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB">
             <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="4" result="warp" />
             <feDisplacementMap in="SourceGraphic" in2="warp" scale="3" xChannelSelector="R" yChannelSelector="G" result="wobbly" />
+            {/* Wax texture: lighter flecks of the same colour over it; the colour itself stays solid. */}
+            <feComponentTransfer in="wobbly" result="light">
+              <feFuncR type="linear" slope="0.82" intercept="0.18" />
+              <feFuncG type="linear" slope="0.82" intercept="0.18" />
+              <feFuncB type="linear" slope="0.82" intercept="0.18" />
+            </feComponentTransfer>
             <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="11" result="grain" />
-            <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.7 1.65" result="speckle" />
-            <feComposite in="wobbly" in2="speckle" operator="in" />
+            <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.4 1.4" result="mask" />
+            <feComposite in="light" in2="mask" operator="in" result="flecks" />
+            <feMerge>
+              <feMergeNode in="wobbly" />
+              <feMergeNode in="flecks" />
+            </feMerge>
           </filter>
           <pattern id="bd-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(32)">
             <line x1="0" y1="0" x2="0" y2="7" stroke="#2a2238" strokeOpacity="0.1" strokeWidth="2.2" />
