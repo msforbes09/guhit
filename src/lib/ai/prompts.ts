@@ -1,4 +1,5 @@
 import type { Kind } from "@/lib/story/kind";
+import { MOVES, SCENES } from "@/lib/story/staging";
 import type { Character, Story } from "@/lib/story/types";
 import type { ChatTurn } from "./types";
 
@@ -147,6 +148,8 @@ const WRITER = [
   PRIVACY,
   "Then add one short sentence that invites the child to draw the next picture.",
   "Write only the page text: no title, no lists, no quotation marks.",
+  // The book draws each page's place and makes the character act it out; both lists are fixed.
+  `Last, on its own line, name where the page happens and what the character does there: "Scene: <one of ${SCENES.join(", ")}>. Move: <one of ${MOVES.join(", ")}>."`,
 ].join("\n");
 
 // One worked example keeps small models close to the child's words.
@@ -158,7 +161,8 @@ const WRITER_EXAMPLE: Message[] = [
   },
   {
     role: "assistant",
-    content: "Mimi the pink cat lives in a teacup on the moon. She has a little pet star. Can you draw Mimi and her star?",
+    content:
+      "Mimi the pink cat lives in a teacup on the moon. She has a little pet star. Can you draw Mimi and her star?\nScene: space. Move: dance.",
   },
 ];
 

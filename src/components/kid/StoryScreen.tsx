@@ -7,8 +7,8 @@ import { sfx } from "@/lib/sfx";
 import { hush, sayAsCharacter } from "@/lib/sfx/voice";
 import { getFriend, newId, saveStory, type Friend } from "@/lib/story/db";
 import { settledKind } from "@/lib/story/kind";
+import { stagingFor, untagPage } from "@/lib/story/staging";
 import type { Character, Story } from "@/lib/story/types";
-import { sceneFor } from "./Backdrop";
 import { FriendSkeleton } from "./FriendScreen";
 import { FriendStage } from "./FriendStage";
 import { speechLevel, usePart, usePushToTalk, useSpeakingVoice } from "./hooks";
@@ -127,8 +127,10 @@ function MakeStory({ friend }: { friend: Friend }) {
       setOops(null);
       try {
         const current = storyRef.current;
-        const text = (await ai.writePage(current, question, words)).trim();
-        await keep({ ...current, pages: [...current.pages, { id: newId(), question, answer: words, text }] });
+        // The page's scene and move ride along with its words; they are kept beside them.
+        const { text, scene, move } = untagPage(await ai.writePage(current, question, words));
+        const page = { id: newId(), question, answer: words, text, ...(scene && { scene }), ...(move && { move }) };
+        await keep({ ...current, pages: [...current.pages, page] });
         setPhase("page");
         ai.speak(text, "narrator").catch(() => {});
       } catch {
@@ -236,8 +238,7 @@ function MakeStory({ friend }: { friend: Friend }) {
             <StoryPage
               cutout={friend.cutout ?? friend.drawing}
               kind={story.character.kind}
-              scene={sceneFor(`${last.text} ${last.answer}`)}
-              motion="bounce"
+              staging={stagingFor(last, settledKind(story.character))}
               label={`Page ${pages.length}`}
             >
               <p className="text-2xl leading-relaxed text-ink sm:text-[1.7rem]">{last.text}</p>

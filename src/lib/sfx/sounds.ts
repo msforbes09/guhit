@@ -138,6 +138,14 @@ export const SOUNDS = {
     seq(c, o, t, [C4, G4, C5], 0.15, { wave: "triangle", gain: 0.4 });
   },
 
+  /** A storybook page turning: a papery fwip, then a soft two-note chime. */
+  page: (c, o, t) => {
+    [1300, 2400, 4000].forEach((freq, i) =>
+      noise(c, o, { at: t + i * 0.045, dur: 0.09, rate: 0.8, gain: 0.17 - i * 0.03, filter: { type: "bandpass", freq } }),
+    );
+    seq(c, o, t + 0.17, [G5, C6], 0.09, { wave: "pulse12", gain: 0.12 });
+  },
+
   /** A gentle "uh-oh". */
   oops: (c, o, t) => {
     tone(c, o, { wave: "triangle", at: t, dur: 0.14, f: [hz(E5), hz(E5) * 0.98], gain: 0.4 });
