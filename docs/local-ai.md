@@ -13,6 +13,18 @@ Everything goes through `getAI()` from `@/lib/ai` (the `LocalAI` interface in
   engine also refuses to start a download by itself without the flag: any call
   (`reply`, `transcribe`, …) before setup throws "Guhit is not set up…".
 - Once the models are cached, `load()` takes seconds and works offline.
+- Device tiers, by what the browser really offers (`src/lib/ai/device.ts`):
+  a WebGPU adapter is the GPU tier (Qwen3-1.7B on laptops, Qwen3-0.6B on
+  phones; the f32 builds when the GPU lacks shader-f16). No WebGPU, no adapter
+  or a GPU that fails to start is the CPU tier: Qwen3-0.6B as 8-bit ONNX
+  through Transformers.js (`src/lib/ai/llm-cpu.ts`), Whisper and Florence-2
+  base on wasm, the wasm voice. When WebLLM cannot use a GPU the page found,
+  the story helper moves to the CPU on that device from then on.
+- Setup survives sleep and leaving: the screen is kept awake, finished files
+  stay cached, and while `localStorage["guhit:setup-in-progress"]` is set the
+  page carries on by itself when it is back on screen or online. Where
+  Background Fetch exists (Chrome), the browser downloads the missing files
+  itself and the service worker stores them under each library's cache key.
 
 ## The talk loop (character chat)
 
@@ -114,10 +126,17 @@ every id. Model weights stay in the libraries' own caches.
 
 - `/lab`: speed test (load time, reply latency to first spoken word, page
   time, tokens/s, Whisper time). `?llm=`, `?stt=`, `?sttDevice=wasm` compare
-  models without a code change.
+  models without a code change; `?gpu=off` runs the CPU tier on any computer
+  (remembered until `?gpu=on`).
 - `npm run lab:sample` (macOS) makes the Whisper test clip.
-- Slow Hugging Face downloads: `node scripts/mirror-models.mjs` copies the
-  models into `public/models` (gitignored, never committed), then open the app
-  once with `?models=local` to load them from this machine's server
-  (`?models=hub` switches back). Cached models are keyed by URL, so pick one
-  source per browser and stick to it.
+- Model downloads come from Guhit's R2 copy (`R2_BASE` in
+  `src/lib/ai/model-fetch.ts`) with Hugging Face as the per-file fallback;
+  `?models=hf` uses Hugging Face only. The cache keys stay the Hugging Face
+  URLs either way.
+- No internet, or a slow one: `node scripts/mirror-models.mjs` copies every
+  tier's models into `mirror/models` (gitignored, never committed), `npm run
+  serve` serves the build plus the mirror, and `?models=local` loads from it.
+  The mirror's files have their own cache keys, so pick one source per
+  browser and stick to it.
+- `ISOLATE=1 npm run serve` adds the headers that make the page cross-origin
+  isolated, so ONNX Runtime can use several CPU threads.

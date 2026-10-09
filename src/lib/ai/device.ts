@@ -1,12 +1,10 @@
 import type { ModelSource } from "./model-fetch";
-import { LLM_MODELS, STT_MODELS, VISION_MODELS, type STTDevice } from "./models";
+import { CPU_LLM, LLM_MODELS, STT_MODELS, VISION_MODELS, type STTDevice } from "./models";
 
 export interface DeviceSupport {
   webgpu: boolean;
   shaderF16: boolean;
   mobile: boolean;
-  /** Friendly explanation when this device cannot run the on-device AI. */
-  problem?: string;
 }
 
 export interface ModelChoice {
@@ -66,29 +64,67 @@ function isMobile(): boolean {
 }
 
 export function detectSupport(): Promise<DeviceSupport> {
-  if (!cached) cached = probe();
+  if (!cached) cached = probeSupport();
   return cached;
 }
 
-async function probe(): Promise<DeviceSupport> {
-  const mobile = isMobile();
-  const gpu = (navigator as Navigator & { gpu?: GPULike }).gpu;
-  const missing = (problem: string): DeviceSupport => ({ webgpu: false, shaderF16: false, mobile, problem });
-  if (!gpu) {
-    return missing(
-      "This browser can't run Guhit's story helper because WebGPU is missing. Please use the latest Chrome or Edge on a laptop, or Chrome on a recent Android phone.",
-    );
+const GPU_KEY = "guhit:gpu";
+
+/** "?gpu=off" runs Guhit as on a computer without a usable GPU (remembered until "?gpu=on"), for /lab. */
+function gpuSwitchedOff(): boolean {
+  try {
+    const value = new URLSearchParams(window.location.search).get("gpu");
+    if (value === "off") localStorage.setItem(GPU_KEY, "off");
+    if (value === "on") localStorage.removeItem(GPU_KEY);
+    return localStorage.getItem(GPU_KEY) === "off";
+  } catch {
+    return false;
   }
+}
+
+const LLM_CPU_KEY = "guhit:llm-cpu";
+
+/** WebLLM's errors for a GPU it cannot use (as opposed to a broken download or running out of memory). */
+export const isGpuError = (message: string) =>
+  /compatible GPU|WebGPU is not supported|Cannot find WebGPU|requires feature|requires WebGPU extension/i.test(message);
+
+/**
+ * The page found a GPU but WebLLM, in its worker, could not use it (seen on a
+ * Windows laptop): from now on this device runs the story helper on the CPU.
+ * The other models keep their GPU, where they already work.
+ */
+export function rememberLLMOnCpu() {
+  try {
+    localStorage.setItem(LLM_CPU_KEY, "1");
+  } catch {
+    // Blocked storage: the fallback then happens again on the next load.
+  }
+}
+
+function llmOnCpu(): boolean {
+  try {
+    return localStorage.getItem(LLM_CPU_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The device's tier, by what its browser really offers: a WebGPU adapter (and
+ * whether it does 16-bit floats) means the GPU tier; no WebGPU, no adapter or
+ * a GPU that fails to start means the CPU tier, which is slower but works.
+ */
+export async function probeSupport(): Promise<DeviceSupport> {
+  const mobile = isMobile();
+  const cpuTier: DeviceSupport = { webgpu: false, shaderF16: false, mobile };
+  const gpu = (navigator as Navigator & { gpu?: GPULike }).gpu;
+  if (!gpu || gpuSwitchedOff()) return cpuTier;
   try {
     const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
-    if (!adapter) {
-      return missing(
-        "WebGPU is on, but no graphics chip is available to it. Restart the browser, or check that hardware acceleration is enabled in the browser settings.",
-      );
-    }
+    if (!adapter) return cpuTier;
     return { webgpu: true, shaderF16: adapter.features.has("shader-f16"), mobile };
   } catch {
-    return missing("WebGPU failed to start on this device. Please try the latest Chrome on a laptop.");
+    return cpuTier;
   }
 }
 
@@ -102,7 +138,8 @@ export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
   const params = new URLSearchParams(search);
   const size = support.mobile ? "0.6B" : "1.7B";
   const precision = support.shaderF16 ? "q4f16_1" : "q4f32_1";
-  let llm = `Qwen3-${size}-${precision}-MLC`;
+  // No usable GPU: the story helper runs on the CPU (slower, but it works).
+  let llm = support.webgpu && !llmOnCpu() ? `Qwen3-${size}-${precision}-MLC` : CPU_LLM;
   const llmOverride = params.get("llm");
   if (llmOverride && LLM_MODELS.some((m) => m.id === llmOverride)) llm = llmOverride;
 
@@ -116,7 +153,9 @@ export function chooseModels(support: DeviceSupport, search = ""): ModelChoice {
 
   // Florence-2 large named every test drawing right (base called Tala "a purple
   // cat"); phones keep base for memory and download size.
-  let vision = support.mobile ? "onnx-community/Florence-2-base-ft" : "onnx-community/Florence-2-large-ft";
+  // Without a GPU, base too: large is three times the work on the CPU.
+  let vision =
+    support.mobile || !support.webgpu ? "onnx-community/Florence-2-base-ft" : "onnx-community/Florence-2-large-ft";
   const visionOverride = params.get("vision");
   if (visionOverride && VISION_MODELS.some((m) => m.id === visionOverride)) vision = visionOverride;
   const visionDevice: STTDevice = support.webgpu && params.get("visionDevice") !== "wasm" ? "webgpu" : "wasm";

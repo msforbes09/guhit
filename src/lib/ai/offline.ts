@@ -1,5 +1,5 @@
 import { onnxFile } from "./model-files";
-import { findVision, STT_DTYPES, type STTDevice } from "./models";
+import { findLLM, findVision, STT_DTYPES, type STTDevice } from "./models";
 
 /** Set once every model is on the device; kid screens only auto-load when it is present. */
 export const READY_FLAG = "guhit:ready";
@@ -72,6 +72,8 @@ export async function storageUsage(): Promise<{ usage: number; quota: number } |
 }
 
 export async function isLLMCached(modelId: string, modelHost: string | null): Promise<boolean> {
+  const cpu = findLLM(modelId)?.cpu;
+  if (cpu) return isTransformersModelCached(modelId, { model: cpu.dtype });
   try {
     const [{ hasModelInCache }, { appConfigFor }] = await Promise.all([import("@mlc-ai/web-llm"), import("./llm")]);
     return await hasModelInCache(modelId, appConfigFor(modelId, modelHost));

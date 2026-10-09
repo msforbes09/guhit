@@ -73,6 +73,7 @@ interface BackgroundFetchRegistrationLike extends EventTarget {
   downloadTotal: number;
   result: "" | "success" | "failure";
   failureReason: string;
+  abort(): Promise<boolean>;
 }
 
 interface BackgroundFetchManagerLike {
@@ -105,6 +106,14 @@ export async function runningBackgroundDownload(): Promise<BackgroundDownload | 
   }
 }
 
+async function backgroundDownloadExists(): Promise<boolean> {
+  try {
+    return !!(await (await manager())?.get(BACKGROUND_ID));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Hands the files to the browser to download in the background. Null when the
  * browser cannot (no Background Fetch, no service worker, or it refused).
@@ -131,7 +140,7 @@ export async function startBackgroundDownload(files: ModelFile[], source: ModelS
     // it never runs beside the page's own.
     const answer = await Promise.race([started, new Promise<"late">((resolve) => setTimeout(resolve, START_TIMEOUT_MS, "late"))]);
     if (answer === "late") {
-      void started.then((late) => (late as BackgroundDownload & { abort?: () => Promise<boolean> }).abort?.(), () => undefined);
+      void started.then((late) => late.abort(), () => undefined);
       return null;
     }
     return answer;
@@ -142,18 +151,31 @@ export async function startBackgroundDownload(files: ModelFile[], source: ModelS
 
 const START_TIMEOUT_MS = 10_000;
 
+type DownloadEnd = "stored" | "failed" | "aborted" | "gone" | "stalled";
+
 /**
  * Resolves once the service worker has stored what arrived ("stored"), or the
- * download failed or was cancelled; setup then loads, downloading whatever is
- * still missing itself.
+ * download failed, was cancelled, or never moved while the parent watched
+ * ("stalled": the browser may hold it for a permission it never asked, so it is
+ * cancelled). Setup then loads, downloading whatever is still missing itself.
  */
 export function waitForBackgroundDownload(
   download: BackgroundDownload,
   onProgress: (downloaded: number, total: number) => void,
-): Promise<"stored" | "failed" | "aborted" | "gone"> {
+  { stallMs = 30_000, checkMs = 5_000 } = {},
+): Promise<DownloadEnd> {
   return new Promise((resolve) => {
-    const progress = () => onProgress(download.downloaded, download.downloadTotal);
-    const finish = (state: "stored" | "failed" | "aborted" | "gone") => {
+    let bytes = download.downloaded;
+    /** Since when the parent has watched this download not move. */
+    let stillSince = Date.now();
+    const progress = () => {
+      if (download.downloaded !== bytes) {
+        bytes = download.downloaded;
+        stillSince = Date.now();
+      }
+      onProgress(download.downloaded, download.downloadTotal);
+    };
+    const finish = (state: DownloadEnd) => {
       download.removeEventListener("progress", progress);
       navigator.serviceWorker.removeEventListener("message", message);
       clearInterval(timer);
@@ -164,10 +186,24 @@ export function waitForBackgroundDownload(
     };
     download.addEventListener("progress", progress);
     navigator.serviceWorker.addEventListener("message", message);
-    // The worker's message is missed if it finished while this page was away.
     const timer = setInterval(async () => {
-      if (!(await runningBackgroundDownload())) finish("gone");
-    }, 5000);
+      // Hidden or asleep is exactly when it should carry on; only judge it on screen.
+      if (document.visibilityState !== "visible") {
+        stillSince = Date.now();
+        return;
+      }
+      progress();
+      // Finished downloading ("success"/"failure") is not stalled: the worker is storing.
+      if (download.result === "" && Date.now() - stillSince >= stallMs) {
+        finish("stalled");
+        void download.abort().catch(() => undefined);
+        return;
+      }
+      // The worker's message is missed if it finished while this page was away. The
+      // registration lasts until the worker has stored every file, so only its
+      // disappearance means the files are in place.
+      if (!(await backgroundDownloadExists())) finish("gone");
+    }, checkMs);
     progress();
   });
 }

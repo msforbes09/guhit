@@ -8,7 +8,10 @@ export interface FriendlyError {
   action: string;
   /** Label of the button that tries again. */
   button: string;
-  /** "network": a retry continues where it stopped (what is downloaded is kept). */
+  /**
+   * "network": a retry continues where it stopped (what is downloaded is kept).
+   * "gpu": the button switches this device to the CPU tier (/setup?gpu=off).
+   */
   kind: "network" | "gpu" | "space" | "memory" | "other";
 }
 
@@ -32,9 +35,8 @@ export function explainLoadError(error: unknown): FriendlyError {
     return {
       kind: "gpu",
       title: "This browser can't use this computer's graphics chip for Guhit.",
-      action:
-        "Update Chrome (or Edge) and restart it, then try again. If it still happens, Guhit can run without the graphics chip, only slower.",
-      button: "Try again",
+      action: "Guhit can run without it, only slower. Tap below to carry on that way.",
+      button: "Continue without the graphics chip",
     };
   }
   if (MEMORY.test(message)) {

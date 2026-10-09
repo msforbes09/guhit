@@ -1,7 +1,14 @@
 import type { Character, Story } from "@/lib/story/types";
-import { chooseModels, detectSupport, type DeviceSupport, type ModelChoice } from "./device";
-import type { LLMClient } from "./llm";
-import { findLLM, findSTT, findVision, STT_DTYPES } from "./models";
+import {
+  chooseModels,
+  detectSupport,
+  isGpuError,
+  rememberLLMOnCpu,
+  type DeviceSupport,
+  type ModelChoice,
+} from "./device";
+import type { LLMClient, TextGenerator } from "./llm";
+import { CPU_LLM, findLLM, findSTT, findVision, STT_DTYPES } from "./models";
 import { isMarkedReady, markReady, requestPersistence } from "./offline";
 import {
   firstQuestionMessages,
@@ -63,6 +70,8 @@ export interface CallMetric {
 export interface LoadTimings {
   totalMs?: number;
   llmMs?: number;
+  /** The CPU story helper's first, one-token run after loading. */
+  llmWarmupMs?: number;
   sttMs?: number;
   sttWarmupMs?: number;
   /** The most recent vision model load (it is loaded per guess, see acquireVision). */
@@ -129,7 +138,7 @@ export class RealAI implements LocalAI {
   private state: AIStatus = "idle";
   private loading: Promise<void> | null = null;
   private listeners = new Set<(p: LoadProgress) => void>();
-  private llm: LLMClient | null = null;
+  private llm: TextGenerator | null = null;
   private stt: STTClient | null = null;
   private vision: VisionClient | null = null;
   private visionUsers = 0;
@@ -141,8 +150,19 @@ export class RealAI implements LocalAI {
    * finished, or is still loading, is kept rather than started a second time.
    */
   private llmLoad = sharedAttempt(async () => {
+    const choice = this.choice!;
+    if (findLLM(choice.llm)?.cpu) return this.loadCpuLLM(choice);
     const { LLMClient } = await import("./llm");
-    await this.loadLLM(new LLMClient(), this.choice!);
+    try {
+      await this.loadLLM(new LLMClient(), choice);
+    } catch (error) {
+      if (!isGpuError(error instanceof Error ? error.message : String(error))) throw error;
+      // The page saw a GPU but WebLLM cannot use it: the CPU story helper
+      // instead, on this device from now on, rather than no story helper at all.
+      rememberLLMOnCpu();
+      this.choice = { ...choice, llm: CPU_LLM };
+      await this.loadCpuLLM(this.choice);
+    }
   });
   private sttLoad = sharedAttempt(async () => {
     const { STTClient } = await import("./stt");
@@ -176,7 +196,6 @@ export class RealAI implements LocalAI {
     try {
       const support = await detectSupport();
       this.support = support;
-      if (!support.webgpu) throw new Error(support.problem);
       const choice = chooseModels(support, window.location.search);
       this.choice = choice;
       void requestPersistence();
@@ -277,6 +296,30 @@ export class RealAI implements LocalAI {
     this.llm = llm;
     this.timings.llmMs = performance.now() - started;
     this.emit({ stage: "llm", loaded: total, total, text: "Story helper ready" });
+  }
+
+  /** The story helper on the CPU (no usable WebGPU): one ONNX file, downloaded and loaded by Transformers.js. */
+  private async loadCpuLLM(choice: ModelChoice) {
+    const started = performance.now();
+    const model = findLLM(choice.llm);
+    if (!model?.cpu) throw new Error(`${choice.llm} has no CPU build.`);
+    const expected = model.downloadMB * 1e6;
+    this.emit({ stage: "llm", loaded: 0, total: expected, text: "Getting the story helper ready…" });
+    const { CpuLLMClient } = await import("./llm-cpu");
+    const llm = new CpuLLMClient();
+    const { warmupMs } = await llm.load(choice.llm, model.cpu.dtype, choice.modelHost, choice.source, (loaded, total) => {
+      const size = Math.max(total, expected);
+      this.emit({
+        stage: "llm",
+        loaded,
+        total: size,
+        text: `Downloading the story helper… ${Math.round((loaded / size) * 100)}%`,
+      });
+    });
+    this.llm = llm;
+    this.timings.llmMs = performance.now() - started;
+    this.timings.llmWarmupMs = warmupMs;
+    this.emit({ stage: "llm", loaded: expected, total: expected, text: "Story helper ready" });
   }
 
   private async loadSTT(stt: STTClient, choice: ModelChoice) {
@@ -409,7 +452,7 @@ export class RealAI implements LocalAI {
    * Methods load the models on demand, but only once a parent has run setup:
    * a 1 GB download must never start from a kid screen by surprise.
    */
-  private async ready(): Promise<{ llm: LLMClient; stt: STTClient }> {
+  private async ready(): Promise<{ llm: TextGenerator; stt: STTClient }> {
     if (this.state !== "ready") {
       if (!this.loading && !isMarkedReady()) {
         throw new Error("Guhit is not set up on this device yet. Open the setup page first.");
@@ -425,7 +468,7 @@ export class RealAI implements LocalAI {
     return metric;
   }
 
-  private llmMetric(kind: CallKind, text: string, started: number, llm: LLMClient, extra: Partial<CallMetric> = {}) {
+  private llmMetric(kind: CallKind, text: string, started: number, llm: TextGenerator, extra: Partial<CallMetric> = {}) {
     const stats = llm.lastStats;
     return this.record({
       kind,

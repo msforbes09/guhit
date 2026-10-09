@@ -38,7 +38,7 @@ import {
 } from "@/lib/ai/voice/voices";
 
 type Stage = LoadProgress["stage"];
-type Phase = "checking" | "unsupported" | "test" | "idle" | "loading" | "ready" | "error";
+type Phase = "checking" | "test" | "idle" | "loading" | "ready" | "error";
 
 /** Leaves test mode ("?mock=1", pretend answers) for the real engine, wherever the flag was kept. */
 function turnOffTestMode() {
@@ -213,6 +213,8 @@ export function SetupClient() {
       const ai = getAI();
       const report = (p: LoadProgress) => setProgress((previous) => ({ ...previous, [p.stage]: p }));
       await ai.load(report);
+      // The story helper may have moved to the CPU when the GPU refused it.
+      setChoice(chooseModels(await detectSupport(), window.location.search));
       // Drawing recognition is not part of load() (it is loaded per guess and
       // freed after); download it now so guesses work offline later.
       if (ai instanceof RealAI && !visionCached) await ai.prepareVision(report);
@@ -242,10 +244,6 @@ export function SetupClient() {
       const found = await detectSupport();
       if (!alive) return;
       setSupport(found);
-      if (!found.webgpu) {
-        setPhase("unsupported");
-        return;
-      }
       const picked = chooseModels(found, window.location.search);
       setChoice(picked);
       const voiceDevice = chooseTTSDevice(found, window.location.search);
@@ -395,15 +393,13 @@ export function SetupClient() {
         </div>
       )}
 
-      {phase === "unsupported" && (
-        <div role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
-          <p className="font-semibold">This device can&apos;t run Guhit yet</p>
-          <p className="mt-1">{support?.problem}</p>
-        </div>
-      )}
-
-      {choice && phase !== "unsupported" && (
+      {choice && (
         <section className="flex flex-col gap-4">
+          {findLLM(choice.llm)?.cpu && (
+            <p className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+              This computer has no graphics chip support, so Guhit will be slower here.
+            </p>
+          )}
           <p className="text-sm text-stone-500">
             {support?.mobile ? "Phone" : "Laptop"} setup · {totalBytes ? `${size(totalBytes)} in total` : ""}
             {cached && toDownload < totalBytes && toDownload > 0 ? ` · ${size(toDownload)} left to download` : ""}
@@ -462,7 +458,12 @@ export function SetupClient() {
           {(phase === "idle" || phase === "error") && (
             <button
               type="button"
-              onClick={() => void getReady(allCached || getAI().status() === "ready", !!cached?.vision)}
+              onClick={() =>
+                // The graphics chip failed: start over in the CPU tier (a fresh page re-checks the device).
+                friendly?.kind === "gpu"
+                  ? window.location.replace("/setup?gpu=off")
+                  : void getReady(allCached || getAI().status() === "ready", !!cached?.vision)
+              }
               className="rounded-full bg-orange-500 px-6 py-4 text-lg font-bold text-white shadow-sm hover:bg-orange-600 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-orange-600"
             >
               {friendly ? friendly.button : allCached ? "Start Guhit" : "Get Guhit ready"}
