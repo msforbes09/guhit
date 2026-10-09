@@ -1,4 +1,5 @@
 import { finishFromEdit } from "./cutout-core";
+import { settleWithin } from "./cutout-note";
 import { alphaToMaskRgba, context2d, decodeToPixels, encodeRgba, round1, runClassical, type RunResult } from "./cutout-run";
 import type { WorkerRequest, WorkerResponse } from "./segment.worker";
 import type { Cutout, CutoutEdit, CutoutMeta, CutoutOptions, CutoutWithDebug } from "./types";
@@ -139,9 +140,12 @@ function getWorker(): Worker | null {
   return worker;
 }
 
-function callWorker(w: Worker, req: WorkerJob, onProgress?: (t: string) => void): Promise<RunResult | null> {
+/** A worker that never answers (busy, or a script it could not load) must not keep the child waiting. */
+const CLASSICAL_PATIENCE_MS = 8000;
+
+async function callWorker(w: Worker, req: WorkerJob, onProgress?: (t: string) => void): Promise<RunResult | null> {
   const id = nextId++;
-  return new Promise<RunResult | null>((resolve, reject) => {
+  const answer = new Promise<RunResult | null>((resolve, reject) => {
     pending.set(id, { resolve, reject, onProgress });
     w.postMessage({ ...req, id } as WorkerRequest);
   }).catch(async (err) => {
@@ -151,6 +155,12 @@ function callWorker(w: Worker, req: WorkerJob, onProgress?: (t: string) => void)
     }
     throw err;
   });
+  if (req.type !== "cutout" || req.method !== "classical") return answer;
+  if ((await settleWithin(answer, CLASSICAL_PATIENCE_MS)).state !== "late") return answer;
+  // The same classical cut-out on the main thread instead; a late reply is dropped.
+  pending.delete(id);
+  console.warn(`[alive] cut-out worker gave no answer in ${CLASSICAL_PATIENCE_MS / 1000} s; cutting out on the main thread`);
+  return runClassical(req.blob, req.maxSide, req.debug, req.editable);
 }
 
 /** Draw a mask (ImageData) as white-on-black for previews. */

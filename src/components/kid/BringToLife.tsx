@@ -9,8 +9,8 @@ import { sfx } from "@/lib/sfx";
 import { addFriend, newId, ShelfFullError } from "@/lib/story/db";
 import { kindOf } from "@/lib/story/kind";
 import { shrinkPhoto } from "@/lib/story/image";
-import { isAppleMobile } from "@/lib/ai/device";
-import { cutout, CutoutTouchUp, isAiCutoutCached, type Cutout } from "./alive";
+import { detectSupport, isAppleMobile } from "@/lib/ai/device";
+import { aiCutoutMissing, cutout, cutoutNote, CutoutTouchUp, preloadAiCutout, settleWithin, type Cutout } from "./alive";
 import { FriendStage } from "./FriendStage";
 import { usePart } from "./hooks";
 import { ArrowsClockwise, Camera, Check, PaintBrush, Scissors, Sparkle } from "./icons";
@@ -26,6 +26,7 @@ type Working = "cutting" | "closer" | "looking";
 type Seen = DrawingDescription;
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const secondsSince = (t: number) => Math.round((performance.now() - t) / 100) / 10;
 
 /** The AI cut-out starts its model from storage first; never keep a child waiting longer. */
 const AI_RETRY_MS = 12000;
@@ -57,6 +58,25 @@ export function useBringToLife() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [photo, setPhoto] = useState<string | null>(null);
   const [working, setWorking] = useState<Working>("cutting");
+  // Laptops start the saved AI cut-out model while the child gets the drawing
+  // ready: a cold start (first use since the app opened, as offline after a
+  // restart) can take longer than the snap screen waits for it.
+  const aiWarm = useRef("not started");
+  useEffect(() => {
+    void (async () => {
+      if (isTestMode() || isAppleMobile() || (await detectSupport()).mobile) return;
+      if ((await aiCutoutMissing()).length) return;
+      aiWarm.current = "still starting";
+      try {
+        await preloadAiCutout();
+        aiWarm.current = "ready";
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        aiWarm.current = `could not start: ${reason}`;
+        recordNote(`AI cut-out could not start${navigator.onLine === false ? " (offline)" : ""}: ${reason}`);
+      }
+    })();
+  }, []);
   const [result, setResult] = useState<{
     drawing: string;
     /** How much the kept photo was shrunk from the original. */
@@ -110,12 +130,31 @@ export function useBringToLife() {
         // child up, and offline it never tries the network at all. Not in test mode.
         // Not on iPhone or iPad: the AI cut-out model and the eyes together can be
         // more memory than Safari gives a tab.
-        if (first.meta?.quality === "poor" && !isTestMode() && !isAppleMobile() && (await isAiCutoutCached())) {
-          // A messy cut-out gets one closer look with the on-device AI model
-          // before the child is asked to take the photo again.
-          setWorking("closer");
-          const better = await Promise.race([cutout(image, { method: "ai", editable: true }).catch(() => null), wait(AI_RETRY_MS).then(() => null)]);
-          if (better && better.meta?.quality !== "poor") cut = better;
+        if (first.meta?.quality === "poor" && !isTestMode() && !isAppleMobile()) {
+          const missing = await aiCutoutMissing();
+          const offline = navigator.onLine === false;
+          if (missing.length) {
+            recordNote(cutoutNote(first.meta, { kind: "not-saved", missing }, offline));
+          } else {
+            // A messy cut-out gets one closer look with the on-device AI model
+            // before the child is asked to take the photo again.
+            setWorking("closer");
+            const begun = performance.now();
+            const ai = await settleWithin(cutout(image, { method: "ai", editable: true }), AI_RETRY_MS);
+            const seconds = secondsSince(begun);
+            if (ai.state === "done") {
+              const better = ai.value;
+              const used = better.meta?.quality !== "poor";
+              if (used) cut = better;
+              const device = better.meta?.stats?.webgpu ? "webgpu" : "wasm";
+              const modelLoadSeconds = Math.round((better.meta?.timings.modelLoad ?? 0) / 100) / 10;
+              recordNote(cutoutNote(first.meta, { kind: used ? "used" : "also-poor", device, seconds, modelLoadSeconds }, offline));
+            } else if (ai.state === "failed") {
+              recordNote(cutoutNote(first.meta, { kind: "failed", seconds, error: ai.error }, offline));
+            } else {
+              recordNote(cutoutNote(first.meta, { kind: "late", seconds: AI_RETRY_MS / 1000, warm: aiWarm.current }, offline));
+            }
+          }
         }
         // Nothing drawn was found: never kept as an empty "New friend".
         if (cut.meta?.reasons.includes("no drawing found")) throw new Error("No drawing in the picture.");
