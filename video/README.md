@@ -47,6 +47,7 @@ node capture/moves.ts           # drive / sway / fly / walk → footage/move-*.m
 # 3. Sound
 node audio/synth.mjs                                  # music + sound effects (deterministic)
 node --env-file-if-exists=.env scripts/voice.mjs      # narration (see "Narrator voice")
+node scripts/check-voice.mjs                          # Whisper listens to every take (needs serve-app running)
 
 # 4. Render and review
 npx remotion render src/index.ts Guhit16x9 out/guhit-60s-16x9.mp4 --codec=h264 --audio-codec=aac --crf=17
@@ -61,7 +62,7 @@ node scripts/stills.mjs Guhit16x9 12.5 37   # quick single frames without a full
 Drop the phone recording in as **`video/footage/airplane.mp4`** (any aspect; a portrait
 phone recording is fitted whole over a blurred fill). Re-render: the temporary
 "Airplane-mode phone recording goes here" card disappears by itself. It plays muted from
-its start for the length of its scene (about 2.6 s); trim the file to the moment
+its start for the length of its scene (about 3 s); trim the file to the moment
 airplane mode turns on and Guhit keeps working.
 
 ### Narrator voice
@@ -72,8 +73,11 @@ those lengths, so new takes need no hand edits.
 
 - **ElevenLabs** (the chosen narrator): create `video/.env` yourself with
   `ELEVENLABS_API_KEY=…` and optionally `ELEVENLABS_VOICE_NARRATOR=…` (default
-  `0AqGYCQmBK5Md93Th9nF`), then `node --env-file=.env scripts/voice.mjs`. `.env` is
-  git-ignored; never commit it.
+  `0AqGYCQmBK5Md93Th9nF`), then `node --env-file=.env scripts/voice.mjs` (any env file
+  path works, e.g. one kept in another project; the script never prints the key). `.env`
+  is git-ignored; never commit it. Pace: `--speed=0.85` (default; 0.7–1.2). Every line is
+  loudness-normalised (two-pass, -16 LUFS), then `node scripts/check-voice.mjs` runs
+  Whisper over each take and flags any that differ from the script.
 - **Placeholder** (no key): the same command without a key uses Kokoro-82M `af_heart`
   (the app's narrator voice) on this computer. Re-run one line with `--only=hook`.
 - "Guhit" is read from a respelling (`say` field in `src/narration.json`) so it is

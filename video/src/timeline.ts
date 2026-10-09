@@ -30,6 +30,8 @@ interface BeatSpec {
   lead?: number;
   tail?: number;
   gap?: number;
+  /** Keep the whole line (and its caption) inside the first scene: no caption across a cut. */
+  lineInFirst?: boolean;
 }
 
 type HeroMarks = Record<string, number>;
@@ -48,17 +50,17 @@ export const BEATS: BeatSpec[] = [
   { scenes: [{ id: "draw", min: 1.4 }, { id: "snapPhoto", min: 0.9 }, { id: "alive", min: 2.3 }], lines: ["hook"], lead: 0.3 },
   { scenes: [{ id: "problemA", min: 2.4 }], lines: ["problem-a"], lead: 0.15, tail: 0.15 },
   { scenes: [{ id: "problemB", min: 2.0 }], lines: ["problem-b"], lead: 0.1, tail: 0.05 },
-  { scenes: [{ id: "logo", min: 3.8, floor: 3.6 }] },
+  { scenes: [{ id: "logo", min: 3.95, floor: 3.6 }] },
   { scenes: [{ id: "snapApp", min: 1.9 }], lines: ["snap-a"], lead: 0.1, tail: 0.1 },
-  { scenes: [{ id: "cutout", min: 2.2 }, { id: "meadow", min: 2.4, floor: 2.0 }], lines: ["snap-b"], lead: 0.1 },
-  { scenes: [{ id: "vehicle", min: 2.1, floor: 1.8 }, { id: "plant", min: 2.1, floor: 1.8 }, { id: "flyer", min: 2.2, floor: 1.9 }], lines: ["moves"], lead: 0.2 },
+  { scenes: [{ id: "cutout", min: 2.2 }, { id: "meadow", min: 2.4, floor: 2.0 }], lines: ["snap-b"], lead: 0.1, lineInFirst: true },
+  { scenes: [{ id: "vehicle", min: 2.1, floor: 1.8 }, { id: "plant", min: 2.1, floor: 1.8 }, { id: "flyer", min: 2.2, floor: 1.9 }], lines: ["moves"], lead: 0.15, lineInFirst: true },
   // The guess is said out loud by the drawing in the guess scene: the narration finishes in "look".
-  { scenes: [{ id: "look", min: 2.75 }, { id: "guess", min: 3.6, floor: 3.3 }], lines: ["guess"], lead: 0.15 },
-  { scenes: [{ id: "hold", min: 3.0 }, { id: "answer", min: Math.max(3.2, replySeconds + 0.6), floor: Math.max(3.0, replySeconds + 0.4) }], lines: ["talk"], lead: 0.1 },
-  { scenes: [{ id: "airplane", min: 2.6 }], lines: ["offline-a"], lead: 0.15, tail: 0.1 },
+  { scenes: [{ id: "look", min: 2.75 }, { id: "guess", min: 3.6, floor: 3.3 }], lines: ["guess"], lead: 0.15, lineInFirst: true },
+  { scenes: [{ id: "hold", min: 3.0 }, { id: "answer", min: Math.max(3.2, replySeconds + 0.6), floor: Math.max(3.0, replySeconds + 0.4) }], lines: ["talk"], lead: 0.1, lineInFirst: true },
+  { scenes: [{ id: "airplane", min: 3.0, floor: 2.6 }], lines: ["offline-a"], lead: 0.15, tail: 0.1 },
   { scenes: [{ id: "setup", min: 3.5 }], lines: ["offline-b"], lead: 0.1, tail: 0.05 },
   { scenes: [{ id: "diagram", min: 3.7 }], lines: ["offline-c"], lead: 0.1, tail: 0.1 },
-  { scenes: [{ id: "title", min: 5.2 }], lines: ["title-a", "title-b", "title-c"], lead: 0.2, gap: 0.05, tail: 0.0 },
+  { scenes: [{ id: "title", min: 4.4 }], lines: ["title-a", "title-b", "title-c"], lead: 0.2, gap: 0.05, tail: 0.0 },
   { scenes: [{ id: "endLogo", min: 2.8 }], lines: ["end"], lead: 0.2 },
   { scenes: [{ id: "maker", min: 2.3, floor: 2.0 }] },
 ];
@@ -111,11 +113,21 @@ function build() {
   let t = 0;
   for (const s of sized) {
     const weights = s.beat.scenes.reduce((a, sc) => a + sc.min, 0);
+    const durs = s.beat.scenes.map((sc) => (s.length * sc.min) / weights);
+    if (s.beat.lineInFirst && durs.length > 1) {
+      // The first scene holds the line plus a short beat after it; the others share the rest.
+      const want = s.need - (s.beat.tail ?? 0) + 0.2;
+      if (durs[0] < want) {
+        const restBefore = s.length - durs[0];
+        durs[0] = want;
+        const scale = (s.length - want) / restBefore;
+        for (let i = 1; i < durs.length; i++) durs[i] *= scale;
+      }
+    }
     let st = t;
-    for (const sc of s.beat.scenes) {
-      const dur = (s.length * sc.min) / weights;
-      scenes.push({ id: sc.id, from: st, dur });
-      st += dur;
+    for (const [i, sc] of s.beat.scenes.entries()) {
+      scenes.push({ id: sc.id, from: st, dur: durs[i] });
+      st += durs[i];
     }
     let ct = t + (s.beat.lead ?? 0);
     for (const id of s.beat.lines ?? []) {

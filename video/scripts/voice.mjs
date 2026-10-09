@@ -9,6 +9,8 @@
 // placeholder lines on this computer:
 //   node scripts/voice.mjs
 // Options: --only=hook,talk   (just these ids)   --kokoro   (placeholders even with a key)
+//          --speed=0.85         (ElevenLabs pace, 0.7–1.2)
+// Then: node scripts/check-voice.mjs   (Whisper listens to every take)
 // Kokoro's model comes from the app's local mirror served by capture/serve-app.mjs
 // (GUHIT_URL, default http://localhost:3191) and falls back to Hugging Face.
 import { execFileSync } from "node:child_process";
@@ -28,6 +30,8 @@ const forceKokoro = args.includes("--kokoro");
 const key = process.env.ELEVENLABS_API_KEY;
 const voiceId = process.env.ELEVENLABS_VOICE_NARRATOR || "0AqGYCQmBK5Md93Th9nF";
 const engine = key && !forceKokoro ? "elevenlabs" : "kokoro";
+// ElevenLabs reading pace (0.7–1.2): the brief asks for warm and unhurried.
+const speed = Number(args.find((a) => a.startsWith("--speed="))?.slice(8) ?? 0.85);
 
 const ffprobe = join(video, "node_modules", "@remotion", `compositor-${process.platform}-${process.arch}`, "ffprobe");
 
@@ -47,7 +51,7 @@ async function elevenlabs(line, i) {
       // Neighbouring lines keep the read flowing like one take.
       previous_text: lines[i - 1]?.say ?? lines[i - 1]?.text,
       next_text: lines[i + 1]?.say ?? lines[i + 1]?.text,
-      voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.25, use_speaker_boost: true, speed: 0.95 },
+      voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.25, use_speaker_boost: true, speed },
     }),
   });
   if (!res.ok) throw new Error(`ElevenLabs ${res.status} for "${line.id}": ${(await res.text()).slice(0, 200)}`);

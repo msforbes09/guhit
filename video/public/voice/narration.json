@@ -2,94 +2,94 @@
   "lines": {
     "hook": {
       "text": "What if every drawing had a friend inside?",
-      "engine": "kokoro",
-      "file": "voice/narration/hook.wav",
-      "seconds": 2.9
+      "engine": "elevenlabs",
+      "file": "voice/narration/hook.mp3",
+      "seconds": 2.496
     },
     "problem-a": {
       "text": "Most AI imagines for kids.",
-      "engine": "kokoro",
-      "file": "voice/narration/problem-a.wav",
-      "seconds": 2.6
+      "engine": "elevenlabs",
+      "file": "voice/narration/problem-a.mp3",
+      "seconds": 2.136
     },
     "problem-b": {
       "text": "Guhit makes kids imagine.",
-      "engine": "kokoro",
-      "file": "voice/narration/problem-b.wav",
-      "seconds": 2.45
+      "engine": "elevenlabs",
+      "file": "voice/narration/problem-b.mp3",
+      "seconds": 2.304
     },
     "snap-a": {
       "text": "Snap your drawing.",
-      "engine": "kokoro",
-      "file": "voice/narration/snap-a.wav",
-      "seconds": 1.8
+      "engine": "elevenlabs",
+      "file": "voice/narration/snap-a.mp3",
+      "seconds": 1.2
     },
     "snap-b": {
       "text": "Guhit cuts it out, and brings it to life.",
-      "engine": "kokoro",
-      "file": "voice/narration/snap-b.wav",
-      "seconds": 3.2
+      "engine": "elevenlabs",
+      "file": "voice/narration/snap-b.mp3",
+      "seconds": 2.256
     },
     "moves": {
       "text": "It moves like what it is.",
-      "engine": "kokoro",
-      "file": "voice/narration/moves.wav",
-      "seconds": 2.075
+      "engine": "elevenlabs",
+      "file": "voice/narration/moves.mp3",
+      "seconds": 1.992
     },
     "guess": {
       "text": "It even guesses what you drew.",
-      "engine": "kokoro",
-      "file": "voice/narration/guess.wav",
-      "seconds": 2.45
+      "engine": "elevenlabs",
+      "file": "voice/narration/guess.mp3",
+      "seconds": 2.304
     },
     "talk": {
       "text": "Hold to talk, and your friend talks back.",
-      "engine": "kokoro",
-      "file": "voice/narration/talk.wav",
-      "seconds": 2.9
+      "engine": "elevenlabs",
+      "file": "voice/narration/talk.mp3",
+      "seconds": 2.304
     },
     "offline-a": {
       "text": "No internet? Still works.",
-      "engine": "kokoro",
-      "file": "voice/narration/offline-a.wav",
-      "seconds": 2.325
+      "engine": "elevenlabs",
+      "file": "voice/narration/offline-a.mp3",
+      "seconds": 2.04
     },
     "offline-b": {
       "text": "All the AI runs right here, on the device.",
-      "engine": "kokoro",
-      "file": "voice/narration/offline-b.wav",
-      "seconds": 3.35
+      "engine": "elevenlabs",
+      "file": "voice/narration/offline-b.mp3",
+      "seconds": 2.88
     },
     "offline-c": {
       "text": "Nothing your child draws or says ever leaves it.",
-      "engine": "kokoro",
-      "file": "voice/narration/offline-c.wav",
-      "seconds": 3.525
+      "engine": "elevenlabs",
+      "file": "voice/narration/offline-c.mp3",
+      "seconds": 3.24
     },
     "title-a": {
       "text": "No cloud.",
-      "engine": "kokoro",
-      "file": "voice/narration/title-a.wav",
-      "seconds": 1.675
+      "engine": "elevenlabs",
+      "file": "voice/narration/title-a.mp3",
+      "seconds": 0.768
     },
     "title-b": {
       "text": "No account.",
-      "engine": "kokoro",
-      "file": "voice/narration/title-b.wav",
-      "seconds": 1.7
+      "engine": "elevenlabs",
+      "file": "voice/narration/title-b.mp3",
+      "seconds": 0.864
     },
     "title-c": {
       "text": "Just crayons.",
-      "engine": "kokoro",
-      "file": "voice/narration/title-c.wav",
-      "seconds": 1.7
+      "engine": "elevenlabs",
+      "file": "voice/narration/title-c.mp3",
+      "seconds": 1.008
     },
     "end": {
       "text": "Every drawing has a friend inside.",
-      "engine": "kokoro",
-      "file": "voice/narration/end.wav",
-      "seconds": 2.6
+      "engine": "elevenlabs",
+      "file": "voice/narration/end.mp3",
+      "seconds": 2.352
     }
   },
-  "generatedAt": "2026-10-09T12:52:01.383Z"
+  "generatedAt": "2026-10-09T13:16:08.840Z"
 }

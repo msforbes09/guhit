@@ -46,7 +46,7 @@ function Split({ screen, idea, ideaTop }: { screen: (p: { x: number; y: number; 
   const { width, height } = useVideoConfig();
   return (
     <AbsoluteFill>
-      {portrait ? screen({ x: width / 2, y: height * 0.45, height: height * 0.62 }) : screen({ x: width * 0.36, y: height * 0.46, height: height * 0.8 })}
+      {portrait ? screen({ x: width / 2, y: height * 0.44, height: height * 0.6 }) : screen({ x: width * 0.36, y: height * 0.445, height: height * 0.76 })}
       {idea && (
         <AbsoluteFill
           style={
@@ -355,9 +355,9 @@ function Move({ kind, label, color, from = 0.6 }: { kind: string; label: string;
         from={from}
         source={LAPTOP_SRC}
         crop={crop}
-        height={portrait ? height * 0.58 : height * 0.74}
+        height={portrait ? height * 0.56 : height * 0.66}
         x={width / 2}
-        y={portrait ? height * 0.45 : height * 0.55}
+        y={portrait ? height * 0.44 : height * 0.49}
         tilt={{ x: 2, y: kind === "plant" ? 4 : -4 }}
         radius={60}
       />
@@ -380,7 +380,7 @@ function Look() {
         screen={({ x, y, height }) => (
           <>
             <Sequence durationInFrames={half} layout="none">
-              <AppScreen src="footage/hero.mp4" from={M.preview - 1.6} source={PHONE_SRC} crop={PHONE_WORKING} height={height * 0.92} x={x} y={y} />
+              <AppScreen src="footage/hero.mp4" from={M.preview - 2.0} source={PHONE_SRC} crop={PHONE_WORKING} height={height * 0.92} x={x} y={y} />
             </Sequence>
             <Sequence from={half} layout="none">
               <AppScreen src="footage/hero.mp4" from={M.meet + 0.05} source={PHONE_SRC} crop={{ x: 0, y: 110, w: 860, h: 1180 }} height={height} x={x} y={y} playbackRate={0.8} />
@@ -598,7 +598,8 @@ function Airplane() {
 function Setup() {
   const { durationInFrames, width, height } = useVideoConfig();
   const portrait = usePortrait();
-  const timelapse = 6.7; // footage/setup.mp4 length (s), after skipping its first 0.3 s
+  // footage/setup.mp4 is 7 s; its first second is the launch splash and the idle "0 MB" start.
+  const timelapse = 6.0;
   const playFor = durationInFrames * 0.72;
   const rate = (timelapse * FPS) / playFor;
   const card = spring({ frame: Math.round(durationInFrames * 0.66), fps: FPS, config: { damping: 14 } });
@@ -610,7 +611,7 @@ function Setup() {
       <SoftGradient hue="cream" />
       <AppScreen
         src="footage/setup.mp4"
-        from={0.3}
+        from={1.0}
         source={LAPTOP_SRC}
         crop={{ x: 530, y: 330, w: 860, h: 770 }}
         height={portrait ? height * 0.5 : height * 0.82}

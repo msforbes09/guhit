@@ -19,92 +19,92 @@
     {
       "id": "problemA",
       "from": 4.6,
-      "dur": 2.9
+      "dur": 2.436
     },
     {
       "id": "problemB",
-      "from": 7.5,
-      "dur": 2.6
+      "from": 7.036,
+      "dur": 2.4539999999999997
     },
     {
       "id": "logo",
-      "from": 10.1,
-      "dur": 3.6
+      "from": 9.489999999999998,
+      "dur": 3.8990000000000125
     },
     {
       "id": "snapApp",
-      "from": 13.7,
-      "dur": 2
+      "from": 13.38900000000001,
+      "dur": 1.9000000000000001
     },
     {
       "id": "cutout",
-      "from": 15.7,
-      "dur": 2.008695652173913
+      "from": 15.28900000000001,
+      "dur": 2.556
     },
     {
       "id": "meadow",
-      "from": 17.708695652173912,
-      "dur": 2.1913043478260867
+      "from": 17.84500000000001,
+      "dur": 2.044
     },
     {
       "id": "vehicle",
-      "from": 19.9,
-      "dur": 1.8995156250000027
+      "from": 19.88900000000001,
+      "dur": 2.342
     },
     {
       "id": "plant",
-      "from": 21.799515625,
-      "dur": 1.8995156250000027
+      "from": 22.23100000000001,
+      "dur": 1.9818139534883719
     },
     {
       "id": "flyer",
-      "from": 23.699031250000004,
-      "dur": 1.9899687500000032
+      "from": 24.212813953488382,
+      "dur": 2.0761860465116277
     },
     {
       "id": "look",
-      "from": 25.689000000000007,
+      "from": 26.28900000000001,
       "dur": 2.75
     },
     {
       "id": "guess",
-      "from": 28.439000000000007,
+      "from": 29.03900000000001,
       "dur": 3.6
     },
     {
       "id": "hold",
-      "from": 32.03900000000001,
+      "from": 32.63900000000001,
       "dur": 2.9999999999999996
     },
     {
       "id": "answer",
-      "from": 35.03900000000001,
+      "from": 35.63900000000001,
       "dur": 4.360999999999994
     },
     {
       "id": "airplane",
-      "from": 39.400000000000006,
-      "dur": 2.6
+      "from": 40.00000000000001,
+      "dur": 3
     },
     {
       "id": "setup",
-      "from": 42.00000000000001,
+      "from": 43.00000000000001,
       "dur": 3.5
     },
     {
       "id": "diagram",
-      "from": 45.50000000000001,
-      "dur": 3.725
+      "from": 46.50000000000001,
+      "dur": 3.7
     },
     {
       "id": "title",
-      "from": 49.22500000000001,
-      "dur": 5.375
+      "from": 50.20000000000001,
+      "dur": 4.4
     },
     {
       "id": "endLogo",
       "from": 54.60000000000001,
-      "dur": 2.8000000000000003
+      "dur": 2.8
     },
     {
       "id": "maker",
@@ -116,107 +116,107 @@
     {
       "id": "hook",
       "at": 0.3,
-      "seconds": 2.9,
+      "seconds": 2.496,
       "text": "What if every drawing had a friend inside?",
-      "file": "voice/narration/hook.wav"
+      "file": "voice/narration/hook.mp3"
     },
     {
       "id": "problem-a",
       "at": 4.75,
-      "seconds": 2.6,
+      "seconds": 2.136,
       "text": "Most AI imagines for kids.",
-      "file": "voice/narration/problem-a.wav"
+      "file": "voice/narration/problem-a.mp3"
     },
     {
       "id": "problem-b",
-      "at": 7.6,
-      "seconds": 2.45,
+      "at": 7.135999999999999,
+      "seconds": 2.304,
       "text": "Guhit makes kids imagine.",
-      "file": "voice/narration/problem-b.wav"
+      "file": "voice/narration/problem-b.mp3"
     },
     {
       "id": "snap-a",
-      "at": 13.799999999999999,
-      "seconds": 1.8,
+      "at": 13.48900000000001,
+      "seconds": 1.2,
       "text": "Snap your drawing.",
-      "file": "voice/narration/snap-a.wav"
+      "file": "voice/narration/snap-a.mp3"
     },
     {
       "id": "snap-b",
-      "at": 15.799999999999999,
-      "seconds": 3.2,
+      "at": 15.38900000000001,
+      "seconds": 2.256,
       "text": "Guhit cuts it out, and brings it to life.",
-      "file": "voice/narration/snap-b.wav"
+      "file": "voice/narration/snap-b.mp3"
     },
     {
       "id": "moves",
-      "at": 20.099999999999998,
-      "seconds": 2.075,
+      "at": 20.03900000000001,
+      "seconds": 1.992,
       "text": "It moves like what it is.",
-      "file": "voice/narration/moves.wav"
+      "file": "voice/narration/moves.mp3"
     },
     {
       "id": "guess",
-      "at": 25.839000000000006,
-      "seconds": 2.45,
+      "at": 26.439000000000007,
+      "seconds": 2.304,
       "text": "It even guesses what you drew.",
-      "file": "voice/narration/guess.wav"
+      "file": "voice/narration/guess.mp3"
     },
     {
       "id": "talk",
-      "at": 32.13900000000001,
-      "seconds": 2.9,
+      "at": 32.73900000000001,
+      "seconds": 2.304,
       "text": "Hold to talk, and your friend talks back.",
-      "file": "voice/narration/talk.wav"
+      "file": "voice/narration/talk.mp3"
     },
     {
       "id": "offline-a",
-      "at": 39.550000000000004,
-      "seconds": 2.325,
+      "at": 40.150000000000006,
+      "seconds": 2.04,
       "text": "No internet? Still works.",
-      "file": "voice/narration/offline-a.wav"
+      "file": "voice/narration/offline-a.mp3"
     },
     {
       "id": "offline-b",
-      "at": 42.10000000000001,
-      "seconds": 3.35,
+      "at": 43.10000000000001,
+      "seconds": 2.88,
       "text": "All the AI runs right here, on the device.",
-      "file": "voice/narration/offline-b.wav"
+      "file": "voice/narration/offline-b.mp3"
     },
     {
       "id": "offline-c",
-      "at": 45.60000000000001,
-      "seconds": 3.525,
+      "at": 46.60000000000001,
+      "seconds": 3.24,
       "text": "Nothing your child draws or says ever leaves it.",
-      "file": "voice/narration/offline-c.wav"
+      "file": "voice/narration/offline-c.mp3"
     },
     {
       "id": "title-a",
-      "at": 49.42500000000001,
-      "seconds": 1.675,
+      "at": 50.40000000000001,
+      "seconds": 0.768,
       "text": "No cloud.",
-      "file": "voice/narration/title-a.wav"
+      "file": "voice/narration/title-a.mp3"
     },
     {
       "id": "title-b",
-      "at": 51.15000000000001,
-      "seconds": 1.7,
+      "at": 51.21800000000001,
+      "seconds": 0.864,
       "text": "No account.",
-      "file": "voice/narration/title-b.wav"
+      "file": "voice/narration/title-b.mp3"
     },
     {
       "id": "title-c",
-      "at": 52.90000000000001,
-      "seconds": 1.7,
+      "at": 52.13200000000001,
+      "seconds": 1.008,
       "text": "Just crayons.",
-      "file": "voice/narration/title-c.wav"
+      "file": "voice/narration/title-c.mp3"
     },
     {
       "id": "end",
       "at": 54.80000000000001,
-      "seconds": 2.6,
+      "seconds": 2.352,
       "text": "Every drawing has a friend inside.",
-      "file": "voice/narration/end.wav"
+      "file": "voice/narration/end.mp3"
     }
   ],
   "total": 59.7
