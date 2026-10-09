@@ -84,6 +84,9 @@ function namesOf(parts: Part[]): string {
   return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
+/** iPhone and iPad: the storytelling voice is too slow there, so it is not offered. */
+const offered = (part: Part) => !(part === "voice" && typeof navigator !== "undefined" && isAppleMobile());
+
 const STAGE_LABEL: Record<Stage, string> = {
   vision: "Seeing eyes",
   tts: "Voice",
@@ -288,7 +291,7 @@ export function SetupClient() {
 
   /** The parent's ticks become the plan, then setup runs it. */
   function applyChoice() {
-    setChosenParts(selected);
+    setChosenParts(selected.filter(offered));
     // A guess that once killed the tab (iPhone) turned guessing off; the parent's tap turns it back on.
     allowGuessesAgain();
     void getReady();
@@ -321,7 +324,7 @@ export function SetupClient() {
       const onDevice = installedParts();
       setInstalled(onDevice);
       const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-      setRecommended(recommendParts({ ...found, deviceMemory: memory }));
+      setRecommended(recommendParts({ ...found, deviceMemory: memory }).filter(offered));
       // Optional parts start unticked: downloading them is the parent's choice.
       const chosen = chosenParts();
       setSelected(chosen ?? (onDevice.length ? onDevice : [...REQUIRED_PARTS]));
@@ -364,6 +367,7 @@ export function SetupClient() {
   const removing = installed.filter((part) => !selected.includes(part));
   /** Ticked parts not on the device yet: what the button downloads. */
   const adding = selected.filter((part) => !installed.includes(part));
+  const engine = getAI();
   const friendly = phase === "error" && error ? explainLoadError(error) : null;
   const awake = useScreenAwake(phase === "loading");
   const iPhone = typeof navigator !== "undefined" && isAppleMobile();
@@ -499,7 +503,7 @@ export function SetupClient() {
                       type="checkbox"
                       className="mt-1 h-5 w-5 shrink-0 accent-orange-500"
                       checked={ticked}
-                      disabled={required || phase === "loading"}
+                      disabled={required || phase === "loading" || !offered(part)}
                       onChange={(event) => {
                         const on = event.target.checked;
                         setSelected((previous) => (on ? [...previous, part] : previous.filter((p) => p !== part)));
@@ -512,7 +516,12 @@ export function SetupClient() {
                       </span>
                       <span className="text-sm text-stone-600">{info.detail}</span>
                       {required && <span className="text-xs font-semibold text-stone-500">Always included</span>}
-                      {!required && recommended.includes(part) && !installed.includes(part) && (
+                      {!offered(part) && (
+                        <span className="text-xs font-semibold text-stone-500">
+                          Not on this device: it is too slow here, so the friend talks in playful sounds.
+                        </span>
+                      )}
+                      {!required && offered(part) && recommended.includes(part) && !installed.includes(part) && (
                         <span className="text-xs font-semibold text-green-800">Recommended for this device</span>
                       )}
                       {leaving && (
@@ -527,12 +536,20 @@ export function SetupClient() {
                       const p = progress[stage];
                       const isCached = cached?.[stage];
                       // Ready only when the engine says so: a full bar can still be starting up.
-                      const done = !!p?.done || (phase === "ready" && installed.includes(part));
+                      // The engine's own state counts too: a part already woken (on another
+                      // page) emits nothing here, and must not look as if it were still waiting.
+                      const awake = engine instanceof RealAI && engine.partStatus(part) === "ready";
+                      const done = !!p?.done || awake || (phase === "ready" && installed.includes(part));
                       const live = p && p.total > 0 ? Math.min(1, p.loaded / p.total) : 0;
                       // What an interrupted setup already saved stays on the bar while loading catches up.
                       const kept =
                         !isCached && saved[stage] && bytes[stage] ? Math.min(0.99, saved[stage] / bytes[stage]) : 0;
                       const fraction = done ? 1 : Math.max(live, kept);
+                      // Files already on the device are being started, not downloaded.
+                      const liveText =
+                        isCached && p?.text?.startsWith("Downloading")
+                          ? `Starting the ${STAGE_LABEL[stage].toLowerCase()}…`
+                          : p?.text;
                       const keptText =
                         kept && !p ? `${size(saved[stage] ?? 0)} of ${size(bytes[stage])} already saved` : null;
                       const state = done
@@ -558,7 +575,7 @@ export function SetupClient() {
                             <span className="font-medium text-stone-700">{STAGE_LABEL[stage]}</span>
                             {state && <span className="text-stone-500">{state}</span>}
                           </div>
-                          {(p?.text ?? keptText) && <p className="text-sm text-stone-500">{p?.text ?? keptText}</p>}
+                          {(liveText ?? keptText) && <p className="text-sm text-stone-500">{liveText ?? keptText}</p>}
                           {showBar && (
                             <div
                               className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100"

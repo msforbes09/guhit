@@ -12,7 +12,7 @@ import type { LLMClient, TextGenerator } from "./llm";
 import { CPU_LLM, findLLM, findSTT, findVision, STT_DTYPES } from "./models";
 import { deleteModelFiles, partModelIds, storeCutoutModel } from "./model-files";
 import { isVisionCached, markReady, requestPersistence } from "./offline";
-import { installedParts, isPartInstalled, markInstalled, PARTS } from "./parts";
+import { installedParts, isPartInstalled, markInstalled, partOf, PARTS } from "./parts";
 import {
   firstQuestionMessages,
   nextQuestionMessages,
@@ -86,6 +86,10 @@ export interface LoadTimings {
 const MAX_REPLY_SENTENCES = 2;
 /** The story helper's first start on the GPU; "?llmStartTimeout=<ms>" overrides it for /lab. */
 const LLM_START_TIMEOUT_MS = 180_000;
+/** A part that reports no progress for this long while starting gives up (see withStallWatch). */
+const PART_STALL_MS = 90_000;
+/** What a parent reads when the storytelling voice is not used on this device (never the technical reason). */
+const PLAIN_FALLBACK = "This device will use its built-in voice.";
 
 const FALLBACK_QUESTIONS = [
   (name: string) => `Where does ${name} live?`,
@@ -146,6 +150,8 @@ export class RealAI implements LocalAI {
   private partState: Record<Part, AIStatus> = { eyes: "idle", voice: "idle", talk: "idle" };
   private listeners = new Set<(p: LoadProgress) => void>();
   private lastText: Partial<Record<LoadProgress["stage"], string>> = {};
+  /** When each part last reported progress, for the stall watch. */
+  private lastActivity: Partial<Record<Part, number>> = {};
   private llm: TextGenerator | null = null;
   private gpuLLM: LLMClient | null = null;
   private stt: STTClient | null = null;
@@ -241,6 +247,7 @@ export class RealAI implements LocalAI {
 
   private emit(progress: LoadProgress) {
     this.lastText[progress.stage] = progress.text;
+    this.lastActivity[partOf(progress.stage)] = performance.now();
     for (const listener of this.listeners) listener(progress);
   }
 
@@ -291,7 +298,7 @@ export class RealAI implements LocalAI {
     this.partState[part] = "loading";
     this.updateState();
     try {
-      await this.partRuns[part]();
+      await this.withStallWatch(part, this.partRuns[part]());
       this.partState[part] = "ready";
       markInstalled(part, true);
     } catch (error) {
@@ -323,6 +330,10 @@ export class RealAI implements LocalAI {
   private async loadVoicePart() {
     const support = this.support!;
     const choice = this.choice!;
+    // iPhone and iPad: the storytelling voice is slower than speech there (it
+    // measured 1.08x real time in WebKit on a Mac, above the 0.8 it needs), so
+    // it is not started at all: the friend talks in playful sounds.
+    if (isAppleMobile()) return this.voiceFallsBack("The storytelling voice is too slow on this device.");
     const loadVoice = () =>
       this.speaker.load(support, choice.modelHost, choice.source, (loaded, total, text) =>
         this.emit({ stage: "tts", loaded, total, text }),
@@ -332,7 +343,44 @@ export class RealAI implements LocalAI {
     if (voices.engine === "builtin" && voices.reason?.startsWith("Kokoro failed to load")) voices = await loadVoice();
     this.voices = voices;
     this.timings.ttsMs = voices.loadMs;
-    this.emit({ stage: "tts", loaded: 1, total: 1, text: this.lastText.tts ?? "Voice ready", done: true });
+    this.emit({ stage: "tts", loaded: 1, total: 1, text: voices.engine === "kokoro" ? "Voice ready" : PLAIN_FALLBACK, done: true });
+  }
+
+  /** The voice part ends on the built-in voice (the character babbles), with the reason kept for /lab. */
+  private voiceFallsBack(reason: string) {
+    this.voices = { ...this.speaker.info(), engine: "builtin", reason };
+    this.emit({ stage: "tts", loaded: 1, total: 1, text: PLAIN_FALLBACK, done: true });
+  }
+
+  /**
+   * A part whose start goes quiet (no progress) for PART_STALL_MS gives up, so
+   * it never holds up the parts after it: the voice falls back to the built-in
+   * voice, any other part fails and setup offers to try again.
+   */
+  private withStallWatch(part: Part, work: Promise<void>): Promise<void> {
+    this.lastActivity[part] = performance.now();
+    return new Promise((resolve, reject) => {
+      const timer = setInterval(() => {
+        if (performance.now() - (this.lastActivity[part] ?? 0) < PART_STALL_MS) return;
+        clearInterval(timer);
+        if (part === "voice") {
+          this.voiceFallsBack("The storytelling voice did not start on this device.");
+          resolve();
+        } else {
+          reject(new Error(`This part of Guhit (${part}) stopped while starting.`));
+        }
+      }, 2000);
+      work.then(
+        () => {
+          clearInterval(timer);
+          resolve();
+        },
+        (error) => {
+          clearInterval(timer);
+          reject(error);
+        },
+      );
+    });
   }
 
   /** Talking: the listening ears, then the story helper (its slow first start last). */
