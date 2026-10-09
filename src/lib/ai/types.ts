@@ -3,7 +3,7 @@ import type { Character, Story } from "@/lib/story/types";
 export type AIStatus = "idle" | "loading" | "ready" | "error";
 
 export interface LoadProgress {
-  stage: "llm" | "stt" | "tts";
+  stage: "llm" | "stt" | "tts" | "vision";
   /** Bytes (or steps) done for this stage. */
   loaded: number;
   /** Bytes (or steps) expected for this stage; 0 when unknown. */
@@ -17,10 +17,18 @@ export interface ChatTurn {
   text: string;
 }
 
+export interface DrawingDescription {
+  /** Short kid-friendly noun phrase, e.g. "a purple dragon with wings"; "" when there is no guess. */
+  label: string;
+  confidence?: number;
+}
+
 export interface LocalAI {
   status(): AIStatus;
   load(onProgress: (p: LoadProgress) => void): Promise<void>;
   transcribe(audio: Blob): Promise<string>;
+  /** Guesses what the child drew, from the cut-out (data URL PNG, transparent background). */
+  describeDrawing(png: string): Promise<DrawingDescription>;
   /** The drawn character answers the child in first person. */
   reply(character: Character, history: ChatTurn[], childSays: string): Promise<string>;
   firstQuestion(character: Character): Promise<string>;

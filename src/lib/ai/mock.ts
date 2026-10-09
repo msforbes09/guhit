@@ -1,5 +1,5 @@
 import type { Character, Story } from "@/lib/story/types";
-import type { AIStatus, ChatTurn, LoadProgress, LocalAI } from "./types";
+import type { AIStatus, ChatTurn, DrawingDescription, LoadProgress, LocalAI } from "./types";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -36,7 +36,7 @@ export class MockAI implements LocalAI {
   async load(onProgress: (p: LoadProgress) => void): Promise<void> {
     if (this.state === "ready") return;
     this.state = "loading";
-    const stages: LoadProgress["stage"][] = ["llm", "stt", "tts"];
+    const stages: LoadProgress["stage"][] = ["llm", "stt", "vision", "tts"];
     for (const stage of stages) {
       for (let step = 0; step <= 4; step++) {
         onProgress({
@@ -54,6 +54,11 @@ export class MockAI implements LocalAI {
   async transcribe(audio: Blob): Promise<string> {
     await wait(400);
     return audio.size > 0 ? "He lives in a big tree house by the river." : "";
+  }
+
+  async describeDrawing(png: string): Promise<DrawingDescription> {
+    await wait(700);
+    return png ? { label: "a purple dragon with wings", confidence: 0.8 } : { label: "" };
   }
 
   async reply(character: Character, history: ChatTurn[], childSays: string): Promise<string> {

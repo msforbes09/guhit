@@ -22,7 +22,7 @@ import {
 } from "./sanitize";
 import type { STTClient } from "./stt";
 import { Speaker, type VoiceInfo } from "./tts";
-import type { AIStatus, ChatTurn, LoadProgress, LocalAI } from "./types";
+import type { AIStatus, ChatTurn, DrawingDescription, LoadProgress, LocalAI } from "./types";
 
 export type CallKind = "reply" | "firstQuestion" | "nextQuestion" | "writePage" | "title" | "transcribe";
 
@@ -219,6 +219,11 @@ export class RealAI implements LocalAI {
       prefillTps: stats?.prefillTps,
       ...extra,
     });
+  }
+
+  /** The vision model is not wired in yet: an empty label means "no guess", so screens ask the child. */
+  async describeDrawing(): Promise<DrawingDescription> {
+    return { label: "" };
   }
 
   async transcribe(audio: Blob): Promise<string> {
